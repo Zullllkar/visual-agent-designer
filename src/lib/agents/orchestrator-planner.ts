@@ -145,6 +145,9 @@ async function tryNativeToolPlan(
                 nodeId: ref.nodeId,
               }
             : null,
+          assetReference: ref.assetId
+            ? { assetId: ref.assetId, assetName: ref.assetName }
+            : null,
         }),
       },
     ],
@@ -211,6 +214,9 @@ async function tryLlmJsonPlan(
           nodeLabel: ref.nodeLabel,
         }
       : null,
+    assetReference: ref.assetId
+      ? { assetId: ref.assetId, assetName: ref.assetName }
+      : null,
   };
 
   const out = await ctx.providers.llm.generateText({
@@ -272,6 +278,7 @@ function enrichToolArgs(
   }
   if (name === "generate_image_variants") {
     base.prompt = cleanText;
+    if (ref.assetId) base.targetAssetId = ref.assetId;
     if (ref.pageId) base.targetPageId = ref.pageId;
     if (ref.nodeId) {
       base.targetNodeId = ref.nodeId;
@@ -330,7 +337,11 @@ export function decideToolsFallback(
 ): PlannerDecision {
   const ref = parsePageReference(userMessage.trim());
   const text = ref.cleanText;
-  const refSuffix = ref.pageId ? `（引用：${ref.nodeLabel ?? ref.pageId}）` : "";
+  const refSuffix = ref.assetId
+    ? `（引用素材：${ref.assetName ?? ref.assetId}）`
+    : ref.pageId
+      ? `（引用：${ref.nodeLabel ?? ref.pageId}）`
+      : "";
 
   // 空白 / 半成品项目 → 视觉素材流水线（不生成网页结构）
   if (!project || !project.brief) {
@@ -376,10 +387,16 @@ export function decideToolsFallback(
     };
   }
 
-  if (/变体|换图|重生成|重新生成|局部重绘|改这张|编辑这张/.test(text)) {
+  if (/变体|换图|重生成|重新生成|局部重绘|框选重绘|改这张|编辑这张/.test(text)) {
     return {
       thinking: `为现有素材生成变体/局部重绘${refSuffix}。`,
-      calls: [tool("generate_image_variants")],
+      calls: [
+        tool("generate_image_variants", {
+          prompt: text,
+          ...(ref.assetId ? { targetAssetId: ref.assetId } : {}),
+          n: 4,
+        }),
+      ],
     };
   }
 

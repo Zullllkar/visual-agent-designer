@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { ArrowLeft, Plus } from "lucide-react";
 import { ProjectList } from "@/components/project-list";
-import { PreferenceControls } from "@/components/theme-toggle";
 import {
   AppHeader,
   PageContainer,
@@ -16,7 +15,7 @@ export default function ProjectsPage() {
 
   return (
     <PageShell>
-      <AppHeader actions={<PreferenceControls />} />
+      <AppHeader />
 
       <section className="flex-1 py-10 md:py-14">
         <PageContainer>
@@ -35,7 +34,7 @@ export default function ProjectsPage() {
               </p>
             </div>
             <Link
-              href="/"
+              href="/projects/new"
               className="app-btn app-primary shrink-0 rounded-xl px-5"
             >
               <Plus className="size-4" />

@@ -1,9 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Wand2 } from "lucide-react";
-import { PreferenceControls } from "@/components/theme-toggle";
 import { usePreferences } from "@/lib/preferences";
+import { PreferenceControls } from "@/components/theme-toggle";
 import { cn } from "@/lib/cn";
 
 /**
@@ -32,56 +31,33 @@ export function AppLogo({ className }: { className?: string }) {
         className
       )}
     >
-      <Wand2 className="size-3.5" strokeWidth={2.25} />
+      <span aria-hidden className="font-serif text-[13px] italic leading-none">◇</span>
     </div>
   );
 }
 
-export function AppHeader({
-  children,
-  actions,
-}: {
-  children?: React.ReactNode;
-  actions?: React.ReactNode;
-}) {
-  const { t } = usePreferences();
-
+export function AppHeader() {
   return (
     <header className="app-header">
       <div className="app-container flex h-14 items-center justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <Link
-            href="/"
-            className="flex min-w-0 items-center gap-2.5 transition-opacity hover:opacity-90"
-          >
-            <AppLogo />
-            <div className="min-w-0 text-left">
-              <span className="block truncate text-[13px] font-semibold tracking-[-0.02em]">
-                {t("app.name")}
-              </span>
-            </div>
-            <span className="app-badge hidden sm:inline-flex">{t("app.badge")}</span>
-          </Link>
-        </div>
-        <nav className="flex shrink-0 items-center gap-0.5 text-sm">
-          <Link href="/projects" className="app-nav-link">
-            {t("nav.projects")}
-          </Link>
+        <Link href="/" className="flex min-w-0 items-center gap-2.5 transition-opacity hover:opacity-90">
+          <AppLogo />
+          <span className="block truncate text-[13px] font-semibold tracking-[-0.02em] sm:text-sm">Visual Agent Designer</span>
+        </Link>
+        <nav className="app-header-actions" aria-label="全局操作">
+          <PreferenceControls />
           <a
-            href="https://github.com"
-            className="app-nav-link hidden items-center gap-1.5 sm:inline-flex"
+            href="https://github.com/Zullllkar/visual-agent-designer"
             target="_blank"
             rel="noreferrer"
+            className="app-header-action"
           >
-            <GitHubIcon className="size-3.5 opacity-70" />
-            {t("nav.github")}
+            <GitHubIcon className="size-3.5" />
+            <span>GitHub</span>
           </a>
-          {children}
-          <span
-            className="mx-1 hidden h-4 w-px bg-[var(--border)] sm:block"
-            aria-hidden
-          />
-          {actions ?? <PreferenceControls />}
+          <Link href="/projects" className="app-header-action app-header-action-primary">
+            <span>Canvas</span>
+          </Link>
         </nav>
       </div>
     </header>

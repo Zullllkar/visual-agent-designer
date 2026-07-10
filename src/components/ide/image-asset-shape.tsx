@@ -2,9 +2,11 @@
 
 /**
  * ImageAsset Shape — 画布生图卡片（Lovart 式画框）
+ * 支持框选 Mark 重绘
  * @author：wangjunhua
  */
 
+import { useCallback, useRef, type PointerEvent as ReactPointerEvent } from "react";
 import {
   HTMLContainer,
   Rectangle2d,
@@ -15,6 +17,12 @@ import {
   type TLBaseShape,
 } from "tldraw";
 import { useProjectStore } from "@/store/project-store";
+import {
+  isValidMarkRegion,
+  normalizeRegion,
+  useAssetMarkStore,
+  type MarkRegion,
+} from "@/store/asset-mark-store";
 import { displaySizeForImageAsset } from "@/lib/canvas/board-layout";
 import {
   CARD_INNER_RADIUS,
@@ -110,6 +118,21 @@ function ImageAssetShapeView({ shape }: { shape: ImageAssetShape }) {
     const p = s.projects[shape.props.projectId];
     return p?.assets?.find((a) => a.id === shape.props.assetId);
   });
+  const markMode = useAssetMarkStore((s) => s.mode);
+  const markAssetId = useAssetMarkStore((s) => s.assetId);
+  const draft = useAssetMarkStore((s) => s.draft);
+  const region = useAssetMarkStore((s) => s.region);
+  const setDraft = useAssetMarkStore((s) => s.setDraft);
+  const commitRegion = useAssetMarkStore((s) => s.commitRegion);
+
+  const isMarkTarget =
+    (markMode === "marking" || markMode === "instruct") &&
+    markAssetId === shape.props.assetId;
+  const isMarking = markMode === "marking" && markAssetId === shape.props.assetId;
+
+  const dragOrigin = useRef<{ x: number; y: number } | null>(null);
+  const mediaRef = useRef<HTMLDivElement | null>(null);
+
   const src = asset?.src;
   const statusKey = asset?.status ?? shape.props.status ?? "candidate";
   const isGenerating = statusKey === "generating";
@@ -117,6 +140,57 @@ function ImageAssetShapeView({ shape }: { shape: ImageAssetShape }) {
     c.status[statusKey as keyof typeof c.status] ?? c.status.candidate;
   const innerW = shape.props.w - CARD_PAD * 2;
   const innerH = shape.props.h - CARD_PAD * 2 - 28;
+
+  const toNorm = useCallback((clientX: number, clientY: number) => {
+    const el = mediaRef.current;
+    if (!el) return { x: 0, y: 0 };
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return { x: 0, y: 0 };
+    return {
+      x: (clientX - rect.left) / rect.width,
+      y: (clientY - rect.top) / rect.height,
+    };
+  }, []);
+
+  const onPointerDown = (e: ReactPointerEvent) => {
+    if (!isMarking) return;
+    e.stopPropagation();
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    const p = toNorm(e.clientX, e.clientY);
+    dragOrigin.current = p;
+    setDraft({ x: p.x, y: p.y, w: 0, h: 0 });
+  };
+
+  const onPointerMove = (e: ReactPointerEvent) => {
+    if (!isMarking || !dragOrigin.current) return;
+    e.stopPropagation();
+    const p = toNorm(e.clientX, e.clientY);
+    setDraft(
+      normalizeRegion(dragOrigin.current.x, dragOrigin.current.y, p.x, p.y)
+    );
+  };
+
+  const onPointerUp = (e: ReactPointerEvent) => {
+    if (!isMarking || !dragOrigin.current) return;
+    e.stopPropagation();
+    const p = toNorm(e.clientX, e.clientY);
+    const next = normalizeRegion(
+      dragOrigin.current.x,
+      dragOrigin.current.y,
+      p.x,
+      p.y
+    );
+    dragOrigin.current = null;
+    if (isValidMarkRegion(next)) {
+      commitRegion(next);
+    } else {
+      setDraft(null);
+    }
+  };
+
+  const visibleRegion: MarkRegion | null =
+    draft ?? (isMarkTarget ? region : null);
 
   return (
     <HTMLContainer
@@ -129,13 +203,22 @@ function ImageAssetShapeView({ shape }: { shape: ImageAssetShape }) {
         padding: CARD_PAD,
         borderRadius: CARD_RADIUS,
         background: `linear-gradient(165deg, ${c.surface} 0%, ${c.surfaceMuted} 100%)`,
-        border: `1px solid ${c.border}`,
-        boxShadow: c.cardShadow,
+        border: `1px solid ${isMarkTarget ? "#EF4444" : c.border}`,
+        boxShadow: isMarkTarget
+          ? `0 0 0 2px rgba(239,68,68,0.25), ${c.cardShadow}`
+          : c.cardShadow,
         pointerEvents: "all",
         fontFamily: "var(--font-sans, ui-sans-serif, system-ui, sans-serif)",
       }}
     >
       <div
+        ref={mediaRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={() => {
+          dragOrigin.current = null;
+        }}
         style={{
           position: "relative",
           width: innerW,
@@ -144,6 +227,8 @@ function ImageAssetShapeView({ shape }: { shape: ImageAssetShape }) {
           overflow: "hidden",
           background: c.surfaceMuted,
           boxShadow: c.matInset,
+          cursor: isMarking ? "crosshair" : undefined,
+          touchAction: isMarking ? "none" : undefined,
         }}
       >
         {src && !isGenerating ? (
@@ -156,6 +241,7 @@ function ImageAssetShapeView({ shape }: { shape: ImageAssetShape }) {
               height: "100%",
               objectFit: "cover",
               display: "block",
+              pointerEvents: "none",
             }}
           />
         ) : isGenerating && src ? (
@@ -169,6 +255,7 @@ function ImageAssetShapeView({ shape }: { shape: ImageAssetShape }) {
               objectFit: "cover",
               display: "block",
               opacity: 0.92,
+              pointerEvents: "none",
             }}
           />
         ) : isGenerating ? (
@@ -209,6 +296,49 @@ function ImageAssetShapeView({ shape }: { shape: ImageAssetShape }) {
               pointerEvents: "none",
             }}
           />
+        ) : null}
+        {isMarking ? (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: "rgba(0,0,0,0.28)",
+              pointerEvents: "none",
+            }}
+          />
+        ) : null}
+        {visibleRegion && isValidMarkRegion(visibleRegion) ? (
+          <div
+            style={{
+              position: "absolute",
+              left: `${visibleRegion.x * 100}%`,
+              top: `${visibleRegion.y * 100}%`,
+              width: `${visibleRegion.w * 100}%`,
+              height: `${visibleRegion.h * 100}%`,
+              border: "2px solid #EF4444",
+              background: "rgba(239,68,68,0.18)",
+              boxShadow: "0 0 0 1px rgba(252,165,165,0.8) inset",
+              pointerEvents: "none",
+            }}
+          />
+        ) : null}
+        {isMarking ? (
+          <div
+            style={{
+              position: "absolute",
+              left: 8,
+              bottom: 8,
+              padding: "3px 8px",
+              borderRadius: 6,
+              background: "rgba(15,15,18,0.72)",
+              color: "#fff",
+              fontSize: 10,
+              fontWeight: 600,
+              pointerEvents: "none",
+            }}
+          >
+            拖拽框选要重绘的区域
+          </div>
         ) : null}
         <div
           style={{

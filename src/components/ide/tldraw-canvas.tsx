@@ -552,11 +552,31 @@ function syncProjectToEditor(
     (a) => a.status !== "discarded"
   );
 
+  const PARENT_GAP = 48;
+  const placedMeta = new Map<string, { x: number; y: number; w: number }>();
+  for (const [id, shape] of assetShapes) {
+    placedMeta.set(id, {
+      x: shape.x,
+      y: shape.y,
+      w: (shape as unknown as { props: { w: number } }).props.w,
+    });
+  }
+
   activeAssets.forEach((asset, index) => {
     const slot = board.assets[index];
     const existing = assetShapes.get(asset.id);
-    const ax = force ? (slot?.x ?? 0) : (existing?.x ?? (slot?.x ?? 0));
-    const ay = force ? (slot?.y ?? 0) : (existing?.y ?? (slot?.y ?? 0));
+    let ax = force ? (slot?.x ?? 0) : (existing?.x ?? (slot?.x ?? 0));
+    let ay = force ? (slot?.y ?? 0) : (existing?.y ?? (slot?.y ?? 0));
+
+    // 新派生卡（变体/框选重绘）落在父素材右侧，便于对比
+    if (!existing && !force && asset.parentAssetId) {
+      const parent = placedMeta.get(asset.parentAssetId);
+      if (parent) {
+        ax = parent.x + parent.w + PARENT_GAP;
+        ay = parent.y;
+      }
+    }
+
     const nextShape = makeImageAssetShape(
       asset.id,
       project.id,
@@ -581,8 +601,10 @@ function syncProjectToEditor(
           },
         },
       ]);
+      placedMeta.set(asset.id, { x: ax, y: ay, w: nextShape.props.w });
     } else {
       createCustomShapes(editor, [nextShape]);
+      placedMeta.set(asset.id, { x: ax, y: ay, w: nextShape.props.w });
     }
   });
 

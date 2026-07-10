@@ -73,6 +73,15 @@ export const ImageAssetSchema = z.object({
     .optional(),
   /** 用于生成编辑版本的自然语言指令。 */
   editInstruction: z.string().optional(),
+  /** 框选重绘区域（相对原图 0–1）。 */
+  editRegion: z
+    .object({
+      x: z.number(),
+      y: z.number(),
+      w: z.number(),
+      h: z.number(),
+    })
+    .optional(),
   /** 参考图 id 列表。 */
   referenceAssetIds: z.array(z.string()).optional(),
   /** 生成时所使用的设计记忆版本。 */

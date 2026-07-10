@@ -7,182 +7,96 @@
  * @author：wangjunhua
  */
 
-import { useMemo } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight, ArrowUpRight, Clock3, Sparkles } from "lucide-react";
-import { BriefLauncher } from "@/components/brief-launcher";
 import {
-  AppFooter,
   AppHeader,
-  PageContainer,
   PageShell,
 } from "@/components/app-chrome";
-import { usePreferences } from "@/lib/preferences";
-import { useProjectStore } from "@/store/project-store";
-import { useProjectStoreHydrated } from "@/lib/use-hydrated";
 
 export default function Home() {
-  const { t } = usePreferences();
-
-  const flowSteps = [
-    {
-      key: "brief",
-      label: t("home.flow.brief.label"),
-      detail: t("home.flow.brief.detail"),
-    },
-    {
-      key: "canvas",
-      label: t("home.flow.canvas.label"),
-      detail: t("home.flow.canvas.detail"),
-    },
-    {
-      key: "handoff",
-      label: t("home.flow.handoff.label"),
-      detail: t("home.flow.handoff.detail"),
-    },
-  ] as const;
-
-  const trustItems = [
-    t("home.trust.local"),
-    t("home.trust.providers"),
-    t("home.trust.keys"),
-    t("home.trust.open"),
-  ];
-
   return (
     <PageShell className="vad-home">
       <AppHeader />
 
-      <section className="vad-home-hero relative flex flex-1 flex-col items-center justify-center overflow-hidden px-4 pb-16 pt-14 md:pb-24 md:pt-20">
-        <div className="vad-home-atmosphere" aria-hidden />
-        <div className="vad-home-grid" aria-hidden />
-
-        <PageContainer className="relative z-[1] flex flex-col items-center gap-8 text-center">
-          <div className="vad-home-brand-mark">
-            <Sparkles className="size-3.5" aria-hidden />
-            <span>{t("app.name")}</span>
-            <span className="vad-home-brand-sep" aria-hidden />
-            <span className="opacity-70">{t("app.badge")}</span>
+      <section className="landing-hero landing-wrap" id="top">
+        <div className="landing-hero-copy">
+          <p className="landing-kicker">LOCAL-FIRST · APACHE-2.0 · OPEN SOURCE</p>
+          <h1 className="landing-display">画布上编排 <em>Agent</em>，导出可交付 Handoff<span>.</span></h1>
+          <p className="landing-lead">本地跑多 Agent 流水线，把 Brief、方向、素材与 token 打成包，交给 Cursor / Claude Code / Codex。</p>
+          <div className="landing-hero-actions">
+            <Link className="landing-btn landing-btn-primary" href="/projects/new">新建项目</Link>
+            <a className="landing-btn landing-btn-ghost" href="https://github.com/Zullllkar/visual-agent-designer" target="_blank" rel="noreferrer">GitHub</a>
           </div>
-
-          <div className="flex max-w-[22rem] flex-col items-center gap-4 sm:max-w-[34rem] md:max-w-[42rem]">
-            <h1 className="vad-home-title text-balance">
-              {t("home.titleLine1")}
-              <br />
-              <span className="vad-home-title-accent">{t("home.titleLine2")}</span>
-            </h1>
-            <p className="max-w-[48ch] text-[15px] leading-[1.7] tracking-[-0.01em] text-[var(--muted)]">
-              {t("home.description")}
-            </p>
-          </div>
-
-          <BriefLauncher />
-
-          <ul className="flex flex-wrap items-center justify-center gap-2">
-            {trustItems.map((item) => (
-              <li key={item} className="vad-home-trust-pill">
-                {item}
-              </li>
-            ))}
-          </ul>
-
-          <ol className="vad-home-flow flex flex-wrap items-center justify-center gap-x-1.5 gap-y-2">
-            {flowSteps.map((step, index) => (
-              <li
-                key={step.key}
-                className="flex items-center gap-1.5"
-                title={step.detail}
-              >
-                <span className="vad-home-flow-step">
-                  <span className="vad-home-flow-index">{index + 1}</span>
-                  {step.label}
-                </span>
-                {index < flowSteps.length - 1 ? (
-                  <ArrowRight
-                    className="size-3.5 text-[var(--muted)]/70"
-                    aria-hidden
-                  />
-                ) : null}
-              </li>
-            ))}
-          </ol>
-        </PageContainer>
+          <div className="landing-install"><code>git clone https://github.com/Zullllkar/visual-agent-designer.git</code><code>pnpm install && pnpm dev</code></div>
+        </div>
+        <aside className="landing-pipeline-card" aria-label="八阶段流水线摘要">
+          {[
+            ["01", "Brief / Architect", "用户、目的、交付物"],
+            ["03", "Direction / Layout", "视觉方向与画板构图"],
+            ["07", "Content → Execute", "文案、生图、落盘"],
+            ["08", "Critic / Handoff", "自检后导出开发包"],
+          ].map(([number, title, detail], index) => (
+            <div className={`landing-pipeline-step ${index === 1 ? "is-hot" : ""}`} key={number}>
+              <span>{number}</span><div><strong>{title}</strong><small>{detail}</small></div>
+            </div>
+          ))}
+          <p>完整八节点可在 Canvas 拖拽连线。右侧对话推进下一步。</p>
+        </aside>
       </section>
 
-      <RecentProjects />
+      <LandingContent />
 
-      <AppFooter />
+      <LandingFooter />
     </PageShell>
   );
 }
 
-function RecentProjects() {
-  const hydrated = useProjectStoreHydrated();
-  const projectsDict = useProjectStore((s) => s.projects);
-  const { t, locale } = usePreferences();
-
-  const recent = useMemo(
-    () =>
-      Object.values(projectsDict)
-        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-        .slice(0, 3),
-    [projectsDict]
-  );
-
-  if (!hydrated || recent.length === 0) return null;
-
+function LandingContent() {
   return (
-    <section className="vad-home-recent relative border-t border-[color-mix(in_srgb,var(--border)_75%,transparent)] py-12 md:py-14">
-      <PageContainer>
-        <div className="mb-6 flex items-end justify-between gap-4">
-          <div>
-            <h2 className="flex items-center gap-2 text-[13px] font-semibold tracking-[-0.02em] text-[var(--foreground)]">
-              <Clock3 className="size-3.5 text-[var(--primary)]" aria-hidden />
-              {t("home.recent")}
-            </h2>
-            <p className="mt-1 text-[12px] text-[var(--muted)]">
-              {t("home.footer")}
-            </p>
-          </div>
-          <Link href="/projects" className="vad-home-link">
-            {t("home.viewAll")}
-            <ArrowUpRight className="size-3.5" aria-hidden />
-          </Link>
+    <div id="main" className="landing-main">
+      <section className="landing-wrap" id="product">
+        <div className="landing-facts">
+          <span><strong>本地优先</strong> · 数据在 <code>.vad/projects/</code></span>
+          <span><strong>BYOK</strong> · Key 不上传</span>
+          <span><strong>Apache-2.0</strong></span>
+          <span><strong>tldraw 5</strong> 无限画布</span>
         </div>
-
-        <div className="grid gap-3 md:grid-cols-3">
-          {recent.map((p, i) => (
-            <Link
-              key={p.id}
-              href={`/projects/${p.id}`}
-              className="vad-home-project group"
-              style={{ animationDelay: `${i * 40}ms` }}
-            >
-              <div className="vad-home-project-preview" aria-hidden>
-                <span className="vad-home-project-dot" />
-                <span className="vad-home-project-bar" />
-              </div>
-              <div className="flex items-start justify-between gap-3">
-                <h3 className="line-clamp-1 text-[13px] font-semibold tracking-[-0.02em] transition-colors group-hover:text-[var(--primary)]">
-                  {p.title}
-                </h3>
-                <span className="shrink-0 rounded-md bg-[var(--surface-muted)] px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-[var(--muted)]">
-                  {p.pages.length} {t("projects.pages")}
-                </span>
-              </div>
-              <p className="mt-2 line-clamp-2 text-[12px] leading-relaxed text-[var(--muted)]">
-                {p.rawIdea}
-              </p>
-              <p className="mt-3 text-[11px] tabular-nums text-[var(--muted)]/80">
-                {t("projects.updated")}{" "}
-                {new Date(p.updatedAt).toLocaleDateString(
-                  locale === "zh" ? "zh-CN" : "en-US"
-                )}
-              </p>
-            </Link>
-          ))}
+        <div className="landing-split">
+          <article><h2>可视化 <em>Agent</em> 编排</h2><p>ChatCanvas 工作台在无限画布上跑流水线，不是网页结构 mock。节点可拖、可连，状态写在节点上。</p><p>右侧对话推进下一步；回退到任意阶段重跑，过程可追踪。</p></article>
+          <article><h2>设计系统随 <em>Handoff</em> 走</h2><p>色板、字体、圆角与组件约定写进导出包。coding agent 拿到可落地的上下文，不是一张截图。</p><p>PNG、prompts、tokens、Brief 一并打包，交给 Cursor / Claude Code / Codex 继续写。</p></article>
         </div>
-      </PageContainer>
-    </section>
+      </section>
+      <section className="landing-stages landing-wrap" id="pipeline">
+        <h2>八阶段，可回退</h2><p className="landing-section-intro">从产品想法到可交付视觉素材，再到 coding agent 可执行的开发包。</p>
+        <ul><li><span>01-02</span><strong>Brief · Architect</strong><small>想法澄清与结构</small></li><li><span>03-04</span><strong>Direction · Layout</strong><small>视觉方向与构图</small></li><li><span>05-07</span><strong>Content → Execute</strong><small>文案、计划、生图</small></li><li><span>08</span><strong>Critic · Handoff</strong><small>自检与导出</small></li></ul>
+        <p className="landing-stack-line">Next.js 16 · React 19 · tldraw 5 · Zustand · Tailwind 4</p>
+      </section>
+      <section className="landing-oss landing-wrap" id="open-source">
+        <h2>在 <em>GitHub</em> 上使用与贡献</h2><p className="landing-section-intro">克隆后运行 <code>pnpm install && pnpm dev</code> 即可打开工作台。Issue 与 PR 欢迎。</p>
+        <div className="landing-oss-grid">
+          <div className="landing-oss-block"><h3>克隆仓库</h3><p>可选 Daemon 处理落盘，避免热重载与长任务争抢。</p><CloneCommand /><div className="landing-oss-meta"><span><strong>License</strong> Apache-2.0</span><span><strong>Stack</strong> Next.js 16 · tldraw 5</span></div></div>
+          <div className="landing-oss-block"><h3>仓库入口</h3><ul className="landing-oss-links"><RepoLink href="https://github.com/Zullllkar/visual-agent-designer" label="Repository" detail="源码" /><RepoLink href="https://github.com/Zullllkar/visual-agent-designer/issues" label="Issues" detail="缺陷 / 需求" /><RepoLink href="https://github.com/Zullllkar/visual-agent-designer/pulls" label="Pull requests" detail="贡献" /><RepoLink href="https://github.com/Zullllkar/visual-agent-designer/blob/main/LICENSE" label="LICENSE" detail="Apache-2.0" /><RepoLink href="https://github.com/Zullllkar/visual-agent-designer#readme" label="README" detail="快速开始" /></ul></div>
+        </div>
+        <div className="landing-end"><p>打开 <em>Canvas</em>，从 Brief 开始</p><a className="landing-btn landing-btn-ghost" href="https://github.com/Zullllkar/visual-agent-designer" target="_blank" rel="noreferrer">Star on GitHub</a><Link className="landing-btn landing-btn-primary" href="/projects">进入工作台</Link></div>
+      </section>
+    </div>
   );
+}
+
+function RepoLink({ href, label, detail }: { href: string; label: string; detail: string }) {
+  return <li><a href={href} target="_blank" rel="noreferrer"><span>{label}</span><small>{detail}</small></a></li>;
+}
+
+function CloneCommand() {
+  const [copied, setCopied] = useState(false);
+  const command = "git clone https://github.com/Zullllkar/visual-agent-designer.git";
+  async function copy() {
+    try { await navigator.clipboard.writeText(command); setCopied(true); window.setTimeout(() => setCopied(false), 1800); } catch { setCopied(false); }
+  }
+  return <div className="landing-clone"><code>{command}</code><button type="button" onClick={copy}>{copied ? "已复制" : "复制"}</button></div>;
+}
+
+function LandingFooter() {
+  return <footer className="landing-footer landing-wrap"><span>Visual Agent Designer</span><a href="#license">Apache-2.0</a><a href="https://github.com/Zullllkar/visual-agent-designer" target="_blank" rel="noreferrer">GitHub</a><a href="https://github.com/Zullllkar/visual-agent-designer/issues" target="_blank" rel="noreferrer">Issues</a><Link href="/projects">Canvas</Link><span className="landing-footer-spacer">本地优先 · 开源</span></footer>;
 }

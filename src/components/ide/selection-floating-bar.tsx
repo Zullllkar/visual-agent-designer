@@ -2,12 +2,13 @@
 
 /**
  * 选中元素浮动操作条 — 画板/生图选中后的上下文操作（Lovart 式）
- * 含：收藏 / 变体 / 局部重绘 / 下载 / 移除
+ * 含：收藏 / 框选重绘 / 变体 / 复制 Prompt / 下载 / 移除
  * @author：wangjunhua
  */
 
 import { useEffect, useState } from "react";
 import {
+  Copy,
   Download,
   Focus,
   Loader2,
@@ -16,12 +17,22 @@ import {
   Sparkles,
   Star,
   Trash2,
+  X,
 } from "lucide-react";
 import { useEditor, useValue } from "tldraw";
 import { useCanvasSelectionStore } from "@/store/canvas-selection-store";
+import {
+  isValidMarkRegion,
+  useAssetMarkStore,
+} from "@/store/asset-mark-store";
 import { useProjectStore } from "@/store/project-store";
 import { useProviderStore } from "@/store/provider-store";
 import type { ImageAsset } from "@/lib/project/assets-schema";
+import {
+  buildRegionEditPrompt,
+  createRegionAnnotatedDataUrl,
+} from "@/lib/canvas/region-annotate";
+import { buildSingleAssetPrompt } from "@/lib/handoff/kickoff-prompt";
 
 interface SelectionFloatingBarProps {
   onPrompt?: (prompt: string) => void;
@@ -36,8 +47,17 @@ export function SelectionFloatingBar({
   const upsert = useProjectStore((s) => s.upsert);
   const providerConfig = useProviderStore((s) => s.config);
   const project = useProjectStore((s) =>
-    selection ? s.projects[selection.projectId] ?? null : null
+    selection ? (s.projects[selection.projectId] ?? null) : null
   );
+
+  const markMode = useAssetMarkStore((s) => s.mode);
+  const markAssetId = useAssetMarkStore((s) => s.assetId);
+  const markRegion = useAssetMarkStore((s) => s.region);
+  const instruction = useAssetMarkStore((s) => s.instruction);
+  const startMarking = useAssetMarkStore((s) => s.startMarking);
+  const setInstruction = useAssetMarkStore((s) => s.setInstruction);
+  const cancelMark = useAssetMarkStore((s) => s.cancel);
+  const resetAfterSubmit = useAssetMarkStore((s) => s.resetAfterSubmit);
 
   const screenBounds = useValue(
     "selection screen bounds",
@@ -46,10 +66,9 @@ export function SelectionFloatingBar({
   );
 
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
-  const [editOpen, setEditOpen] = useState(false);
-  const [editText, setEditText] = useState("");
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!screenBounds || !selection) {
@@ -63,10 +82,27 @@ export function SelectionFloatingBar({
   }, [screenBounds, selection]);
 
   useEffect(() => {
-    setEditOpen(false);
-    setEditText("");
     setEditError(null);
-  }, [selection?.assetId, selection?.kind]);
+    setCopied(false);
+    if (
+      selection?.kind !== "asset" ||
+      (markAssetId && selection.assetId !== markAssetId)
+    ) {
+      if (markMode !== "idle") cancelMark();
+    }
+  }, [selection?.assetId, selection?.kind, markAssetId, markMode, cancelMark]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && markMode !== "idle") {
+        e.preventDefault();
+        cancelMark();
+        setEditError(null);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [markMode, cancelMark]);
 
   if (!selection || !pos || !project) return null;
 
@@ -74,6 +110,11 @@ export function SelectionFloatingBar({
     selection.kind === "asset" && selection.assetId
       ? project.assets?.find((a) => a.id === selection.assetId)
       : null;
+
+  const isMarkingThis =
+    asset &&
+    markAssetId === asset.id &&
+    (markMode === "marking" || markMode === "instruct");
 
   function toggleStar() {
     if (!asset || !project) return;
@@ -90,6 +131,7 @@ export function SelectionFloatingBar({
 
   function discardAsset() {
     if (!asset || !project) return;
+    cancelMark();
     upsert({
       ...project,
       assets: (project.assets ?? []).filter((a) => a.id !== asset.id),
@@ -110,22 +152,55 @@ export function SelectionFloatingBar({
     editor.zoomToSelection({ animation: { duration: 200 } });
   }
 
-  async function submitLocalEdit() {
-    if (!asset?.src || !project || !editText.trim() || editBusy) return;
+  async function copyAssetPrompt() {
+    if (!asset || !project) return;
+    try {
+      await navigator.clipboard.writeText(
+        buildSingleAssetPrompt(project, asset)
+      );
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setEditError("复制失败，请检查剪贴板权限");
+    }
+  }
+
+  function enterMarkMode() {
+    if (!asset || !project) return;
+    setEditError(null);
+    startMarking(project.id, asset.id);
+  }
+
+  async function submitRegionEdit() {
+    if (
+      !asset?.src ||
+      !project ||
+      !isValidMarkRegion(markRegion) ||
+      !instruction.trim() ||
+      editBusy
+    ) {
+      return;
+    }
     setEditBusy(true);
     setEditError(null);
     try {
-      const instruction = editText.trim();
+      const region = markRegion!;
+      const annotated = await createRegionAnnotatedDataUrl(asset.src, region);
+      const prompt = buildRegionEditPrompt(
+        instruction.trim(),
+        asset.prompt,
+        region
+      );
       const res = await fetch("/api/agents/image/generate", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          prompt: `Edit this image based on the instruction. Keep overall composition unless asked otherwise. Instruction: ${instruction}. Original prompt context: ${asset.prompt}`,
+          prompt,
           n: 1,
           width: asset.width || 1024,
           height: asset.height || 1024,
           visualStyle: project.brief?.visualStyle,
-          referenceImages: [asset.src],
+          referenceImages: [asset.src, annotated],
           providerConfig,
         }),
       });
@@ -134,11 +209,12 @@ export function SelectionFloatingBar({
         throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
       }
       const raw = (data.assets as ImageAsset[]) ?? [];
-      if (raw.length === 0) throw new Error("局部重绘未返回素材");
+      if (raw.length === 0) throw new Error("框选重绘未返回素材");
       const nextAssets = raw.map((a) => ({
         ...a,
         parentAssetId: asset.id,
-        editInstruction: instruction,
+        editInstruction: instruction.trim(),
+        editRegion: region,
         source: "edited" as const,
         status: "candidate" as const,
         role: asset.role ?? a.role,
@@ -148,8 +224,24 @@ export function SelectionFloatingBar({
         assets: [...(project.assets ?? []), ...nextAssets],
         updatedAt: new Date().toISOString(),
       });
-      setEditOpen(false);
-      setEditText("");
+      resetAfterSubmit();
+      const newId = nextAssets[0]?.id;
+      if (newId) {
+        window.setTimeout(() => {
+          const shapes = editor.getCurrentPageShapes();
+          const shape = shapes.find((s) => {
+            if ((s.type as string) !== "image-asset") return false;
+            return (
+              (s as unknown as { props: { assetId: string } }).props
+                .assetId === newId
+            );
+          });
+          if (shape) {
+            editor.select(shape.id);
+            editor.zoomToSelection({ animation: { duration: 220 } });
+          }
+        }, 180);
+      }
     } catch (err) {
       setEditError((err as Error).message);
     } finally {
@@ -169,10 +261,16 @@ export function SelectionFloatingBar({
           },
           {
             key: "edit",
-            label: "局部重绘",
+            label: "框选重绘",
             icon: Pencil,
-            onClick: () => setEditOpen((v) => !v),
-            active: editOpen,
+            onClick: enterMarkMode,
+            active: !!isMarkingThis,
+          },
+          {
+            key: "copy-prompt",
+            label: copied ? "已复制" : "复制 Prompt",
+            icon: Copy,
+            onClick: () => void copyAssetPrompt(),
           },
           {
             key: "regen",
@@ -221,18 +319,38 @@ export function SelectionFloatingBar({
       style={{ left: pos.left, top: pos.top }}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      {editOpen && asset ? (
-        <div className="vad-selection-edit mb-1 w-[min(320px,70vw)] rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2.5 shadow-[var(--shadow-elevated)]">
+      {isMarkingThis && markMode === "marking" ? (
+        <div className="vad-selection-edit mb-1 flex w-[min(300px,70vw)] items-center justify-between gap-2 rounded-xl border border-red-500/40 bg-[var(--surface)] px-3 py-2 shadow-[var(--shadow-elevated)]">
+          <p className="text-[11px] font-medium text-[var(--foreground)]">
+            在图上拖拽框选要重绘的区域
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              cancelMark();
+              setEditError(null);
+            }}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-[var(--muted)] hover:bg-[var(--surface-muted)]"
+          >
+            <X className="size-3" />
+            Esc
+          </button>
+        </div>
+      ) : null}
+
+      {isMarkingThis && markMode === "instruct" && asset ? (
+        <div className="vad-selection-edit mb-1 w-[min(320px,70vw)] rounded-xl border border-red-500/40 bg-[var(--surface)] p-2.5 shadow-[var(--shadow-elevated)]">
           <p className="mb-1.5 text-[10px] font-semibold text-[var(--muted)]">
-            局部重绘 · 以当前图为参考，按指令生成新版本
+            框选重绘 · 只改红框区域，其余保持
           </p>
           <textarea
-            value={editText}
-            onChange={(e) => setEditText(e.target.value)}
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
             rows={3}
-            placeholder="例如：把背景改成深色、标题改成白色、去掉右侧插图…"
+            placeholder="例如：把这里改成蓝色主按钮…"
             className="w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-2 text-[11px] leading-relaxed text-[var(--foreground)] outline-none placeholder:text-[var(--muted)] focus:border-[var(--primary)]"
             disabled={editBusy}
+            autoFocus
           />
           {editError ? (
             <p className="mt-1 text-[10px] text-red-600 dark:text-red-400">
@@ -244,7 +362,7 @@ export function SelectionFloatingBar({
               type="button"
               disabled={editBusy}
               onClick={() => {
-                setEditOpen(false);
+                cancelMark();
                 setEditError(null);
               }}
               className="rounded-md px-2.5 py-1 text-[11px] text-[var(--muted)] hover:bg-[var(--surface-muted)]"
@@ -253,8 +371,12 @@ export function SelectionFloatingBar({
             </button>
             <button
               type="button"
-              disabled={editBusy || !editText.trim()}
-              onClick={() => void submitLocalEdit()}
+              disabled={
+                editBusy ||
+                !instruction.trim() ||
+                !isValidMarkRegion(markRegion)
+              }
+              onClick={() => void submitRegionEdit()}
               className="inline-flex items-center gap-1 rounded-md bg-[var(--primary)] px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-40"
             >
               {editBusy ? (
@@ -266,6 +388,12 @@ export function SelectionFloatingBar({
             </button>
           </div>
         </div>
+      ) : null}
+
+      {!isMarkingThis && editError ? (
+        <p className="mb-1 max-w-[280px] rounded-lg bg-red-500/10 px-2 py-1 text-[10px] text-red-600 dark:text-red-400">
+          {editError}
+        </p>
       ) : null}
 
       <div className="vad-selection-bar flex items-center gap-0.5 p-1">

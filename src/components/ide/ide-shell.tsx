@@ -13,9 +13,7 @@ import {
   Layers,
   LayoutGrid,
   Loader2,
-  Settings,
   Share2,
-  Sparkles,
 } from "lucide-react";
 import { ProviderSettingsDialog } from "@/components/provider-settings-dialog";
 import { HandoffDialog } from "@/components/handoff-dialog";
@@ -368,11 +366,14 @@ export function IdeShell({ projectId }: IdeShellProps) {
       streamFinalProject: null,
     };
     setDiffDecisions(new Map());
-    const referencePrefix = scopedSelection?.nodeId
-      ? `【引用元素: ${scopedSelection.pageName}#${scopedSelection.pageId}/${scopedSelection.nodeLabel ?? "元素"}#${scopedSelection.nodeId}】 `
-      : scopedSelection
-        ? `【引用页面: ${scopedSelection.pageName}#${scopedSelection.pageId}】 `
-        : "";
+    const referencePrefix =
+      scopedSelection?.kind === "asset" && scopedSelection.assetId
+        ? `【引用素材: ${scopedSelection.pageName || "素材"}#${scopedSelection.assetId}】 `
+        : scopedSelection?.nodeId
+          ? `【引用元素: ${scopedSelection.pageName}#${scopedSelection.pageId}/${scopedSelection.nodeLabel ?? "元素"}#${scopedSelection.nodeId}】 `
+          : scopedSelection
+            ? `【引用页面: ${scopedSelection.pageName}#${scopedSelection.pageId}】 `
+            : "";
     const userMsg = makeUserMessage(`${referencePrefix}${trimmed}`);
     append(projectId, userMsg);
     setInput("");
@@ -435,15 +436,9 @@ export function IdeShell({ projectId }: IdeShellProps) {
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)] font-sans antialiased">
-      <TopBar
-        project={project}
-        onSettings={() => setShowSettings(true)}
-        onHandoff={() => setShowHandoff(true)}
-        onExportProject={exportProjectJson}
-        preferences={<PreferenceControls />}
-      />
+      <TopBar project={project} />
 
-      <div className="grid min-h-0 flex-1 grid-cols-[60px_280px_minmax(0,1fr)_360px] border-t border-[var(--border)] bg-[var(--background)]">
+      <div className="vad-ide-layout grid min-h-0 flex-1 grid-cols-[52px_250px_minmax(0,1fr)_minmax(300px,336px)] border-t border-[var(--border)] bg-[var(--background)]">
         <ToolRail activePanel={sidePanel} onPanelChange={setSidePanel} />
         <SidePanelContent
           panel={sidePanel}
@@ -547,139 +542,60 @@ export function IdeShell({ projectId }: IdeShellProps) {
   );
 }
 
-function SaveStatus({
-  projectId,
-  updatedAt,
-}: {
-  projectId: string;
-  updatedAt: string;
-}) {
-  const sync = useProjectStore((s) => s.diskSync[projectId] ?? "idle");
-  const label = formatSaveLabel(updatedAt);
-
-  if (sync === "saving") {
-    return (
-      <span className="flex items-center gap-1.5 whitespace-nowrap">
-        <Loader2 className="size-3 shrink-0 animate-spin text-[var(--primary)]" aria-hidden />
-        同步中…
-      </span>
-    );
-  }
-
-  if (sync === "error") {
-    return (
-      <span className="flex items-center gap-1.5 whitespace-nowrap text-red-600 dark:text-red-400">
-        <span className="size-1.5 shrink-0 rounded-full bg-red-500" aria-hidden />
-        保存失败
-      </span>
-    );
-  }
-
+function TopBar({ project }: { project: ProjectFile }) {
   return (
-    <span className="flex items-center gap-1.5 whitespace-nowrap">
-      <span
-        className="size-1.5 shrink-0 rounded-full bg-[var(--success)]"
-        aria-hidden
-      />
-      已保存 · {label}
-    </span>
-  );
-}
-
-function formatSaveLabel(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  if (!Number.isFinite(diff) || diff < 0) return "刚刚";
-  const sec = Math.floor(diff / 1000);
-  if (sec < 60) return "刚刚";
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min} 分钟前`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr} 小时前`;
-  return new Date(iso).toLocaleDateString("zh-CN", {
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function TopBar({
-  project,
-  onSettings,
-  onHandoff,
-  onExportProject,
-  preferences,
-}: {
-  project: ProjectFile;
-  onSettings: () => void;
-  onHandoff: () => void;
-  onExportProject: () => void;
-  preferences: React.ReactNode;
-}) {
-  return (
-    <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-between gap-4 border-b border-[var(--border)] bg-[var(--surface)] px-4">
+    <header className="vad-ide-topbar sticky top-0 z-40 flex h-14 shrink-0 items-center justify-between gap-4 border-b border-[var(--border)] bg-[var(--surface)] px-4">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <Link
           href="/"
-          className="app-logo grid size-8 shrink-0 place-items-center rounded-lg transition-opacity hover:opacity-85"
+          className="app-logo grid size-7 shrink-0 place-items-center transition-opacity hover:opacity-85"
           title="返回首页"
         >
-          <Sparkles className="size-4" />
+          <span className="font-serif text-[13px] italic leading-none">◇</span>
         </Link>
+        <div className="hidden items-center gap-2 font-mono text-[10px] text-[var(--muted)] sm:flex">
+          <span>项目</span>
+          <span className="text-[var(--border)]">/</span>
+        </div>
         <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-sm font-semibold tracking-tight text-[var(--foreground)]">
+          <span className="truncate text-[13px] font-semibold tracking-[-0.02em] text-[var(--foreground)]">
             {project.title}
           </span>
-          <span className="app-badge shrink-0">画布</span>
+          <span className="app-badge shrink-0">CANVAS</span>
         </div>
-        <span className="hidden truncate text-xs text-[var(--muted)] lg:inline">
-          {project.brief?.platform ?? "项目"}
+        <span className="hidden truncate text-[11px] text-[var(--muted)] lg:inline">
+          {project.brief?.platform ?? "本地项目"}
           {project.brief?.visualStyle ? ` · ${project.brief.visualStyle}` : ""}
         </span>
-      </div>
-
-      <div className="hidden shrink-0 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs text-[var(--muted)] xl:flex">
-        <SaveStatus projectId={project.id} updatedAt={project.updatedAt} />
-        <span className="h-3 w-px bg-[var(--border)]" aria-hidden />
-        <ImageIcon className="size-3.5 text-[var(--primary)]" />
-        <span>
-          {(project.assets ?? []).filter((a) => a.status !== "discarded").length}{" "}
-          张素材
+        <span className="vad-ide-stage-pill hidden sm:inline-flex">
+          <span aria-hidden />03 Direction
         </span>
       </div>
 
-      <div className="flex shrink-0 items-center gap-1.5">
-        {preferences}
-        <span className="mx-1 h-5 w-px bg-[var(--border)]" aria-hidden />
-        <button
-          type="button"
-          onClick={onExportProject}
-          className="grid size-8 place-items-center rounded-lg text-[var(--muted)] transition-colors hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)]"
-          data-tip="导出项目 JSON"
-          data-tip-bottom=""
-          aria-label="导出项目 JSON"
-        >
-          <Download className="size-4" />
-        </button>
-        <button
-          type="button"
-          onClick={onSettings}
-          className="grid size-8 place-items-center rounded-lg text-[var(--muted)] transition-colors hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)]"
-          data-tip="模型与 MCP 设置"
-          data-tip-bottom=""
-          aria-label="模型与 MCP 设置"
-        >
-          <Settings className="size-4" />
-        </button>
-        <button
-          type="button"
-          onClick={onHandoff}
-          className="app-primary ml-1.5 inline-flex h-9 items-center gap-2 rounded-lg px-4 text-xs font-semibold"
-        >
-          <Share2 className="size-3.5" />
-          导出 Handoff
-        </button>
+      <div className="hidden shrink-0 items-center gap-2 text-[10px] text-[var(--muted)] xl:flex">
+        <span className="vad-ide-status-pill">
+          <span className="size-1.5 rounded-full bg-[var(--success)]" aria-hidden />
+          已保存
+        </span>
+        <span className="vad-ide-status-pill font-mono">
+          {(project.assets ?? []).filter((a) => a.status !== "discarded").length} 素材
+        </span>
       </div>
+
+      <nav className="app-header-actions" aria-label="全局操作">
+        <PreferenceControls />
+        <a
+          href="https://github.com/Zullllkar/visual-agent-designer"
+          target="_blank"
+          rel="noreferrer"
+          className="app-header-action"
+        >
+          <span>GitHub</span>
+        </a>
+        <Link href="/projects" className="app-header-action app-header-action-primary">
+          <span>Canvas</span>
+        </Link>
+      </nav>
     </header>
   );
 }
@@ -700,7 +616,7 @@ function ToolRail({
   ];
 
   return (
-    <aside className="flex h-full w-[60px] shrink-0 flex-col items-center gap-1.5 border-r border-[var(--border)] bg-[var(--surface)] py-4">
+    <aside className="vad-tool-rail flex h-full w-[52px] shrink-0 flex-col items-center gap-1 border-r border-[var(--border)] bg-[var(--surface)] py-3">
       {items.map((item) => (
         <button
           key={item.label}
@@ -708,7 +624,7 @@ function ToolRail({
           onClick={() => onPanelChange(item.panel)}
           aria-pressed={activePanel === item.panel ? "true" : "false"}
           className={
-            "flex w-12 flex-col items-center gap-1 rounded-lg py-2 text-[10px] font-medium transition-colors duration-150 " +
+            "flex w-9 flex-col items-center gap-1 rounded-[var(--radius-md)] py-2 text-[9px] font-medium transition-colors duration-150 " +
             (activePanel === item.panel
               ? "bg-[var(--primary-soft)] text-[var(--primary)]"
               : "text-[var(--muted)] hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)]")

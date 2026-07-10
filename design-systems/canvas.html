@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Canvas · Visual Agent Designer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800&family=Inter:wght@400;500;600&family=Playfair+Display:ital,wght@0,500;1,500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    /* Cool-cream OSS editorial — shared with landing.html */
+    :root {
+      --paper: #f1efe8;
+      --paper-mid: #e9e7e0;
+      --paper-warm: #e9e7e0;
+      --bone: #fafaf7;
+      --stage: #f4f2ec;
+      --ink: #1a1916;
+      --ink-soft: #2c2a26;
+      --mute: #5c5850;
+      --faint: #8a8680;
+      --coral: #c96b5c;
+      --olive: #5f6648;
+      --line: rgba(26, 25, 22, 0.09);
+      --line-strong: rgba(26, 25, 22, 0.15);
+      --shadow: 0 10px 28px -20px rgba(26, 25, 22, 0.16);
+      --serif: 'Playfair Display', Georgia, serif;
+      --sans: 'Inter Tight', 'Inter', system-ui, sans-serif;
+      --body: 'Inter', system-ui, sans-serif;
+      --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+      --radius: 3px;
+      --rail: 52px;
+      --agent: min(336px, 32vw);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+    body {
+      background: var(--paper);
+      color: var(--ink);
+      font: 14px/1.5 var(--body);
+      -webkit-font-smoothing: antialiased;
+    }
+    body::before {
+      content: '';
+      position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      opacity: 0.26; mix-blend-mode: multiply;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.12  0 0 0 0 0.11  0 0 0 0 0.10  0 0 0 0.04 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+      background-size: 240px 240px;
+    }
+    button, input, textarea { font: inherit; color: inherit; }
+    button { cursor: pointer; border: 0; background: none; }
+
+    .shell {
+      position: relative; z-index: 1;
+      display: grid; grid-template-rows: 54px 1fr; height: 100%;
+    }
+
+    /* —— topbar —— */
+    .topbar {
+      display: flex; align-items: center; gap: 14px;
+      padding: 0 16px;
+      background: color-mix(in srgb, var(--bone) 88%, transparent);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--line);
+    }
+    .brand {
+      display: inline-flex; align-items: center; gap: 8px;
+      text-decoration: none; color: var(--ink);
+      font-family: var(--sans); font-weight: 700; font-size: 14px;
+      letter-spacing: -0.02em;
+    }
+    .brand-mark {
+      width: 24px; height: 24px; border: 1.5px solid var(--ink);
+      display: grid; place-items: center;
+      font-family: var(--serif); font-style: italic; font-size: 12px;
+      border-radius: var(--radius); background: var(--bone);
+    }
+    .crumb {
+      font-size: 12.5px; color: var(--faint); font-family: var(--sans);
+    }
+    .crumb strong { color: var(--ink-soft); font-weight: 600; }
+    .status-pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      height: 28px; padding: 0 12px;
+      border: 1px solid var(--line); background: var(--paper);
+      font-family: var(--sans); font-size: 11px; font-weight: 700;
+      letter-spacing: 0.03em; color: var(--ink-soft);
+      border-radius: 999px;
+    }
+    .status-pill i {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--coral);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 22%, transparent);
+    }
+    .top-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .btn {
+      height: 32px; padding: 0 12px;
+      border: 1.5px solid var(--line); background: var(--bone); color: var(--ink);
+      font-family: var(--sans); font-size: 12.5px; font-weight: 700;
+      display: inline-flex; align-items: center; gap: 6px;
+      border-radius: var(--radius);
+      letter-spacing: -0.01em;
+      transition: background .12s, border-color .12s, color .12s;
+    }
+    .btn:hover { border-color: var(--ink); }
+    .btn-primary {
+      background: var(--ink); border-color: var(--ink); color: var(--bone);
+    }
+    .btn-primary:hover {
+      background: var(--ink-soft); border-color: var(--ink-soft); color: var(--bone);
+    }
+
+    /* —— workspace —— */
+    .workspace {
+      display: grid;
+      grid-template-columns: var(--rail) 1fr var(--agent);
+      min-height: 0;
+    }
+    .rail {
+      background: var(--bone);
+      border-right: 1px solid var(--line);
+      display: flex; flex-direction: column; align-items: center;
+      padding: 12px 0; gap: 4px;
+    }
+    .rail-btn {
+      width: 36px; height: 36px; border-radius: var(--radius);
+      color: var(--mute);
+      display: grid; place-items: center;
+      transition: background .12s, color .12s;
+    }
+    .rail-btn:hover { background: var(--paper-warm); color: var(--ink); }
+    .rail-btn.active { background: var(--ink); color: var(--bone); }
+    .rail-btn svg {
+      width: 17px; height: 17px; stroke: currentColor; fill: none;
+      stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round;
+    }
+    .rail-spacer { flex: 1; }
+
+    .stage {
+      position: relative; min-width: 0; min-height: 0;
+      background: var(--stage); overflow: hidden;
+    }
+    .stage-grid {
+      position: absolute; inset: 0; pointer-events: none;
+      background-image: radial-gradient(rgba(28, 27, 23, 0.07) 1px, transparent 1px);
+      background-size: 24px 24px;
+      opacity: 0.55;
+    }
+    .canvas-world {
+      position: absolute; inset: 0;
+      transform-origin: 0 0; cursor: grab;
+    }
+    .canvas-world.panning { cursor: grabbing; }
+    .edges {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      overflow: visible; pointer-events: none;
+    }
+    .edge {
+      fill: none; stroke: var(--ink); stroke-width: 1.5;
+      stroke-linecap: round; opacity: 0.32;
+    }
+    .edge.dim { opacity: 0.16; stroke: var(--faint); }
+    .edge-flow {
+      stroke: var(--coral); opacity: 0.75;
+      stroke-dasharray: 5 7;
+      animation: dash 1.2s linear infinite;
+    }
+    @keyframes dash { to { stroke-dashoffset: -24; } }
+    @media (prefers-reduced-motion: reduce) {
+      .edge-flow { animation: none; }
+    }
+
+    .node {
+      position: absolute; width: 204px; min-height: 96px;
+      background: var(--bone);
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      user-select: none; cursor: grab;
+      display: flex; flex-direction: column;
+    }
+    .node:active { cursor: grabbing; }
+    .node.selected {
+      border-color: var(--ink);
+      box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--ink) 18%, transparent), var(--shadow);
+    }
+    .node-head {
+      display: flex; align-items: center; gap: 8px;
+      padding: 12px 12px 6px;
+      font-family: var(--sans); font-size: 12.5px; font-weight: 700;
+      letter-spacing: -0.015em;
+    }
+    .node-badge {
+      width: 22px; height: 22px; border-radius: var(--radius);
+      display: grid; place-items: center;
+      font-family: var(--mono); font-size: 10px; font-weight: 500;
+      color: var(--bone); background: var(--ink);
+    }
+    .node-badge.done { background: var(--olive); }
+    .node-badge.run { background: var(--coral); }
+    .node-badge.wait { background: var(--faint); }
+    .node-body {
+      padding: 0 12px 12px; color: var(--mute);
+      font-size: 12px; line-height: 1.45;
+    }
+    .node-ports {
+      display: flex; justify-content: space-between;
+      padding: 0 8px 8px;
+    }
+    .port {
+      width: 12px; height: 12px; border-radius: 50%;
+      background: var(--bone); border: 2px solid var(--ink);
+      pointer-events: auto; cursor: crosshair;
+    }
+    .port:hover { background: var(--ink); }
+
+    .chip-card {
+      position: absolute; width: 224px;
+      background: var(--bone);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 14px 14px 16px;
+    }
+    .chip-card h4 {
+      font-family: var(--sans); font-size: 12px; font-weight: 700;
+      letter-spacing: -0.02em; margin-bottom: 10px;
+    }
+    .chip-card h4 em {
+      font-family: var(--serif); font-style: italic; font-weight: 500;
+    }
+    .swatch-row { display: flex; gap: 6px; margin-bottom: 8px; }
+    .swatch {
+      width: 22px; height: 22px; border-radius: var(--radius);
+      border: 1px solid var(--line);
+    }
+    .chip-meta {
+      font-family: var(--mono); font-size: 11px; color: var(--mute);
+    }
+    .tag-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
+    .tag {
+      font-family: var(--sans); font-size: 10px; font-weight: 600;
+      padding: 3px 7px; border: 1px solid var(--line);
+      color: var(--mute); border-radius: var(--radius);
+      background: var(--stage);
+    }
+
+    .toolbar {
+      position: absolute; left: 50%; bottom: 18px;
+      transform: translateX(-50%);
+      display: flex; align-items: center; gap: 3px; padding: 5px;
+      background: color-mix(in srgb, var(--bone) 92%, transparent);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      border: 1px solid var(--line); border-radius: var(--radius);
+      box-shadow: var(--shadow); z-index: 15;
+    }
+    .tool {
+      width: 34px; height: 34px; border-radius: var(--radius);
+      color: var(--mute); display: grid; place-items: center;
+    }
+    .tool:hover { background: var(--paper-warm); color: var(--ink); }
+    .tool.active { background: var(--ink); color: var(--bone); }
+    .tool svg {
+      width: 15px; height: 15px; stroke: currentColor; fill: none;
+      stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+    }
+    .zoom-label {
+      min-width: 46px; text-align: center;
+      font-family: var(--mono); font-size: 11px; color: var(--mute);
+      font-variant-numeric: tabular-nums; padding: 0 4px;
+    }
+
+    .agent {
+      background: var(--bone);
+      border-left: 1px solid var(--line);
+      display: grid; grid-template-rows: auto 1fr auto;
+      min-height: 0;
+    }
+    .agent-head {
+      padding: 14px 16px 12px;
+      background: var(--paper);
+      border-bottom: 1px solid var(--line);
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    }
+    .agent-head h2 {
+      font-family: var(--sans); font-size: 13px; font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+    .agent-head h2 em {
+      font-family: var(--serif); font-style: italic; font-weight: 500;
+    }
+    .agent-head span {
+      font-family: var(--mono); font-size: 10.5px; color: var(--faint);
+    }
+    .messages {
+      overflow: auto; padding: 14px;
+      display: flex; flex-direction: column; gap: 10px;
+      background: var(--stage);
+    }
+    .bubble {
+      background: var(--bone);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      font-size: 13px; line-height: 1.55;
+    }
+    .bubble.user {
+      border-color: var(--line-strong);
+      background: color-mix(in srgb, var(--bone) 70%, #fff);
+    }
+    .bubble .who {
+      font-family: var(--sans); font-size: 10.5px; font-weight: 700;
+      letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--faint); margin-bottom: 5px;
+    }
+    .bubble.agent .who { color: var(--ink-soft); }
+    .suggest {
+      display: flex; flex-wrap: wrap; gap: 6px;
+      padding: 0 14px 10px; background: var(--stage);
+    }
+    .suggest button {
+      height: 28px; padding: 0 10px; border-radius: var(--radius);
+      border: 1px solid var(--line); background: var(--bone);
+      font-family: var(--sans); font-size: 11.5px; font-weight: 600;
+      color: var(--mute);
+    }
+    .suggest button:hover { border-color: var(--ink); color: var(--ink); }
+    .composer {
+      padding: 12px 14px 14px; background: var(--paper);
+      border-top: 1px solid var(--line);
+      display: grid; gap: 8px;
+    }
+    .composer textarea {
+      width: 100%; min-height: 72px; resize: none;
+      border: 1.5px solid var(--line); border-radius: var(--radius);
+      padding: 10px 12px; background: var(--bone); outline: none;
+    }
+    .composer textarea:focus { border-color: var(--ink); }
+    .composer-row {
+      display: flex; align-items: center;
+      justify-content: space-between; gap: 8px;
+    }
+    .composer-row .hint {
+      font-size: 11px; color: var(--faint); font-family: var(--mono);
+    }
+
+    .inspector {
+      position: absolute; top: 14px; left: 14px; width: 228px; z-index: 12;
+      background: var(--bone); border: 1px solid var(--line);
+      border-radius: var(--radius); box-shadow: var(--shadow);
+      padding: 12px 14px; display: none;
+    }
+    .inspector.open { display: block; }
+    .inspector h3 {
+      font-family: var(--sans); font-size: 12px; font-weight: 800;
+      letter-spacing: -0.02em; margin-bottom: 10px;
+    }
+    .inspector dl {
+      display: grid; grid-template-columns: 56px 1fr;
+      gap: 6px 8px; font-size: 12px;
+    }
+    .inspector dt {
+      color: var(--faint); font-family: var(--mono); font-size: 11px;
+    }
+    .inspector dd {
+      font-weight: 600; font-family: var(--sans);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .toast {
+      position: absolute; top: 14px; right: 14px; z-index: 30;
+      background: var(--ink); color: var(--bone);
+      font-family: var(--sans); font-size: 12px; font-weight: 600;
+      padding: 8px 14px; border-radius: var(--radius);
+      opacity: 0; transform: translateY(-6px);
+      transition: .2s; pointer-events: none;
+    }
+    .toast.show { opacity: 1; transform: none; }
+
+    @media (max-width: 980px) {
+      .workspace { grid-template-columns: var(--rail) 1fr; }
+      .agent {
+        position: absolute; right: 0; top: 0; bottom: 0;
+        width: min(340px, 88vw); z-index: 25;
+        box-shadow: var(--shadow);
+        transform: translateX(105%); transition: transform .2s;
+      }
+      .agent.open { transform: none; }
+      .top-actions .hide-sm { display: none; }
+    }
+    @media (max-width: 640px) {
+      .crumb { display: none; }
+      .chip-card { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell" data-od-id="canvas-shell">
+    <header class="topbar" data-od-id="canvas-topbar">
+      <a class="brand" href="./landing.html" data-od-id="brand-link">
+        <span class="brand-mark">◇</span>
+        <span>VAD</span>
+      </a>
+      <div class="crumb" data-od-id="project-crumb">项目 / <strong>SaaS 落地视觉包</strong></div>
+      <div class="status-pill" data-od-id="pipeline-status"><i></i>03 Direction</div>
+      <div class="top-actions">
+        <a class="btn hide-sm" id="canvas-github" href="https://github.com/Zullllkar/visual-agent-designer" target="_blank" rel="noopener noreferrer" data-od-id="btn-github" title="GitHub">GitHub</a>
+        <button class="btn hide-sm" type="button" id="btn-toggle-agent" data-od-id="btn-toggle-agent">Agent</button>
+        <button class="btn" type="button" id="btn-settings" data-od-id="btn-settings">设置</button>
+        <button class="btn btn-primary" type="button" id="btn-handoff" data-od-id="btn-handoff">导出 Handoff</button>
+      </div>
+    </header>
+
+    <div class="workspace" data-od-id="workspace">
+      <aside class="rail" data-od-id="icon-rail" aria-label="工具轨">
+        <button class="rail-btn active" type="button" data-tool="select" title="选择" data-od-id="rail-select" aria-label="选择">
+          <svg viewBox="0 0 24 24"><path d="M4 4l7 16 2-7 7-2z"/></svg>
+        </button>
+        <button class="rail-btn" type="button" data-tool="connect" title="连线" data-od-id="rail-connect" aria-label="连线">
+          <svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="12" r="3"/><path d="M9 12h6"/></svg>
+        </button>
+        <button class="rail-btn" type="button" data-tool="assets" title="素材" data-od-id="rail-assets" aria-label="素材">
+          <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 15l4-4 3 3 3-4 6 5"/></svg>
+        </button>
+        <button class="rail-btn" type="button" data-tool="layers" title="图层" data-od-id="rail-layers" aria-label="图层">
+          <svg viewBox="0 0 24 24"><path d="M12 4l8 4-8 4-8-4 8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 16l8 4 8-4"/></svg>
+        </button>
+        <div class="rail-spacer"></div>
+        <a class="rail-btn" href="./landing.html" title="落地页" data-od-id="rail-home" aria-label="返回落地页">
+          <svg viewBox="0 0 24 24"><path d="M5 12h14M5 12l5-5M5 12l5 5"/></svg>
+        </a>
+      </aside>
+
+      <main class="stage" id="stage" data-od-id="canvas-stage">
+        <div class="stage-grid" aria-hidden="true"></div>
+        <div class="canvas-world" id="world" data-od-id="canvas-world">
+          <svg class="edges" id="edges" data-od-id="edge-layer"></svg>
+
+          <div class="chip-card" style="left:64px;top:56px" data-od-id="spec-card" id="spec-card">
+            <h4>设计规范 · <em>冷奶油</em></h4>
+            <div class="swatch-row" aria-hidden="true">
+              <span class="swatch" style="background:#f1efe8"></span>
+              <span class="swatch" style="background:#fafaf7"></span>
+              <span class="swatch" style="background:#1a1916"></span>
+              <span class="swatch" style="background:#c96b5c"></span>
+            </div>
+            <div class="chip-meta">Inter Tight · Playfair · sparse coral</div>
+            <div class="tag-row">
+              <span class="tag">冷奶油纸</span>
+              <span class="tag">克制 OSS</span>
+              <span class="tag">开源</span>
+            </div>
+          </div>
+
+          <div class="chip-card" style="left:64px;top:210px" data-od-id="handoff-card">
+            <h4>交付卡</h4>
+            <div class="chip-meta">3 PNG · prompts · tokens</div>
+            <div style="margin-top:12px">
+              <button class="btn btn-primary" type="button" id="btn-handoff-card" style="width:100%;justify-content:center" data-od-id="btn-handoff-card">导出 Handoff</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="inspector" id="inspector" data-od-id="node-inspector">
+          <h3 id="insp-title">节点</h3>
+          <dl>
+            <dt>阶段</dt><dd id="insp-stage">—</dd>
+            <dt>状态</dt><dd id="insp-status">—</dd>
+            <dt>坐标</dt><dd id="insp-xy">—</dd>
+            <dt>连出</dt><dd id="insp-out">—</dd>
+          </dl>
+        </div>
+
+        <div class="toolbar" data-od-id="canvas-toolbar" role="toolbar" aria-label="画布工具条">
+          <button class="tool active" type="button" data-mode="select" data-od-id="tool-select" aria-label="选择" title="选择">
+            <svg viewBox="0 0 24 24"><path d="M4 4l7 16 2-7 7-2z"/></svg>
+          </button>
+          <button class="tool" type="button" data-mode="pan" data-od-id="tool-pan" aria-label="平移" title="平移">
+            <svg viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/><path d="M8 8l4-4 4 4M8 16l4 4 4-4"/></svg>
+          </button>
+          <button class="tool" type="button" data-mode="connect" data-od-id="tool-connect" aria-label="连线" title="连线">
+            <svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="12" r="3"/><path d="M9 12h6"/></svg>
+          </button>
+          <span class="zoom-label" id="zoom-label" data-od-id="zoom-label">100%</span>
+          <button class="tool" type="button" id="zoom-out" data-od-id="zoom-out" aria-label="缩小"><svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button>
+          <button class="tool" type="button" id="zoom-in" data-od-id="zoom-in" aria-label="放大"><svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg></button>
+          <button class="tool" type="button" id="zoom-fit" data-od-id="zoom-fit" aria-label="适应"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+        </div>
+        <div class="toast" id="toast" data-od-id="toast"></div>
+      </main>
+
+      <aside class="agent open" id="agent" data-od-id="agent-panel" aria-label="Agent 对话">
+        <div class="agent-head">
+          <h2 data-od-id="agent-title">Agent · <em>编排</em></h2>
+          <span id="agent-meta" data-od-id="agent-meta">8 阶段 · 本地</span>
+        </div>
+        <div class="messages" id="messages" data-od-id="chat-messages"></div>
+        <div class="suggest" id="suggest" data-od-id="suggest-chips"></div>
+        <form class="composer" id="composer" data-od-id="chat-composer">
+          <textarea id="chat-input" placeholder="描述下一步：调整方向、生成素材、导出 Handoff…" data-od-id="chat-input" rows="3"></textarea>
+          <div class="composer-row">
+            <span class="hint">Enter 发送</span>
+            <button class="btn btn-primary" type="submit" data-od-id="chat-send">发送</button>
+          </div>
+        </form>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    const NODES = [
+      { id: 'brief', num: '01', title: 'Brief', body: '产品想法 → 用户 / 目的 / 反参考', x: 340, y: 120, status: 'done' },
+      { id: 'architect', num: '02', title: 'Architect', body: '拆解信息架构与交付物清单', x: 580, y: 120, status: 'done' },
+      { id: 'direction', num: '03', title: 'Design Direction', body: '锁定冷奶油纸与 sparse coral', x: 820, y: 120, status: 'run' },
+      { id: 'layout', num: '04', title: 'Layout', body: '画板构图与素材槽位规划', x: 820, y: 280, status: 'wait' },
+      { id: 'content', num: '05', title: 'Content', body: '文案与 prompt 上下文', x: 580, y: 280, status: 'wait' },
+      { id: 'plan', num: '06', title: 'Image Plan', body: '生图计划与槽位映射', x: 340, y: 280, status: 'wait' },
+      { id: 'execute', num: '07', title: 'Image Execute', body: '高保真素材生成与落盘', x: 340, y: 440, status: 'wait' },
+      { id: 'critic', num: '08', title: 'Critic / Repair', body: '五维自检与修复回路', x: 580, y: 440, status: 'wait' }
+    ];
+    const EDGES = [
+      ['brief', 'architect'], ['architect', 'direction'], ['direction', 'layout'],
+      ['layout', 'content'], ['content', 'plan'], ['plan', 'execute'], ['execute', 'critic']
+    ];
+    const STATUS_LABEL = { done: '已完成', run: '进行中', wait: '等待' };
+    const SUGGESTS = ['继续跑 Direction', '钉住色板卡', '连接 Critic → Handoff', '导出 Handoff 包'];
+
+    const world = document.getElementById('world');
+    const edgesSvg = document.getElementById('edges');
+    const stage = document.getElementById('stage');
+    const inspector = document.getElementById('inspector');
+    const messages = document.getElementById('messages');
+    const suggest = document.getElementById('suggest');
+    const toast = document.getElementById('toast');
+    const zoomLabel = document.getElementById('zoom-label');
+    const agent = document.getElementById('agent');
+
+    let mode = 'select';
+    let scale = 1;
+    let panX = 40;
+    let panY = 20;
+    let selected = 'direction';
+    let connectFrom = null;
+    let drag = null;
+    let panning = null;
+    const nodeMap = Object.fromEntries(NODES.map((n) => [n.id, n]));
+    const edgeList = EDGES.map(([a, b]) => ({ a, b }));
+
+    function applyTransform() {
+      world.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + scale + ')';
+      zoomLabel.textContent = Math.round(scale * 100) + '%';
+    }
+
+    function portCenter(node, which) {
+      const w = 204, h = 96;
+      return {
+        x: node.x + (which === 'out' ? w : 0),
+        y: node.y + h * 0.55
+      };
+    }
+
+    function curve(a, b) {
+      const dx = Math.max(40, Math.abs(b.x - a.x) * 0.45);
+      return 'M' + a.x + ' ' + a.y + ' C' + (a.x + dx) + ' ' + a.y + ', ' + (b.x - dx) + ' ' + b.y + ', ' + b.x + ' ' + b.y;
+    }
+
+    function renderEdges() {
+      edgesSvg.innerHTML = '';
+      edgeList.forEach((e) => {
+        const na = nodeMap[e.a], nb = nodeMap[e.b];
+        if (!na || !nb) return;
+        const p1 = portCenter(na, 'out');
+        const p2 = portCenter(nb, 'in');
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', curve(p1, p2));
+        path.setAttribute('class', 'edge' + (na.status === 'run' || nb.status === 'run' ? ' edge-flow' : (na.status === 'wait' ? ' dim' : '')));
+        edgesSvg.appendChild(path);
+      });
+    }
+
+    function renderNodes() {
+      world.querySelectorAll('.node').forEach((el) => el.remove());
+      NODES.forEach((n) => {
+        const el = document.createElement('div');
+        el.className = 'node' + (selected === n.id ? ' selected' : '');
+        el.dataset.id = n.id;
+        el.style.left = n.x + 'px';
+        el.style.top = n.y + 'px';
+        el.setAttribute('data-od-id', 'node-' + n.id);
+        el.innerHTML =
+          '<div class="node-head"><span class="node-badge ' + n.status + '">' + n.num + '</span><span>' + n.title + '</span></div>' +
+          '<div class="node-body">' + n.body + '</div>' +
+          '<div class="node-ports"><span class="port" data-port="in" data-id="' + n.id + '"></span><span class="port" data-port="out" data-id="' + n.id + '"></span></div>';
+        world.appendChild(el);
+      });
+      renderEdges();
+      updateInspector();
+    }
+
+    function updateInspector() {
+      const n = nodeMap[selected];
+      if (!n) { inspector.classList.remove('open'); return; }
+      inspector.classList.add('open');
+      document.getElementById('insp-title').textContent = n.title;
+      document.getElementById('insp-stage').textContent = n.num + ' / 08';
+      document.getElementById('insp-status').textContent = STATUS_LABEL[n.status] || n.status;
+      document.getElementById('insp-xy').textContent = Math.round(n.x) + ', ' + Math.round(n.y);
+      const outs = edgeList.filter((e) => e.a === n.id).map((e) => nodeMap[e.b]?.title || e.b);
+      document.getElementById('insp-out').textContent = outs.length ? outs.join(' → ') : '—';
+    }
+
+    function showToast(text) {
+      toast.textContent = text;
+      toast.classList.add('show');
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => toast.classList.remove('show'), 1800);
+    }
+
+    function addMessage(who, text, kind) {
+      const div = document.createElement('div');
+      div.className = 'bubble ' + (kind || who);
+      div.setAttribute('data-od-id', 'msg-' + Date.now());
+      div.innerHTML = '<div class="who">' + who + '</div><div>' + text + '</div>';
+      messages.appendChild(div);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    function agentReply(userText) {
+      const lower = userText.toLowerCase();
+      if (/handoff|导出/.test(lower)) {
+        addMessage('Agent', 'Handoff 清单：PNG、prompts、冷奶油 tokens、Brief。点右上角「导出 Handoff」打包。', 'agent');
+        showToast('Handoff 清单已就绪');
+        return;
+      }
+      if (/连|edge|connect/.test(lower)) {
+        mode = 'connect';
+        setModeUI();
+        addMessage('Agent', '已切到连线：先点出端口，再点入端口。流水线已按 Brief→…→Critic 串好。', 'agent');
+        return;
+      }
+      if (/方向|direction|色板|系统|atelier|暖纸|冷奶油|coral/.test(lower)) {
+        selected = 'direction';
+        nodeMap.direction.status = 'run';
+        renderNodes();
+        addMessage('Agent', 'Design Direction：冷奶油 #f1efe8、骨色面板、coral 仅作状态点、Inter Tight + Playfair。规范卡已钉在左上。', 'agent');
+        return;
+      }
+      addMessage('Agent', '收到。继续在画布上推进编排——拖节点、拉线，或让我推进下一阶段。', 'agent');
+    }
+
+    function setModeUI() {
+      document.querySelectorAll('.tool[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+      document.querySelectorAll('.rail-btn[data-tool]').forEach((b) => {
+        b.classList.toggle('active', b.dataset.tool === (mode === 'connect' ? 'connect' : 'select'));
+      });
+      world.classList.toggle('panning', mode === 'pan');
+    }
+
+    addMessage('Agent', '工作台就绪。冷奶油纸 · 左轨 · 右侧 Agent。可拖节点、从端口拉线。', 'agent');
+    addMessage('你', '按首页风格，去掉模板感，突出编排与设计系统。', 'user');
+    addMessage('Agent', '八阶段已铺开，规范卡与首页共用 token。当前停在 03 Design Direction。', 'agent');
+    SUGGESTS.forEach((s) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = s;
+      b.setAttribute('data-od-id', 'suggest-' + s.slice(0, 6));
+      b.addEventListener('click', () => {
+        addMessage('你', s, 'user');
+        agentReply(s);
+      });
+      suggest.appendChild(b);
+    });
+    renderNodes();
+    applyTransform();
+
+    world.addEventListener('pointerdown', (e) => {
+      const port = e.target.closest('.port');
+      const nodeEl = e.target.closest('.node');
+
+      if (port) {
+        e.stopPropagation();
+        const id = port.dataset.id;
+        if (mode !== 'connect' && port.dataset.port === 'out') mode = 'connect';
+        if (port.dataset.port === 'out') {
+          connectFrom = id;
+          showToast('从「' + nodeMap[id].title + '」拉线…');
+        } else if (connectFrom && connectFrom !== id) {
+          if (!edgeList.some((ed) => ed.a === connectFrom && ed.b === id)) {
+            edgeList.push({ a: connectFrom, b: id });
+            showToast('已连接 ' + nodeMap[connectFrom].title + ' → ' + nodeMap[id].title);
+            addMessage('Agent', '新增连线：' + nodeMap[connectFrom].title + ' → ' + nodeMap[id].title + '。', 'agent');
+          }
+          connectFrom = null;
+          renderEdges();
+        }
+        setModeUI();
+        return;
+      }
+
+      if (nodeEl && mode !== 'pan') {
+        e.stopPropagation();
+        selected = nodeEl.dataset.id;
+        const n = nodeMap[selected];
+        drag = { id: selected, ox: e.clientX, oy: e.clientY, sx: n.x, sy: n.y };
+        nodeEl.setPointerCapture(e.pointerId);
+        renderNodes();
+        return;
+      }
+
+      if (mode === 'pan' || e.button === 1 || e.altKey) {
+        panning = { ox: e.clientX, oy: e.clientY, sx: panX, sy: panY };
+        world.classList.add('panning');
+        stage.setPointerCapture(e.pointerId);
+      }
+    });
+
+    window.addEventListener('pointermove', (e) => {
+      if (drag) {
+        const n = nodeMap[drag.id];
+        n.x = drag.sx + (e.clientX - drag.ox) / scale;
+        n.y = drag.sy + (e.clientY - drag.oy) / scale;
+        const el = world.querySelector('.node[data-id="' + drag.id + '"]');
+        if (el) {
+          el.style.left = n.x + 'px';
+          el.style.top = n.y + 'px';
+        }
+        renderEdges();
+        updateInspector();
+      } else if (panning) {
+        panX = panning.sx + (e.clientX - panning.ox);
+        panY = panning.sy + (e.clientY - panning.oy);
+        applyTransform();
+      }
+    });
+
+    window.addEventListener('pointerup', () => {
+      drag = null;
+      panning = null;
+      world.classList.remove('panning');
+    });
+
+    stage.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.06 : 0.06;
+      scale = Math.min(1.6, Math.max(0.55, scale + delta));
+      applyTransform();
+    }, { passive: false });
+
+    document.querySelectorAll('.tool[data-mode]').forEach((btn) => {
+      btn.addEventListener('click', () => { mode = btn.dataset.mode; connectFrom = null; setModeUI(); });
+    });
+    document.querySelectorAll('.rail-btn[data-tool]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const t = btn.dataset.tool;
+        if (t === 'connect') mode = 'connect';
+        else if (t === 'select') mode = 'select';
+        else showToast(t === 'assets' ? '素材：画布上的规范卡与交付卡' : '图层：八阶段节点即当前图层');
+        setModeUI();
+      });
+    });
+    document.getElementById('zoom-in').addEventListener('click', () => { scale = Math.min(1.6, scale + 0.1); applyTransform(); });
+    document.getElementById('zoom-out').addEventListener('click', () => { scale = Math.max(0.55, scale - 0.1); applyTransform(); });
+    document.getElementById('zoom-fit').addEventListener('click', () => { scale = 1; panX = 40; panY = 20; applyTransform(); });
+
+    document.getElementById('composer').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = document.getElementById('chat-input');
+      const text = input.value.trim();
+      if (!text) return;
+      addMessage('你', text, 'user');
+      input.value = '';
+      agentReply(text);
+    });
+    document.getElementById('chat-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        document.getElementById('composer').requestSubmit();
+      }
+    });
+
+    function handoff() {
+      showToast('已模拟导出 Handoff');
+      addMessage('Agent', 'Handoff 包已生成（原型）：assets · prompts · tokens · Brief。可交给 coding agent。', 'agent');
+    }
+    document.getElementById('btn-handoff').addEventListener('click', handoff);
+    document.getElementById('btn-handoff-card').addEventListener('click', handoff);
+    document.getElementById('btn-settings').addEventListener('click', () => {
+      showToast('设置：LLM / 生图 · BYOK · 本地');
+      addMessage('Agent', 'Provider 本地配置，API Key 不上传。', 'agent');
+    });
+    document.getElementById('btn-toggle-agent').addEventListener('click', () => agent.classList.toggle('open'));
+  })();
+  </script>
+</body>
+</html>
