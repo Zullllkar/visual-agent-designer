@@ -1,114 +1,59 @@
-# Architecture
+# Architecture（Visual Agent Designer）
 
-当前项目是一个本地优先的开源设计工具原型，目标是先跑通设计体验，而不是 SaaS 平台能力。
+本地优先的可视化设计 Agent IDE：Next.js 16 + React 19 + tldraw + Zustand，项目与日志落盘 `.vad/projects/`。
 
-## Current Scope
-
-```txt
-Browser UI
-  -> Local Agent Workflow
-  -> Canvas JSON
-  -> SVG Renderer
-  -> PNG / JSON Export
-```
-
-当前没有后端、登录、数据库、订阅、云端存储。草稿保存在浏览器 `localStorage`。
-
-## Agent Flow
-
-当前 `generateDesign()` 里用本地 mock 实现了完整工作流：
+## 运行时拓扑
 
 ```txt
-Brief Agent
-  解析产品或内容主题
+Browser (Next.js App Router)
+  ├─ 首页 BriefLauncher
+  │     POST /api/agents/generate/stream  →  SSE: log | progress | final_project
+  ├─ IDE /projects/[id]
+  │     POST /api/chat                    →  SSE: thinking | tool_* | pipeline_log | final_project
+  │     GET  /api/projects/[id]/watch    →  SSE: .vad 文件热更新
+  │     GET  /api/projects/[id]/pipeline-log
+  └─ 可选 VAD_DAEMON_URL → 独立 Daemon（见 docs/DAEMON.md）
 
-Design Director Agent
-  选择风格、调色板、视觉方向
-
-Layout Agent
-  生成产品 UI 或小红书图文的可编辑画布结构
-
-Asset Agent
-  预留图片模型生成入口
-
-Review Agent
-  预留质量评估入口
+持久化
+  ├─ IndexedDB（project-store、Zustand persist）
+  └─ .vad/projects/<id>/
+        project.json, design/pages/*.canvas.json, pipeline-log.jsonl, chat-history.jsonl, …
 ```
 
-后续接入真实模型时，建议不要让图像模型直接生成全部 UI。更稳定的方式是：
-
-- 图像模型生成背景、插画、产品视觉素材。
-- 文字、按钮、卡片、布局由画布 JSON 渲染。
-- Review Agent 检查结果是否符合 Brief、文字是否清晰、构图是否合理。
-
-## Canvas Schema
-
-当前画布节点在 `app.js` 内部定义，核心节点：
-
-- `rect`
-- `text`
-- `image`
-- `pill`
-- `card`
-
-每个节点包含：
-
-- `id`
-- `type`
-- `x`
-- `y`
-- `width`
-- `height`
-- `fill`
-- `color`
-- `radius`
-- `content`
-
-后续建议把 schema 抽离成独立模块，例如：
+## Agent 流水线（设计主路径）
 
 ```txt
-src/schema/canvas.ts
-src/renderer/svg-renderer.ts
-src/agents/layout-agent.ts
-src/providers/image-provider.ts
+Brief → Architect → Design Direction → Layout（结构）
+  → Content 润色 → Image Plan → Image Execute → Critic ↔ Repair
 ```
 
-## Model Provider Boundary
+- **首页**：`generateProjectFromIdea` + `PipelineLogger`（source: `generate`）
+- **IDE Chat**：`chat-orchestrator` 工具规划 + 顺序执行 + `PipelineLogger`（source: `chat`）
+- **生图**：独立 Image Provider，不替代 Layout 结构
 
-建议后续统一抽象模型接口：
+## 流式 UI（Cursor 风格）
 
-```ts
-interface ImageModelProvider {
-  generateImage(input: {
-    prompt: string
-    width: number
-    height: number
-    referenceImages?: string[]
-  }): Promise<{
-    imageUrl: string
-    model: string
-    cost?: number
-  }>
-}
-```
+| 场景 | 组件 | 事件源 |
+|------|------|--------|
+| IDE 助理 | `ChatStreamView` + `ChatTimelineBody` | `/api/chat` |
+| 首页生成 | `BriefLauncher` + `ChatTimelineBody` | `/api/agents/generate/stream` |
 
-可实现：
+共用 `buildChatTimeline()`：合并历史消息与 `liveEvents`（思考、工具、文件、`pipeline_log`、`code_diff`）。
 
-- `OpenAIImageProvider`
-- `GeminiNanoBananaProvider`
-- `FluxProvider`
-- `ComfyUIProvider`
+- 编排规划：OpenAI-compatible / Anthropic 支持 `generateTextStream` 输出规划前言（40ms 轮询并入 SSE）
+- 首页生成 SSE：`log` + `code_diff`（layout / repair 页面 JSON 预览）+ `progress`
+- HTML 原型工具默认不出现在规划器；仅当用户明确提到 HTML/网页原型时启用
+- Handoff 后写代码：`HandoffDialog` / Chat Handoff 卡片内 **一键复制 MCP** 或写入 `~/.claude.json`
+- 编排规划流式：OpenAI-compatible、Anthropic、Gemini（`generateTextStream`）
 
-## Recommended Next Refactor
+## Provider 边界
 
-当原型验证有效后，可以迁移到：
+- LLM：OpenAI-compatible、Anthropic、Gemini、DeepSeek、**Claude/Codex CLI**（`cli-adapter`）
+- Image：OpenAI / Gemini / SiliconFlow 等（见 `src/lib/providers/registry.ts`）
+- 编排：JSON 计划 + 工具调用；CLI 用于本地沙盒任务，HTML 原型为可选分支（非主路径）
 
-```txt
-Vite + React + TypeScript
-  -> Zustand
-  -> Konva or tldraw
-  -> Local-first project files
-  -> Optional FastAPI model proxy
-```
+## 文档索引
 
-这个阶段仍然可以保持开源和本地优先，只把模型 API key、图片生成、文件存储做成可选插件。
+- 路线图：`docs/REBUILD_PLAN.md`
+- Daemon：`docs/DAEMON.md`
+- 产品规格：`docs/PRODUCT_ARCHITECTURE_SPEC.md`

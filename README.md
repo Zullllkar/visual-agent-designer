@@ -1,36 +1,56 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Visual Agent Designer (VAD)
 
-## Getting Started
+本地优先的可视化设计 Agent IDE：把「产品想法 → Brief → 视觉方向 → 高保真图片素材 → Handoff 开发包」串成一条可追踪流水线，供 Cursor / Claude Code / Codex 等 coding agent 直接落地代码。
 
-First, run the development server:
+## 特性
+
+- **ChatCanvas 工作台**：在无限画布（tldraw）上产出成品视觉资产，而非网页结构 mock
+- **多 Agent 流水线**：Brief → Architect → Design Direction → Layout → Content → Image Plan → Image Execute → Critic / Repair
+- **本地优先**：项目数据落盘 `.vad/projects/`，LLM / 生图 Provider 在设置页配置，无需上传 API Key 到云端
+- **Handoff 导出**：PNG 素材、prompts、设计 token、Brief 上下文一键打包
+- **可选 Daemon**：独立进程处理落盘，避免 Next.js 热重载与长任务争抢（见 [docs/DAEMON.md](docs/DAEMON.md)）
+
+## 技术栈
+
+- Next.js 16 · React 19 · TypeScript
+- tldraw 5 · Zustand · Tailwind CSS 4
+
+## 快速开始
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
+cp .env.example .env.local   # optional
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+打开 [http://localhost:3000](http://localhost:3000)。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+如需独立落盘进程（推荐开发时启用）：
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+# 终端 1
+pnpm daemon
 
-## Learn More
+# 终端 2 — 在 .env.local 中设置 VAD_DAEMON_URL=http://127.0.0.1:3921
+pnpm dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+## 脚本
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| 命令 | 说明 |
+|------|------|
+| `pnpm dev` | 启动 Next.js 开发服务器 |
+| `pnpm daemon` | 启动 VAD 落盘 Daemon（默认 `127.0.0.1:3921`） |
+| `pnpm build` | 生产构建 |
+| `pnpm start` | 启动生产服务器 |
+| `pnpm lint` | ESLint 检查 |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 文档
 
-## Deploy on Vercel
+- [架构概览](docs/ARCHITECTURE.md)
+- [Daemon 说明](docs/DAEMON.md)
+- [产品设计](PRODUCT.md)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## License
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Apache License 2.0

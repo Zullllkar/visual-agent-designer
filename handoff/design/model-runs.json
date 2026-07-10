@@ -1,0 +1,25 @@
+{
+  "count": 2,
+  "runs": [
+    {
+      "kind": "inline-image",
+      "pageId": "home",
+      "nodeId": "hJfZJWfG",
+      "prompt": "Clean, minimal, dark mode with purple accents, A clean, minimal dark mode app interface on a smartphone, purple accents, showing a dashboard with chat, tasks, and knowledge sections, glowing UI elements, no text, 3D render style, high quality",
+      "model": "mock-image",
+      "seed": "877165",
+      "width": 640,
+      "height": 640
+    },
+    {
+      "kind": "inline-image",
+      "pageId": "home",
+      "nodeId": "EFYKO7UA",
+      "prompt": "Clean, minimal, dark mode with purple accents, A dark mode smartphone app screenshot showing a chat interface with purple accent, minimal design, clean layout, no text, high quality 3D render",
+      "model": "mock-image",
+      "seed": "311225",
+      "width": 560,
+      "height": 500
+    }
+  ]
+}

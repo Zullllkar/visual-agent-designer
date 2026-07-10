@@ -1,0 +1,10 @@
+# 智能助手 - Cursor Rules
+
+你正在为这个产品写代码。请遵循以下原则：
+
+- 始终先读取 `SPEC.md` 与 `design/pages/*.svg` 获取设计上下文
+- 文案严格使用 `design/pages/*.canvas.json` 中的字段
+- 颜色 / 字号 / 间距引用 `design/tokens.json`
+- 视觉风格: Clean, minimal, dark mode with purple accents
+- 平台: app
+- 不确定时，先开 SVG 看实际效果再写代码
