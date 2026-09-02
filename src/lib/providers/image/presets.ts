@@ -10,12 +10,14 @@ export type ImagePresetId =
   | "openai-dalle"
   | "openai-gpt-image"
   | "siliconflow"
-  | "gemini-image";
+  | "gemini-image"
+  | "replicate";
 
 export type ImageProviderKind =
   | "openai-compatible"
   | "siliconflow"
-  | "gemini-image";
+  | "gemini-image"
+  | "replicate";
 
 export interface ImageModelOption {
   id: string;
@@ -151,6 +153,37 @@ export const IMAGE_PROVIDER_PRESETS: ImageProviderPreset[] = [
       },
     ],
   },
+  {
+    id: "replicate",
+    label: "Replicate (Flux/SDXL)",
+    kind: "replicate",
+    defaultBaseURL: "https://api.replicate.com/v1",
+    baseURLPlaceholder: "https://api.replicate.com/v1",
+    defaultModel: "black-forest-labs/flux-1.1-pro",
+    modelPlaceholder: "black-forest-labs/flux-1.1-pro",
+    models: [
+      {
+        id: "black-forest-labs/flux-1.1-pro",
+        label: "Flux 1.1 Pro",
+        note: "高质量 · 推荐",
+      },
+      {
+        id: "black-forest-labs/flux-1.1-pro-ultra",
+        label: "Flux 1.1 Pro Ultra",
+        note: "最高细节",
+      },
+      {
+        id: "black-forest-labs/flux-schnell",
+        label: "Flux Schnell",
+        note: "最快 · 低成本",
+      },
+      {
+        id: "stability-ai/sdxl",
+        label: "SDXL",
+        note: "Stable Diffusion XL",
+      },
+    ],
+  },
 ];
 
 export function getImagePreset(id: ImagePresetId): ImageProviderPreset {
@@ -165,6 +198,7 @@ export function inferImagePresetId(input: {
   model: string;
 }): ImagePresetId {
   if (input.kind === "gemini-image") return "gemini-image";
+  if (input.kind === "replicate") return "replicate";
   if (input.kind === "siliconflow") return "siliconflow";
   if (/^gpt-image/i.test(input.model)) return "openai-gpt-image";
   return "openai-dalle";

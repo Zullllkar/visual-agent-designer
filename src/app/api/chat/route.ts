@@ -1,28 +1,14 @@
 /**
- * POST /api/chat
+ * POST /api/chat（SSE 兼容层）
  * --------------------------------------------------------------
- * SSE 端点：接收 ChatSession（messages + project + providerConfig），
- * 流式输出 ChatStreamEvent，前端用手解 stream 逐条渲染。
+ * 新架构优先走 WebSocket /ws，此 SSE 端点保留为兼容层。
  *
- * Wire 格式（Open Design / Claude 都是这套）：
- *
- *   event: thinking
- *   data: {"text":"..."}
- *
- *   event: tool_call
- *   data: {"id":"...","name":"generate_layout"}
- *
- *   event: done
- *   data: {"reason":"complete","projectId":"..."}
- *
- * 最后一帧固定是 `event: done`，前端拿到后关流。
- *
- * 还有一个 `final_project` 自定义事件：在 done 之前推送整个 ProjectFile，
- * 让前端能直接拿到最新状态而不必再 GET。
+ * 优先使用 runChatTurnViaAgent（LangGraph Agent 模式），
+ * 失败时自动回退到 runChatTurn（旧编排器）。
  */
 
 import { z } from "zod";
-import { runChatTurn } from "@/lib/agents/chat-orchestrator";
+import { runChatTurn, runChatTurnViaAgent } from "@/lib/agents/chat-orchestrator";
 import { ChatMessageSchema } from "@/lib/agents/chat-schema";
 import { ProjectFileSchema } from "@/lib/project/schema";
 import type { ChatStreamEvent } from "@/lib/agents/chat-schema";
@@ -74,7 +60,7 @@ export async function POST(req: Request) {
   }
 
   const encoder = new TextEncoder();
-  const { events, resultPromise } = runChatTurn({
+  const { events, resultPromise } = runChatTurnViaAgent({
     project: parsed.data.project ?? null,
     messages: parsed.data.messages,
     providerConfig: parsed.data.providerConfig,

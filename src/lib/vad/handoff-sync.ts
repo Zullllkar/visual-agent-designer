@@ -10,6 +10,10 @@ import { promises as fs } from "node:fs";
 import { join, dirname } from "node:path";
 import type { ProjectFile } from "@/lib/project/schema";
 import { createHandoffTarget } from "@/lib/handoff/markdown-target";
+import {
+  listHandoffDestinations,
+  resolveHandoffPackKind,
+} from "@/lib/handoff/pack-kind";
 import { projectDir } from "./paths";
 import { ensureDir } from "./persist";
 
@@ -17,12 +21,9 @@ export async function syncHandoffBundle(project: ProjectFile): Promise<void> {
   const archHandoffDir = join(projectDir(project.id), "handoff");
   await ensureDir(archHandoffDir);
 
-  const targets: Array<"cursor" | "claude-code" | "codex" | "markdown"> = [
-    "cursor",
-    "claude-code",
-    "codex",
-    "markdown",
-  ];
+  const targets = listHandoffDestinations(
+    resolveHandoffPackKind(project)
+  ).map((item) => item.id);
 
   const allFiles = new Map<string, string | Uint8Array>();
 
@@ -39,7 +40,8 @@ export async function syncHandoffBundle(project: ProjectFile): Promise<void> {
   }
 
   for (const [relPath, content] of allFiles.entries()) {
-    const full = join(archHandoffDir, relPath);
+    const safePath = relPath.replace(/:/g, "_");
+    const full = join(archHandoffDir, safePath);
     await ensureDir(dirname(full));
     if (typeof content === "string") {
       await fs.writeFile(full, content, "utf8");

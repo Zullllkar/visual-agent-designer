@@ -37,7 +37,7 @@ theme:
     canvasGap: "24px"
 ---
 
-# Visual Agent Designer · Canvas Studio 设计系统
+# Vibeboard · Canvas Studio 设计系统
 
 ## 1. Overview
 

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * ReferenceCard Shape — 参考图画布卡片
+ * ReferenceCard Shape — Lovart 式直出参考图
  * @author：wangjunhua
  */
 
@@ -15,12 +15,9 @@ import {
   type TLBaseShape,
 } from "tldraw";
 import { useProjectStore } from "@/store/project-store";
-import {
-  CARD_INNER_RADIUS,
-  CARD_PAD,
-  CARD_RADIUS,
-} from "@/lib/canvas/canvas-chrome";
 import { useCanvasChromePalette } from "@/lib/canvas/use-canvas-chrome";
+
+const PHOTO_RADIUS = 12;
 
 export type ReferenceCardShape = TLBaseShape<
   "reference-card",
@@ -77,7 +74,7 @@ export class ReferenceCardShapeUtil extends ShapeUtil<ReferenceCardShape> {
 
   override getIndicatorPath(shape: ReferenceCardShape): Path2D | undefined {
     if (typeof Path2D === "undefined") return undefined;
-    const r = CARD_RADIUS;
+    const r = PHOTO_RADIUS;
     const w = shape.props.w;
     const h = shape.props.h;
     const p = new Path2D();
@@ -103,95 +100,71 @@ function ReferenceCardShapeView({ shape }: { shape: ReferenceCardShape }) {
   });
   const src = reference?.src;
   const label = reference?.label ?? shape.props.label;
-  const innerW = shape.props.w - CARD_PAD * 2;
-  const innerH = shape.props.h - CARD_PAD * 2 - 26;
 
   return (
     <HTMLContainer
       id={shape.id}
+      className="vad-artwork-photo"
       style={{
         width: shape.props.w,
         height: shape.props.h,
         position: "relative",
         boxSizing: "border-box",
-        padding: CARD_PAD,
-        borderRadius: CARD_RADIUS,
-        background: `linear-gradient(165deg, ${c.surface} 0%, ${c.surfaceMuted} 100%)`,
-        border: `1px dashed ${c.borderStrong}`,
+        padding: 0,
+        borderRadius: PHOTO_RADIUS,
+        overflow: "hidden",
+        background: c.surfaceMuted,
+        border: "none",
         boxShadow: c.cardShadow,
         pointerEvents: "all",
-        fontFamily: "var(--font-sans, ui-sans-serif, system-ui, sans-serif)",
       }}
     >
+      {src ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src}
+          alt={label}
+          draggable={false}
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "contain",
+            display: "block",
+            pointerEvents: "none",
+          }}
+        />
+      ) : (
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            display: "grid",
+            placeItems: "center",
+            color: c.textMuted,
+            fontSize: 11,
+          }}
+        >
+          参考图缺失
+        </div>
+      )}
       <div
         style={{
           position: "absolute",
-          top: -10,
-          left: 12,
-          zIndex: 2,
-          padding: "2px 10px",
+          top: 8,
+          left: 8,
+          padding: "2px 8px",
           borderRadius: 999,
-          background: c.primary,
-          color: c.surface,
+          background: "rgba(15,15,18,0.62)",
+          color: "#fff",
           fontSize: 9,
           fontWeight: 700,
-          letterSpacing: "0.12em",
-          textTransform: "uppercase",
-          boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
+          letterSpacing: "0.06em",
+          backdropFilter: "blur(6px)",
+          pointerEvents: "none",
         }}
       >
         参考
       </div>
-      <div
-        style={{
-          width: innerW,
-          height: Math.max(40, innerH),
-          borderRadius: CARD_INNER_RADIUS,
-          overflow: "hidden",
-          background: c.surfaceMuted,
-        }}
-      >
-        {src ? (
-          <img
-            src={src}
-            alt={label}
-            draggable={false}
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-              display: "block",
-            }}
-          />
-        ) : (
-          <div
-            style={{
-              width: "100%",
-              height: "100%",
-              display: "grid",
-              placeItems: "center",
-              color: c.textMuted,
-              fontSize: 11,
-            }}
-          >
-            参考图缺失
-          </div>
-        )}
-      </div>
-      <p
-        style={{
-          margin: "6px 2px 0",
-          fontSize: 10,
-          lineHeight: 1.35,
-          color: c.caption,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          fontWeight: 500,
-        }}
-      >
-        {label}
-      </p>
     </HTMLContainer>
   );
 }
@@ -215,18 +188,17 @@ export function makeReferenceCardShape(
     dh = DISPLAY_MAX_H;
     dw = dh * aspect;
   }
-  const captionH = 26;
   return {
     id: createShapeId(),
     type: "reference-card" as const,
     x,
     y,
     props: {
-      w: Math.round(dw + CARD_PAD * 2),
-      h: Math.round(dh + CARD_PAD * 2 + captionH),
+      w: Math.round(dw),
+      h: Math.round(dh),
       referenceId,
       projectId,
-      label: label.slice(0, 80),
+      label,
       source,
     },
   };

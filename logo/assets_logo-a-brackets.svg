@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" fill="none" role="img" aria-label="Vibeboard corner brackets">
+  <path d="M7 12.2V7h5.2" stroke="#1A1916" stroke-width="1.7" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path d="M19.8 7H25v5.2" stroke="#1A1916" stroke-width="1.7" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path d="M7 19.8V25h5.2" stroke="#1A1916" stroke-width="1.7" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path d="M19.8 25H25v-5.2" stroke="#1A1916" stroke-width="1.7" stroke-linecap="square" stroke-linejoin="miter"/>
+  <rect x="13.1" y="14.4" width="8.6" height="7.2" rx="1.05" fill="#1A1916"/>
+</svg>

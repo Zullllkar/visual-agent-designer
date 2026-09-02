@@ -13,10 +13,7 @@ import {
   resolveProviders,
   type ProviderConfig,
 } from "@/lib/providers/registry";
-import {
-  resolveSkill,
-  resolveDesignSystem,
-} from "@/lib/skills/registry";
+import { resolveSkillContext } from "@/lib/skills/context";
 import { runDesignPipeline } from "./design-pipeline";
 import type { PipelineProgress } from "./design-pipeline";
 import { assertRealLlmForAgents } from "@/lib/providers/validate";
@@ -34,6 +31,7 @@ export interface GenerateProjectOptions {
   onProgress?: (p: PipelineProgress) => void;
   onCodeDiff?: (diff: CodeDiffEventData) => void;
   onProjectSnapshot?: (project: ProjectFile) => void;
+  onThinking?: (text: string) => void;
 }
 
 function normalizeGenerateOptions(
@@ -75,14 +73,23 @@ export async function generateProjectFromIdea(
     });
 
   logger.info("init", "解析 Skill 与设计系统");
-  const skill = await resolveSkill(providerConfig?.skillId);
-  const designSystem = await resolveDesignSystem(
-    providerConfig?.designSystemId ?? skill?.manifest.recommendedDesignSystem
-  );
+  const { skill, designSystem, requestedSkillId, skillMissing } =
+    await resolveSkillContext(providerConfig, opts.existing);
+  if (skillMissing) {
+    logger.info("skill", `项目绑定的 Skill「${requestedSkillId}」不存在，本轮不注入 Skill`);
+  } else if (skill) {
+    logger.info(
+      "skill",
+      `使用 Skill：${skill.manifest.name}${skill.manifest.version ? ` @ ${skill.manifest.version}` : ""}`
+    );
+  }
 
   const ctx: AgentContext = {
     projectId,
-    scratch: { pipelineLogger: logger },
+    scratch: {
+      pipelineLogger: logger,
+      ...(opts.existing?.targetId ? { targetId: opts.existing.targetId } : {}),
+    },
     providers: resolveProviders(providerConfig),
     skill,
     designSystem,
@@ -105,6 +112,7 @@ export async function generateProjectFromIdea(
       onProgress,
       onCodeDiff: opts.onCodeDiff,
       onProjectSnapshot: opts.onProjectSnapshot,
+      onThinking: opts.onThinking,
     });
     logger.complete(
       `项目「${project.title}」· ${project.pages.length} 页 · 总分 ${project.critique?.overallScore ?? "—"}`

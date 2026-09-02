@@ -18,7 +18,7 @@ export function classifyVadRelPath(relPath: string): VadWatchKind | null {
   const p = relPath.replace(/\\/g, "/");
   if (p === "project.json") return "project";
   if (p === "canvas.json") return "canvas";
-  if (p === "chat-history.jsonl") return "chat";
+  if (p === "chat-history.jsonl" || p === "conversations.json") return "chat";
   if (p.startsWith("design/pages/") && p.endsWith(".canvas.json")) return "page";
   if (
     p.startsWith("prompts/") ||

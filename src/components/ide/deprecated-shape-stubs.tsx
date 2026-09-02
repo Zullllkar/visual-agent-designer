@@ -68,8 +68,8 @@ function makeDeprecatedUtil(type: "spec-card" | "handoff-card") {
       );
     }
 
-    override indicator() {
-      return null;
+    override getIndicatorPath(): Path2D | undefined {
+      return undefined;
     }
   };
 }

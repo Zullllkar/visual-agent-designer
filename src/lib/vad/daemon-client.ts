@@ -1,5 +1,5 @@
 /**
- * VAD Daemon HTTP 客户端（Next.js server 侧）
+ * Vibeboard Daemon HTTP 客户端（Next.js server 侧）
  * --------------------------------------------------------------
  * 与 daemon/server 的 /v1/* 路由对应；失败时抛出错误由 storage 层回退。
  *

@@ -1,19 +1,30 @@
-/**
+﻿/**
  * POST /api/agents/generate/stream
  * --------------------------------------------------------------
- * SSE 流式返回流水线日志 + 最终 ProjectFile。
+ * SSE 娴佸紡杩斿洖娴佹按绾挎棩蹇?+ 鏈€缁?ProjectFile銆? *
+ * event: log       鈫?PipelineLogEntry
+ * event: code_diff 鈫?椤甸潰 JSON 鍙樻洿棰勮
+ * event: progress  鈫?{ stage, detail? }
+ * event: project_snapshot 鈫?{ project }  锛堝竷灞€ / 鐢熷浘鍗犱綅 / 姣忓紶瀹屾垚锛? * event: final_project 鈫?{ project }
+ * event: error     鈫?{ message }
+ * event: done      鈫?{ reason }
  *
- * event: log       → PipelineLogEntry
- * event: code_diff → 页面 JSON 变更预览
- * event: progress  → { stage, detail? }
- * event: project_snapshot → { project }  （布局 / 生图占位 / 每张完成）
- * event: final_project → { project }
- * event: error     → { message }
- * event: done      → { reason }
- *
- * @author：wangjunhua
+ * @author锛歸angjunhua
  */
 
+export async function POST(req: Request) {
+  await req.body?.cancel().catch(() => undefined);
+  return Response.json(
+    {
+      error: "sse_generation_removed",
+      message:
+        "The legacy SSE generation endpoint has been removed. Use WebSocket /ws with action agent.run.",
+    },
+    { status: 410 }
+  );
+}
+
+/*
 import { z } from "zod";
 import { generateProjectFromIdea } from "@/lib/agents/orchestrator";
 import { ProviderConfigSchema } from "@/lib/providers/config-schema";
@@ -30,7 +41,7 @@ import { nanoid } from "nanoid";
 const InputSchema = z.object({
   idea: z.string().min(2).max(500),
   providerConfig: ProviderConfigSchema,
-  /** 首页预分配的项目 id（与占位 project 一致） */
+  // Legacy projectId option.
   projectId: z.string().min(4).max(32).optional(),
 });
 
@@ -89,6 +100,7 @@ export async function POST(req: Request) {
           onProgress: (p: PipelineProgress) => push("progress", p),
           onCodeDiff: (diff) => push("code_diff", diff),
           onProjectSnapshot: (snap) => push("project_snapshot", { project: snap }),
+          onThinking: (text) => push("thinking", { text }),
         });
 
         push("final_project", { project });
@@ -118,3 +130,4 @@ export async function POST(req: Request) {
     },
   });
 }
+*/

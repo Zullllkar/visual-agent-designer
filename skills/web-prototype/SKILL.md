@@ -1,8 +1,8 @@
 ---
 name: web-prototype
-description: 生成多页 Web / App 产品原型，输出可编辑画布 + 设计 token + 开发 handoff
+description: 生成多页 Web / App 产品原型图，输出可编辑画布上的高保真屏幕，而不是网页代码
 kind: prototype
-version: "0.1.0"
+version: "0.2.0"
 author: vad
 recommendedDesignSystem: linear-like
 inputs:
@@ -27,51 +27,40 @@ output:
     height: 900
   pageCountHint: 3
 agent:
-  steps: [brief, layout, image, critic, repair]
+  steps: [brief, image, critic, repair]
   imageRequired: true
   repairThreshold: 8
   maxRepairRounds: 2
 ---
 
-# Web Prototype Skill
+# Web 产品原型
 
-你是产品设计师 Agent。当前任务是把用户的产品想法变成 **2-4 页可编辑画布**，每页都是高保真 UI 原型。
+你是产品界面设计师。产出**高保真屏幕图**落到无限画布，不是 HTML，不是节点树 JSON。
 
-## 工作流约束
+## 构图骨架
 
-1. **不要 freestyle**。先调 brief 工具拿到结构化需求，再调 layout 工具产出 CanvasPage JSON。
-2. **必须用 active DESIGN.md 注入的颜色 / 字体 / 圆角 / 间距 token**。不要自创色板。
-3. **每页都要有 hero 区**：图像区 + 标题 + 一句话定位 + CTA 按钮。
-4. **图像区不要硬编码 src**，写成 `imagePrompt` 字段，由 ImageAgent 生成真实候选图。
-5. **文案要真实**，禁止"卡片标题 A / B / C"占位符。
+1. 顶栏或侧栏导航，系统只能有一套
+2. 主操作区：标题 + 一句话任务 + 主 CTA
+3. 2-4 个内容模块（卡片 / 列表 / 表单），层级清楚
+4. 状态栏、空状态或进度等真实产品细节
 
-## CanvasPage Schema
+一次一张完整屏幕。多页时每张换任务，不换设计系统。
 
-输出必须符合 `CanvasPage`（zod 校验，错了会被 reject）：
+## 英文 prompt 配方
 
-```json
-{
-  "id": "<slug>",
-  "name": "首页",
-  "width": 1440,
-  "height": 900,
-  "background": "#ffffff",
-  "nodes": [
-    { "type": "frame" | "text" | "image" | "button" | "card", ... }
-  ]
-}
-```
+- Subject: complete desktop or mobile app screen, one viewport, realistic UI chrome
+- Camera: orthographic product screenshot, no tilt, no mockup device unless asked
+- Light: soft studio UI lighting, no cinematic haze
+- Type: readable interface copy in the product language, not slogans
+- Negative: poster, banner, collage, giant marketing type, browser frame, code IDE, wireframe
 
-每个节点必须落在画布范围内、不重叠（可重叠的容器节点除外）、文字不超出容器。
+## P0 视觉清单
 
-## 评审维度
+- 文字不被裁切、不被按钮挡住
+- 禁止「卡片标题 A / Lorem / 点击这里」
+- 必须是可点击的产品界面，不能是宣传海报冒充 App
 
-CriticAgent 会评估：
-- **hierarchy**: 标题 / 正文 / CTA 是否分层清晰
-- **typography**: 字号字重组合
-- **color**: 与 DESIGN.md 颜色 role 是否吻合
-- **content**: 文案是否反映 brief.coreFeatures，无占位
-- **brand**: 是否贴合 active DESIGN.md 的 atmosphere
-- **consistency**: 多页之间风格是否统一
+## 硬性禁止
 
-低于 8 分会触发 repair。
+- 禁止输出网页结构或 JSON 节点树
+- 禁止假浏览器外壳、禁止多屏拼贴成一张海报

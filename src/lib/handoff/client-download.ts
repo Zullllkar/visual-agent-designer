@@ -20,12 +20,21 @@ export function triggerBrowserDownload(blob: Blob, filename: string) {
 
 export async function downloadHandoffZip(
   project: ProjectFile,
-  target: HandoffTarget["name"] = "markdown"
+  target: HandoffTarget["name"] = "markdown",
+  options?: {
+    selectedAssetIds?: string[];
+    selectedReferenceIds?: string[];
+  }
 ): Promise<void> {
   const res = await fetch("/api/handoff/zip", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ project, target }),
+    body: JSON.stringify({
+      project,
+      target,
+      selectedAssetIds: options?.selectedAssetIds,
+      selectedReferenceIds: options?.selectedReferenceIds,
+    }),
   });
 
   if (!res.ok) {

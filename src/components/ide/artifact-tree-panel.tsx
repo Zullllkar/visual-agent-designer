@@ -122,20 +122,30 @@ export function ArtifactTreePanel({
   }
 
   return (
-    <aside className="flex h-full min-w-0 flex-col overflow-hidden border-r border-zinc-900 bg-zinc-950 text-[#F4F7FA]">
-      <div className="border-b border-zinc-900 px-4 py-3">
-        <p className="text-xs font-bold text-zinc-400">Artifact 文件树</p>
-        <p className="mt-1 text-[10px] text-zinc-600">
+    <aside className="flex h-full min-w-0 flex-col overflow-hidden">
+      <div className="vad-inspector-toolbar">
+        <span className="truncate font-mono text-[11px] font-normal text-[var(--muted)]">
           .vad/projects/{projectId}/
-        </p>
+        </span>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <div className="min-h-0 flex-1 overflow-y-auto p-2 text-xs">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
           {loading ? (
-            <div className="flex items-center gap-2 p-3 text-zinc-500">
+            <div className="flex items-center gap-2 px-2 py-3 text-[12px] text-[var(--muted)]">
               <Loader2 className="size-3.5 animate-spin" />
               加载文件树…
+            </div>
+          ) : tree.length === 0 ? (
+            <div className="vad-inspector-empty">
+              <div>
+                <p className="text-[13px] font-medium tracking-[-0.02em]">
+                  还没有工程文件
+                </p>
+                <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--muted)]">
+                  生成素材后，这里会出现 project.json 和图片目录。
+                </p>
+              </div>
             </div>
           ) : (
             tree.map((node) => (
@@ -151,16 +161,16 @@ export function ArtifactTreePanel({
         </div>
 
         {selectedPath ? (
-          <div className="flex min-h-[200px] flex-1 flex-col border-t border-zinc-900 md:border-l md:border-t-0">
-            <div className="flex items-center justify-between gap-2 border-b border-zinc-900 px-3 py-2">
-              <span className="truncate font-mono text-[10px] text-zinc-500">
+          <div className="vad-inspector-editor">
+            <div className="flex items-center justify-between gap-2 px-3 py-2">
+              <span className="truncate font-mono text-[11px] text-[var(--muted)]">
                 {selectedPath}
               </span>
               <button
                 type="button"
                 disabled={!dirty || saving}
                 onClick={() => void saveFile()}
-                className="inline-flex items-center gap-1 rounded bg-[#B5A075] px-2 py-1 text-[10px] font-bold text-zinc-950 disabled:opacity-40"
+                className="vad-inspector-quiet-btn disabled:opacity-40"
               >
                 {saving ? (
                   <Loader2 className="size-3 animate-spin" />
@@ -176,7 +186,6 @@ export function ArtifactTreePanel({
                 setContent(e.target.value);
                 setDirty(true);
               }}
-              className="min-h-0 flex-1 resize-none bg-zinc-900/50 p-3 font-mono text-[11px] leading-relaxed text-zinc-300 outline-none"
               spellCheck={false}
             />
           </div>
@@ -184,9 +193,7 @@ export function ArtifactTreePanel({
       </div>
 
       {error ? (
-        <p className="border-t border-red-900/50 bg-red-950/30 px-3 py-2 text-[10px] text-red-400">
-          {error}
-        </p>
+        <p className="px-4 py-2 text-[12px] text-[var(--danger)]">{error}</p>
       ) : null}
     </aside>
   );
@@ -213,14 +220,14 @@ function TreeNode({
           type="button"
           style={pad}
           onClick={() => setOpen((v) => !v)}
-          className="flex w-full items-center gap-1.5 py-1 text-left text-zinc-500 hover:text-zinc-300"
+          className="vad-inspector-file"
         >
           {open ? (
             <ChevronDown className="size-3 shrink-0" />
           ) : (
             <ChevronRight className="size-3 shrink-0" />
           )}
-          <Folder className="size-3 shrink-0 text-[#B5A075]" />
+          <Folder className="size-3 shrink-0 text-[var(--primary)]" />
           <span className="truncate">{node.name}</span>
         </button>
         {open
@@ -245,18 +252,15 @@ function TreeNode({
       style={pad}
       onClick={() => onSelect(node.path)}
       className={
-        "flex w-full items-center gap-1.5 py-1 text-left " +
-        (selectedPath === node.path
-          ? "bg-zinc-900 text-[#B5A075]"
-          : editable
-            ? "text-zinc-400 hover:bg-zinc-900/60 hover:text-zinc-200"
-            : "text-zinc-600 cursor-default")
+        "vad-inspector-file " +
+        (editable ? "" : "cursor-default opacity-50")
       }
+      data-selected={selectedPath === node.path ? "true" : undefined}
     >
       <FileCode2 className="size-3 shrink-0" />
       <span className="truncate">{node.name}</span>
       {node.size != null ? (
-        <span className="ml-auto pr-2 text-[9px] text-zinc-700">
+        <span className="ml-auto pr-2 text-[10px] text-[var(--muted)]">
           {(node.size / 1024).toFixed(1)}k
         </span>
       ) : null}

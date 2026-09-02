@@ -54,6 +54,8 @@ async function tryLlmDirection(
     designSystem: ctx.designSystem,
     brief,
     extra: architecture ? { architecture } : undefined,
+    targetId:
+      typeof ctx.scratch.targetId === "string" ? ctx.scratch.targetId : undefined,
     technicalAddendum: [
       "# 任务：Design Director",
       "定义视觉方向，遵循 active DESIGN.md；不要输出 Canvas 节点。",

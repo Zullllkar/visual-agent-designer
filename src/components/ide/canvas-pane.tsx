@@ -39,19 +39,34 @@ interface CanvasPaneProps {
   activePageId?: string;
   /** AI 快捷动作：填入右侧助理输入框 */
   onPrompt?: (prompt: string) => void;
+  /** 直接发起 Agent 任务（变体网格 / 画布内联输入） */
+  onRunPrompt?: (prompt: string) => void;
   onExportPage?: () => void;
+  onOpenHandoff?: () => void;
 }
 
-export function CanvasPane({ project, activePageId, onPrompt, onExportPage }: CanvasPaneProps) {
+export function CanvasPane({
+  project,
+  activePageId,
+  onPrompt,
+  onRunPrompt,
+  onExportPage,
+  onOpenHandoff,
+}: CanvasPaneProps) {
   const versionKey = useMemo(
     () => `${project?.id ?? "empty"}`,
     [project?.id]
   );
-  const syncRevision = useMemo(
-    () =>
-      `${project?.updatedAt ?? ""}:${project?.pages?.length ?? 0}:${project?.assets?.length ?? 0}`,
-    [project?.updatedAt, project?.pages?.length, project?.assets?.length]
-  );
+  const syncRevision = useMemo(() => {
+    const assets = project?.assets ?? [];
+    const refs = project?.references ?? [];
+    // 故意不含 updatedAt / canvasSnapshot：仅 snapshot 落盘时不应触发全量 sync
+    const assetSig = assets
+      .map((a) => `${a.id}:${a.status ?? ""}:${a.src ? "1" : "0"}`)
+      .join("|");
+    const refSig = refs.map((r) => r.id).join("|");
+    return `${project?.id ?? ""}:${assets.length}:${refs.length}:${project?.pages?.length ?? 0}:${assetSig}:${refSig}`;
+  }, [project?.id, project?.assets, project?.references, project?.pages?.length]);
 
   return (
     <div className="relative h-full w-full">
@@ -61,7 +76,9 @@ export function CanvasPane({ project, activePageId, onPrompt, onExportPage }: Ca
         activePageId={activePageId}
         syncRevision={syncRevision}
         onPrompt={onPrompt}
+        onRunPrompt={onRunPrompt}
         onExportPage={onExportPage}
+        onOpenHandoff={onOpenHandoff}
       />
       {/* 防 tldraw 全屏鼠标事件穿透到外层；同时给容器一个明确的尺寸 */}
     </div>

@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { VadMark } from "@/components/brand/vad-mark";
 import { usePreferences } from "@/lib/preferences";
 import { PreferenceControls } from "@/components/theme-toggle";
 import { cn } from "@/lib/cn";
+import { useDesktopRuntime } from "@/lib/desktop/use-desktop-runtime";
 
 /**
  * 全站共享布局 chrome：顶栏 / 页脚 / 品牌标识
@@ -27,27 +29,29 @@ export function AppLogo({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "app-logo grid size-8 shrink-0 place-items-center rounded-[10px]",
+        "app-logo grid size-8 shrink-0 place-items-center rounded-[10px] text-[var(--foreground)]",
         className
       )}
     >
-      <span aria-hidden className="font-serif text-[13px] italic leading-none">◇</span>
+      <VadMark size={20} />
     </div>
   );
 }
 
 export function AppHeader() {
+  const desktop = useDesktopRuntime();
+  if (desktop) return null;
   return (
     <header className="app-header">
       <div className="app-container flex h-14 items-center justify-between gap-4">
         <Link href="/" className="flex min-w-0 items-center gap-2.5 transition-opacity hover:opacity-90">
           <AppLogo />
-          <span className="block truncate text-[13px] font-semibold tracking-[-0.02em] sm:text-sm">Visual Agent Designer</span>
+          <span className="block truncate text-[13px] font-semibold tracking-[-0.02em] sm:text-sm">Vibeboard</span>
         </Link>
         <nav className="app-header-actions" aria-label="全局操作">
           <PreferenceControls />
           <a
-            href="https://github.com/Zullllkar/visual-agent-designer"
+            href="https://github.com/Zullllkar/vibeboard"
             target="_blank"
             rel="noreferrer"
             className="app-header-action"
@@ -55,8 +59,8 @@ export function AppHeader() {
             <GitHubIcon className="size-3.5" />
             <span>GitHub</span>
           </a>
-          <Link href="/projects" className="app-header-action app-header-action-primary">
-            <span>Canvas</span>
+          <Link href="/" className="app-header-action app-header-action-primary">
+            <span>工作台</span>
           </Link>
         </nav>
       </div>
@@ -65,12 +69,15 @@ export function AppHeader() {
 }
 
 export function AppFooter() {
+  const desktop = useDesktopRuntime();
   const { t } = usePreferences();
+  if (desktop) return null;
 
   return (
     <footer className="app-footer mt-auto">
       <div className="app-container flex flex-wrap items-center justify-between gap-3 py-7 text-[11px] tracking-[-0.01em] text-[var(--muted)]">
-        <span>
+        <span className="inline-flex items-center gap-2">
+          <VadMark size={14} />
           {t("app.name")} · {t("home.footer")}
         </span>
         <span className="opacity-80">{t("home.powered")}</span>

@@ -28,6 +28,10 @@ import { z } from "zod";
  *  - xhs:       小红书图文（封面 / 多图）
  *  - deck:      演示文稿（暂未实现）
  *  - template:  模板填充
+ *  - game-art:  游戏原画 / 概念图
+ *  - promo-kv:  宣传主视觉
+ *  - product-shot: 电商产品图
+ *  - style-board: 风格探索
  */
 export const SkillKindSchema = z.enum([
   "prototype",
@@ -37,6 +41,10 @@ export const SkillKindSchema = z.enum([
   "xhs",
   "deck",
   "template",
+  "game-art",
+  "promo-kv",
+  "product-shot",
+  "style-board",
 ]);
 export type SkillKind = z.infer<typeof SkillKindSchema>;
 
@@ -55,7 +63,7 @@ export type SkillInput = z.infer<typeof SkillInputSchema>;
 export const SkillOutputSchema = z.object({
   /** 输出 artifact 类型；orchestrator 用它决定渲染方式 */
   artifact: z.enum(["canvas-pages", "xhs-cards", "landing-page"]),
-  /** 默认页面尺寸（CanvasPage.width / height） */
+  /** 默认生图画幅；有 Skill 时覆盖目标 recipe.canvas */
   defaultPageSize: z
     .object({
       width: z.number().int().positive(),
@@ -80,7 +88,7 @@ export const SkillAgentFlowSchema = z.object({
         "image",
         "critic",
         "repair",
-      ])
+      ]),
     )
     .default(["brief", "layout", "critic", "repair"]),
   /** 是否需要图像生成（true 则强制走 ImageAgent） */
@@ -118,15 +126,32 @@ export const SkillManifestSchema = z.object({
   recommendedDesignSystem: z.string().optional(),
 });
 export type SkillManifest = z.infer<typeof SkillManifestSchema>;
+export type SkillOrigin = "builtin" | "user";
 
 /** 完整 Skill 资源（含 markdown body） */
 export interface Skill {
-  /** 来源目录路径（相对项目根） */
+  /** 来源目录路径 */
   sourcePath: string;
   manifest: SkillManifest;
   /** SKILL.md 正文（去掉 frontmatter 后的 markdown），注入 system prompt */
   body: string;
+  raw: string;
+  origin: SkillOrigin;
+  enabled: boolean;
 }
+
+/** `/api/skills` 给客户端使用的轻量 Skill 描述。 */
+export type SkillCatalogItem = SkillManifest & {
+  sourcePath: string;
+  bodyPreview: string;
+  origin: SkillOrigin;
+  enabled: boolean;
+};
+
+export type SkillDetail = SkillCatalogItem & {
+  body: string;
+  raw: string;
+};
 
 // ──────────────────────────────────────────────────────────────────
 // DESIGN.md
@@ -183,3 +208,13 @@ export interface DesignSystem {
   /** DESIGN.md 正文（9-section markdown） */
   body: string;
 }
+
+export type DesignSystemCatalogItem = DesignSystemManifest & {
+  sourcePath: string;
+  bodyPreview: string;
+};
+
+export type SkillCatalogResponse = {
+  skills: SkillCatalogItem[];
+  designSystems: DesignSystemCatalogItem[];
+};

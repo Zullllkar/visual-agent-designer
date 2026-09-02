@@ -15,13 +15,17 @@
  * 这个文件可以在 server / client 都用（纯字符串拼接）。
  */
 
-import type { Skill, DesignSystem } from "./schema";
-import type { DesignContext, ProductBrief } from "@/lib/project/schema";
-import { summarizeDesignContext } from "@/lib/project/design-context";
-import type { CanvasPage } from "@/lib/canvas/schema";
 import type { CritiqueReport } from "@/lib/agents/critic-schema";
+import type { CanvasPage } from "@/lib/canvas/schema";
+import { summarizeDesignContext } from "@/lib/project/design-context";
+import type { DesignContext, ProductBrief } from "@/lib/project/schema";
+import { buildBriefOutputShape } from "@/lib/targets/brief";
+import { getTargetRecipe, type TargetId } from "@/lib/targets/catalog";
+import { buildGoalPromptSection, parseTargetId } from "@/lib/targets/resolve";
+import { formatSkillRuntime } from "./runtime";
+import type { DesignSystem, Skill } from "./schema";
 
-const BASE_DESIGNER_SYSTEM = `你是 Visual Agent Designer 的产品设计 Agent。
+const BASE_DESIGNER_SYSTEM = `你是 Vibeboard 的产品设计 Agent。
 
 # 身份
 - 你是产品设计师，而不是普通聊天助手
@@ -50,6 +54,9 @@ export interface BuildPromptOptions {
   designContext?: DesignContext | null;
   /** 任意补充上下文（例如选中的 element_id、当前页 id 等） */
   extra?: Record<string, unknown>;
+  /** 项目视觉目标；与对话 system prompt 共用同一份 recipe。 */
+  targetId?: string;
+  directionCardId?: string;
   /** 是否包含 Discovery 段（chat orchestrator 第一轮用 true，后续可关掉） */
   includeDiscovery?: boolean;
   /**
@@ -78,9 +85,21 @@ export function buildSystemPrompt(opts: BuildPromptOptions): string {
     parts.push(DISCOVERY_DIRECTIVES);
   }
 
+  parts.push(
+    buildGoalPromptSection(parseTargetId(opts.targetId), opts.directionCardId)
+  );
+
   if (opts.skill) {
     parts.push(
       `# Active Skill: ${opts.skill.manifest.name}\n${opts.skill.body}`
+    );
+    const recipe = getTargetRecipe(parseTargetId(opts.targetId));
+    parts.push(
+      `# Skill runtime\n${formatSkillRuntime({
+        skillSize: opts.skill.manifest.output.defaultPageSize,
+        targetSize: recipe.canvas,
+        repairThreshold: opts.skill.manifest.agent.repairThreshold,
+      })}`,
     );
   }
 
@@ -178,21 +197,6 @@ const CRITIQUE_OUTPUT_SHAPE = `# Critique 输出 JSON 结构
 \`\`\`
 严格输出 JSON，不要 markdown，不要解释。`;
 
-const BRIEF_OUTPUT_SHAPE = `# Brief 输出 JSON 结构
-\`\`\`json
-{
-  "productName": "<≤12 字中文>",
-  "positioning": "...",
-  "targetUser": "...",
-  "scenarios": ["..."],
-  "coreFeatures": ["..."],
-  "platform": "app|web|miniapp|extension|landing|other",
-  "visualStyle": "<一句英文风格描述，作为图像模型 style prompt>",
-  "outputTargets": ["cursor|claude-code|codex|markdown"]
-}
-\`\`\`
-严格输出 JSON，不要解释。coreFeatures 给 3-5 个，scenarios 给 3 个。`;
-
 // ──────────────────────────────────────────────────────────────────
 // 特化构建器：每个 agent 一个，把技术 addendum 内置
 // ──────────────────────────────────────────────────────────────────
@@ -202,15 +206,17 @@ export interface AgentPromptOpts {
   designSystem?: DesignSystem | null;
   brief?: ProductBrief;
   designContext?: DesignContext | null;
+  targetId?: TargetId | string;
   /** 运行时上下文（架构、视觉方向等） */
   extra?: Record<string, unknown>;
 }
 
-/** BriefAgent：还没生成 brief 之前用，主要靠 SKILL.md 决定字段倾向 */
+/** BriefAgent：还没生成 brief 之前用，按目标裁剪字段 */
 export function buildBriefSystemPrompt(opts: AgentPromptOpts): string {
+  const targetId = parseTargetId(opts.targetId);
   return buildSystemPrompt({
     ...opts,
-    technicalAddendum: BRIEF_OUTPUT_SHAPE,
+    technicalAddendum: buildBriefOutputShape(targetId),
     includeDiscovery: false,
   });
 }

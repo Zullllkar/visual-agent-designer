@@ -1,7 +1,7 @@
 /**
  * Project Schema
  * --------------------------------------------------------------
- * 一个 Visual Agent Designer 项目在本地的顶层数据结构。
+ * 一个 Vibeboard 项目在本地的顶层数据结构。
  * 对应 .vad/projects/<slug>/project.json。
  */
 
@@ -12,6 +12,8 @@ import {
   CritiqueHistoryEntrySchema,
 } from "@/lib/agents/critic-schema";
 import { ImageAssetSchema, ReferenceAssetSchema } from "./assets-schema";
+import { MaterializationRecordSchema } from "@/lib/handoff/layout-ir";
+import { BrandKitSchema } from "./brand-kit-schema";
 
 export const ProductBriefSchema = z.object({
   productName: z.string(),
@@ -22,6 +24,8 @@ export const ProductBriefSchema = z.object({
   platform: z.enum(["app", "web", "miniapp", "extension", "landing", "other"]),
   visualStyle: z.string(),
   outputTargets: z.array(z.enum(["cursor", "claude-code", "codex", "markdown"])),
+  /** 按目标配方裁剪的字段；key = recipe.discovery id。旧项目可缺省。 */
+  slots: z.record(z.string(), z.string()).optional(),
 });
 
 export const PrototypeFlowSchema = z.object({
@@ -51,6 +55,8 @@ export const DesignDirectionSchema = z.object({
   layoutNotes: z.string().optional(),
   /** 若与项目 designSystemId 不同，记录 Director 建议切换的系统 id。 */
   recommendedDesignSystemId: z.string().optional(),
+  /** 用户点名「按这张图统一项目风格」时锁定的素材 id。 */
+  styleSourceAssetId: z.string().optional(),
 });
 
 /** 项目级设计记忆：用于跨轮次保持品牌、视觉与内容一致性。 */
@@ -107,8 +113,16 @@ export const ProjectFileSchema = z.object({
   critiqueHistory: z.array(CritiqueHistoryEntrySchema).optional(),
   /** 生成本项目时使用的 SKILL.md id（追溯用）。 */
   skillId: z.string().optional(),
+  /** 项目绑定 Skill 的 manifest 版本，用于运行追溯。 */
+  skillVersion: z.string().optional(),
   /** 生成本项目时使用的 DESIGN.md id（追溯用）。 */
   designSystemId: z.string().optional(),
+  /** 首页点选的视觉目标；缺省按界面视觉处理。 */
+  targetId: z.string().optional(),
+  /** 首页明确点选则为 true；仅推断则为 false，可被纠正。 */
+  targetLocked: z.boolean().optional(),
+  /** 本目标方向库里绑中的卡。 */
+  directionCardId: z.string().optional(),
   /**
    * Image Workspace 候选图库。
    * 每张图带完整 model run metadata，可追溯到具体模型/prompt/seed。
@@ -121,7 +135,12 @@ export const ProjectFileSchema = z.object({
    * 截图 / 剪贴板导入的参考图，用于再设计、风格参考和竞品分析。
    */
   references: z.array(ReferenceAssetSchema).optional(),
+  /**
+   * 满意整图 → 拆解多素材 的物料化记录（按 mockupAssetId 索引）。
+   */
+  materializations: z.record(z.string(), MaterializationRecordSchema).optional(),
   canvasSnapshot: CanvasSnapshotSchema.optional(),
+  brandKit: BrandKitSchema.optional(),
 });
 
 export type ProductBrief = z.infer<typeof ProductBriefSchema>;
@@ -131,3 +150,4 @@ export type DesignContext = z.infer<typeof DesignContextSchema>;
 export type PrototypeFlow = z.infer<typeof PrototypeFlowSchema>;
 export type CanvasSnapshot = z.infer<typeof CanvasSnapshotSchema>;
 export type ProjectFile = z.infer<typeof ProjectFileSchema>;
+export type BrandKit = z.infer<typeof BrandKitSchema>;

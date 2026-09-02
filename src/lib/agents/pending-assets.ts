@@ -7,14 +7,15 @@ import type { ImageAsset } from "@/lib/project/assets-schema";
 import type { ImagePlan } from "./image-planner-agent";
 import { GENERATING_PLACEHOLDER_SRC } from "@/lib/canvas/generating-placeholder";
 
-export function pendingAssetId(pageId: string, nodeId: string): string {
+export function pendingAssetId(pageId: string, nodeId: string, batchId?: string): string {
+  if (batchId) return `pending:${batchId}:${pageId}:${nodeId}`;
   return `pending:${pageId}:${nodeId}`;
 }
 
 export function buildPendingAssets(plan: ImagePlan, batchId: string): ImageAsset[] {
   const now = new Date().toISOString();
   return plan.tasks.map((task) => ({
-    id: pendingAssetId(task.pageId, task.nodeId),
+    id: pendingAssetId(task.pageId, task.nodeId, batchId),
     prompt: task.imagePrompt,
     src: GENERATING_PLACEHOLDER_SRC,
     width: task.width,

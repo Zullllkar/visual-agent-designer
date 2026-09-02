@@ -13,6 +13,8 @@ export interface ImageGenerateInput {
   referenceImages?: string[];
   /** 可选 negative prompt。 */
   negativePrompt?: string;
+  /** 取消 Agent/Job 时终止底层网络请求。 */
+  signal?: AbortSignal;
 }
 
 export interface ImageGenerateOutput {

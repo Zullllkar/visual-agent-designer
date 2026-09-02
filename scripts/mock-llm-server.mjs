@@ -6,7 +6,7 @@
  * 用法：
  *   node scripts/mock-llm-server.mjs            # 默认 :8765
  *
- * 在 Visual Agent Designer 设置里：
+ * 在 Vibeboard 设置里：
  *   baseURL=http://localhost:8765/v1
  *   apiKey=任意（不会校验）
  *   model=mock-layout

@@ -9,6 +9,9 @@
 import { z } from "zod";
 
 export const OrchestratorToolNameSchema = z.enum([
+  "ask_discovery",
+  "confirm_direction",
+  "adopt_asset_style",
   "generate_brief",
   "plan_architecture",
   "plan_design_direction",
@@ -19,9 +22,15 @@ export const OrchestratorToolNameSchema = z.enum([
   "restyle_page_images",
   "edit_page",
   "export_handoff",
+  "materialize_mockup",
   "critique_pages",
   "repair_page",
   "answer_question",
+  "inspect_canvas",
+  "manipulate_canvas",
+  "star_asset",
+  "batch_delete_assets",
+  "delegate_task",
 ]);
 
 export type OrchestratorToolName = z.infer<typeof OrchestratorToolNameSchema>;

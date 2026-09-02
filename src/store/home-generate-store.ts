@@ -11,7 +11,16 @@ export type HomeGenerateJob = {
   projectId: string;
   idea: string;
   providerConfig: ProviderConfig;
+  targetId?: string;
 };
+
+/** new 页已发出的想法只作为首条对话，不要再填进画布输入框。 */
+export function planHomeJobOnCanvas(job: HomeGenerateJob): {
+  sendText: string;
+  composerValue: string;
+} {
+  return { sendText: job.idea, composerValue: "" };
+}
 
 type HomeGenerateState = {
   job: HomeGenerateJob | null;

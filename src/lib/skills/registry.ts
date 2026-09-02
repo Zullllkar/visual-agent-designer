@@ -15,8 +15,9 @@
 
 import "server-only";
 
-import { loadAllSkills, loadAllDesignSystems } from "./loader";
-import type { Skill, DesignSystem } from "./schema";
+import { loadAllDesignSystems, loadAllSkills } from "./loader";
+import type { DesignSystem, Skill } from "./schema";
+import { findSkillById } from "./selection";
 
 interface Registry {
   skills: Skill[];
@@ -27,10 +28,7 @@ let cache: Registry | null = null;
 let pending: Promise<Registry> | null = null;
 
 async function build(): Promise<Registry> {
-  const [skills, designSystems] = await Promise.all([
-    loadAllSkills(),
-    loadAllDesignSystems(),
-  ]);
+  const [skills, designSystems] = await Promise.all([loadAllSkills(), loadAllDesignSystems()]);
   return { skills, designSystems };
 }
 
@@ -46,8 +44,12 @@ export function invalidateRegistry() {
   pending = null;
 }
 
-export async function getSkillRegistry(): Promise<Skill[]> {
+export async function getAllSkillRegistry(): Promise<Skill[]> {
   return (await ensure()).skills;
+}
+
+export async function getSkillRegistry(): Promise<Skill[]> {
+  return (await ensure()).skills.filter((skill) => skill.enabled);
 }
 
 export async function getDesignSystemRegistry(): Promise<DesignSystem[]> {
@@ -59,13 +61,10 @@ export async function getDesignSystemRegistry(): Promise<DesignSystem[]> {
  */
 export async function resolveSkill(id: string | undefined): Promise<Skill | null> {
   const all = await getSkillRegistry();
-  if (!id) return all[0] ?? null;
-  return all.find((s) => s.manifest.name === id) ?? all[0] ?? null;
+  return findSkillById(all, id);
 }
 
-export async function resolveDesignSystem(
-  id: string | undefined
-): Promise<DesignSystem | null> {
+export async function resolveDesignSystem(id: string | undefined): Promise<DesignSystem | null> {
   const all = await getDesignSystemRegistry();
   if (!id) return all[0] ?? null;
   return all.find((d) => d.manifest.name === id) ?? all[0] ?? null;

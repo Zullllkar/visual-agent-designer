@@ -43,6 +43,7 @@ export interface RunPipelineOptions {
   skipImages?: boolean;
   onCodeDiff?: (diff: CodeDiffEventData) => void;
   onProjectSnapshot?: (project: ProjectFile) => void;
+  onThinking?: (text: string) => void;
 }
 
 function emitProgress(
@@ -69,6 +70,7 @@ export async function runDesignPipeline(
     skipImages,
     onCodeDiff,
     onProjectSnapshot,
+    onThinking,
   } = opts;
   const projectId = existing?.id ?? ctx.projectId ?? nanoid(10);
   ctx.projectId = projectId;
@@ -83,11 +85,12 @@ export async function runDesignPipeline(
       ? logger.runStage(
           "brief",
           idea.slice(0, 80),
-          () => BriefAgent.run({ idea }, ctx),
+          () => BriefAgent.run({ idea, targetId: existing?.targetId }, ctx),
           (b) => ({ productName: b.productName })
         )
-      : BriefAgent.run({ idea }, ctx)));
+      : BriefAgent.run({ idea, targetId: existing?.targetId }, ctx)));
 
+  onThinking?.(`\n📋 **Brief Agent** 已完成：产品名「${brief.productName}」，定位：${brief.positioning}\n`);
   emitProgress(onProgress, "brief", brief.productName);
 
   // 轻量架构占位（兼容 schema），不再跑 Architect / Layout
@@ -120,9 +123,11 @@ export async function runDesignPipeline(
     existingDesignContext ??
     buildDesignContext({
       brief,
+      targetId: existing?.targetId,
       designDirection,
       designSystemId: ctx.designSystem?.manifest.name,
     });
+  onThinking?.(`\n🎨 **视觉方向** 已确定：${designDirection.summary}\n`);
   emitProgress(onProgress, "design_direction");
 
   if (
@@ -175,18 +180,22 @@ export async function runDesignPipeline(
                 brief,
                 pages,
                 designDirection,
-                standaloneCount: 4,
+                standaloneCount: 0,
               },
               ctx
             ),
           (pl) => ({ tasks: pl.tasks.length })
         )
       : ImagePlannerAgent.run(
-          { brief, pages, designDirection, standaloneCount: 4 },
+          { brief, pages, designDirection, standaloneCount: 0 },
           ctx
         ));
 
     emitProgress(onProgress, "image_plan", `${plan.tasks.length} 个任务`);
+    onThinking?.(`\n🖼️ **生图规划** 已完成：${plan.tasks.length} 个视觉素材任务\n`);
+    for (const task of plan.tasks) {
+      onThinking?.(`  • ${task.role ?? "asset"}: ${task.imagePrompt.slice(0, 80)}${task.imagePrompt.length > 80 ? "…" : ""}\n`);
+    }
 
     if (plan.tasks.length > 0) {
       const batchId = nanoid(8);
@@ -275,6 +284,7 @@ function finalizeProject(params: {
     readDesignContextFromScratch(params.ctx.scratch) ??
     buildDesignContext({
       brief,
+      targetId: params.existing?.targetId,
       designDirection: params.designDirection,
       designSystemId: params.ctx.designSystem?.manifest.name,
       now,
@@ -297,7 +307,12 @@ function finalizeProject(params: {
     pages: params.pages,
     assets: params.assets ?? [],
     skillId: params.ctx.skill?.manifest.name,
+    skillVersion: params.ctx.skill?.manifest.version,
     designSystemId: params.ctx.designSystem?.manifest.name,
+    targetId: params.existing?.targetId,
+    targetLocked: params.existing?.targetLocked,
+    directionCardId: params.existing?.directionCardId,
+    references: params.existing?.references,
   });
 }
 

@@ -49,12 +49,16 @@ export function createGeminiImageProvider(cfg: GeminiImageConfig): ImageProvider
 
       const aspectRatio =
         cfg.aspectRatio ?? pickAspectRatio(input.width, input.height);
+      // Gemini 无原生 negative_prompt，并入正文
+      const promptText = input.negativePrompt
+        ? `${input.prompt}\n\nDo not include: ${input.negativePrompt}`
+        : input.prompt;
 
       const body: Record<string, unknown> = {
         contents: [
           {
             role: "user",
-            parts: [{ text: input.prompt }],
+            parts: [{ text: promptText }],
           },
         ],
         generationConfig: {
@@ -66,7 +70,7 @@ export function createGeminiImageProvider(cfg: GeminiImageConfig): ImageProvider
       };
 
       if (input.referenceImages?.length) {
-        const parts: Array<Record<string, unknown>> = [{ text: input.prompt }];
+        const parts: Array<Record<string, unknown>> = [{ text: promptText }];
         for (const ref of input.referenceImages) {
           const parsed = parseDataUrl(ref);
           if (parsed) {
@@ -87,8 +91,9 @@ export function createGeminiImageProvider(cfg: GeminiImageConfig): ImageProvider
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(body),
+          signal: input.signal,
         },
-        { timeoutMs: 180_000, maxAttempts: 3 }
+        { timeoutMs: 480_000, maxAttempts: 3, signal: input.signal, shouldRetry: (err) => (err as { status?: number }).status === 429 }
       );
 
       if (!res.ok) {

@@ -1,18 +1,51 @@
 {
-  "name": "visual-agent-designer",
+  "name": "vibeboard",
   "version": "0.1.0",
   "private": true,
+  "author": "Vibeboard",
+  "main": "desktop/main.cjs",
+  "productName": "Vibeboard",
+  "description": "The design studio that talks to your coding agent — 7 AI agents produce finished visual assets on an infinite canvas, then export a handoff package for Cursor / Claude Code / Codex. Local-first, open source.",
+  "keywords": [
+    "ai-agent",
+    "visual-design",
+    "image-generation",
+    "tldraw",
+    "local-first",
+    "cursor",
+    "claude-code",
+    "nextjs",
+    "design-tool",
+    "handoff"
+  ],
   "scripts": {
-    "dev": "next dev",
+    "dev": "tsx --import ./preload.cjs server.ts",
+    "dev:desktop": "electron desktop/main.cjs",
+    "electron:dev": "electron desktop/main.cjs",
+    "dev:next": "next dev",
+    "dev:fastify": "tsx --import ./preload.cjs server-fastify.ts",
     "daemon": "tsx daemon/server.ts",
     "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "dist:desktop": "node desktop/scripts/pack.mjs",
+    "dist:desktop:dir": "node desktop/scripts/pack.mjs --dir",
+    "start": "tsx --import ./preload.cjs server.ts",
+    "lint": "biome check .",
+    "format": "biome format --write",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
+    "@fastify/websocket": "^11.0.2",
     "@fontsource-variable/inter": "^5.2.8",
+    "@langchain/anthropic": "^1.5.1",
+    "@langchain/core": "^1.2.2",
+    "@langchain/google-genai": "^2.2.0",
+    "@langchain/langgraph": "^1.4.7",
+    "@langchain/langgraph-checkpoint-sqlite": "^1.0.3",
+    "@langchain/openai": "^1.5.5",
     "@resvg/resvg-js": "^2.6.2",
     "clsx": "^2.1.1",
+    "fastify": "^5.3.3",
     "gray-matter": "^4.0.3",
     "jszip": "^3.10.1",
     "lucide-react": "^1.16.0",
@@ -20,23 +53,85 @@
     "next": "16.2.6",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "react-markdown": "^10.1.0",
+    "remark-breaks": "^4.0.0",
+    "remark-gfm": "^4.0.1",
     "server-only": "^0.0.1",
+    "simple-icons": "^16.26.0",
     "tailwind-merge": "^3.6.0",
     "tldraw": "5.0.1",
     "undici": "^8.3.0",
+    "ws": "^8.21.0",
     "zod": "^4.4.3",
     "zustand": "^5.0.13"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.3",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.2.6",
+    "@types/ws": "^8.18.1",
+    "electron": "^37.3.0",
+    "electron-builder": "^26.0.12",
+    "esbuild": "^0.28.0",
     "impeccable": "^2.3.2",
     "tailwindcss": "^4",
     "tsx": "^4.19.4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.10"
+  },
+  "build": {
+    "appId": "com.vibeboard.desktop",
+    "productName": "Vibeboard",
+    "copyright": "Copyright © 2026 Vibeboard",
+    "directories": {
+      "output": "release",
+      "buildResources": "desktop/icons"
+    },
+    "files": [
+      "desktop/**/*",
+      "!desktop/scripts/**",
+      "!desktop/**/*.test.ts"
+    ],
+    "extraResources": [
+      {
+        "from": "dist-sidecar",
+        "to": "sidecar"
+      }
+    ],
+    "win": {
+      "icon": "desktop/icons/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "dir",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "mac": {
+      "icon": "desktop/icons/icon.png",
+      "category": "public.app-category.graphics-design",
+      "target": ["dmg", "zip"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Vibeboard",
+      "artifactName": "Vibeboard-Setup-${version}-${arch}.${ext}"
+    }
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "electron-winstaller",
+      "esbuild"
+    ]
   }
 }

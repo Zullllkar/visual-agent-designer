@@ -5,8 +5,8 @@ import { usePreferences } from "@/lib/preferences";
 import { cn } from "@/lib/cn";
 
 export function ThemeToggle() {
-  const { theme, toggleTheme, t } = usePreferences();
-  const isDark = theme === "dark";
+  const { resolvedTheme, toggleTheme, t } = usePreferences();
+  const isDark = resolvedTheme === "dark";
 
   return (
     <button

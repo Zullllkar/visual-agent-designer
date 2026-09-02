@@ -20,6 +20,15 @@ export interface LlmGenerateInput {
    * 发送（content blocks 含 {type:'text'} + 多个 {type:'image_url'}）。
    */
   images?: string[];
+  /**
+   * OpenAI 兼容 vision 的 image_url.detail。
+   * 拆解长屏 UI 时应传 "high"，否则模型常只看缩略图、区域极少。
+   */
+  imageDetail?: "low" | "high" | "auto";
+  /** 覆盖默认 temperature（Vision 拆解建议 0.1–0.2） */
+  temperature?: number;
+  /** 覆盖默认 max_tokens（多区域 JSON 建议 ≥8192） */
+  maxTokens?: number;
 }
 
 export interface LlmGenerateOutput {

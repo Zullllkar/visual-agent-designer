@@ -69,12 +69,34 @@ export const CardNodeSchema = NodeBase.extend({
   body: z.string().optional(),
 });
 
+export const LineNodeSchema = NodeBase.extend({
+  type: z.literal("line"),
+  /** 线段终点坐标（相对画布原点） */
+  x2: z.number(),
+  y2: z.number(),
+  stroke: Color.optional(),
+  strokeWidth: z.number().min(0).optional(),
+  /** 是否带箭头 */
+  arrow: z.boolean().optional(),
+});
+
+export const ShapeNodeSchema = NodeBase.extend({
+  type: z.literal("shape"),
+  shape: z.enum(["rect", "ellipse", "triangle", "star"]),
+  fill: Color.optional(),
+  stroke: Color.optional(),
+  strokeWidth: z.number().min(0).optional(),
+  radius: NonNeg.optional(),
+});
+
 export const CanvasNodeSchema = z.discriminatedUnion("type", [
   FrameNodeSchema,
   TextNodeSchema,
   ImageNodeSchema,
   ButtonNodeSchema,
   CardNodeSchema,
+  LineNodeSchema,
+  ShapeNodeSchema,
 ]);
 
 export const CanvasPageSchema = z.object({
@@ -91,6 +113,8 @@ export type TextNode = z.infer<typeof TextNodeSchema>;
 export type ImageNode = z.infer<typeof ImageNodeSchema>;
 export type ButtonNode = z.infer<typeof ButtonNodeSchema>;
 export type CardNode = z.infer<typeof CardNodeSchema>;
+export type LineNode = z.infer<typeof LineNodeSchema>;
+export type ShapeNode = z.infer<typeof ShapeNodeSchema>;
 export type CanvasNode = z.infer<typeof CanvasNodeSchema>;
 export type CanvasPage = z.infer<typeof CanvasPageSchema>;
 export type CanvasNodeType = CanvasNode["type"];

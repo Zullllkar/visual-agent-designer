@@ -9,7 +9,9 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { ProjectFile } from "@/lib/project/schema";
+import { mergeAssetsPreferDiscarded } from "@/lib/project/asset-visibility";
 import { mergeApiSrcFromDisk, mergeProjectWithDisk } from "@/lib/project/merge-project";
+import { absorbIntoEmptySpawnSlots } from "@/lib/canvas/spawn-child-asset";
 import { createIdbStorage } from "@/lib/storage/idb-storage";
 
 export interface UpsertProjectOptions {
@@ -18,6 +20,25 @@ export interface UpsertProjectOptions {
 }
 
 export type DiskSyncStatus = "idle" | "saving" | "saved" | "error";
+
+function finalizeProjectAssets(project: ProjectFile): ProjectFile {
+  const assets = absorbIntoEmptySpawnSlots(project.assets ?? []);
+  if (assets === project.assets) return project;
+  return { ...project, assets };
+}
+
+function mergeProjectAssets(
+  current: ProjectFile | undefined,
+  incoming: ProjectFile
+): ProjectFile {
+  const merged = !current?.assets?.length
+    ? incoming
+    : {
+        ...incoming,
+        assets: mergeAssetsPreferDiscarded(current.assets, incoming.assets),
+      };
+  return finalizeProjectAssets(merged);
+}
 
 interface ProjectStoreState {
   projects: Record<string, ProjectFile>;
@@ -38,8 +59,9 @@ export const useProjectStore = create<ProjectStoreState>()(
       diskSync: {},
       getDiskSync: (id) => getState().diskSync[id] ?? "idle",
       upsert: (project, options) => {
+        const nextProject = mergeProjectAssets(getState().projects[project.id], project);
         set((s) => ({
-          projects: { ...s.projects, [project.id]: project },
+          projects: { ...s.projects, [nextProject.id]: nextProject },
         }));
 
         if (options?.syncToDisk === false) return;
@@ -49,11 +71,11 @@ export const useProjectStore = create<ProjectStoreState>()(
           diskSync: { ...s.diskSync, [project.id]: "saving" },
         }));
 
-        const sentAt = project.updatedAt;
+        const sentAt = nextProject.updatedAt;
         fetch("/api/projects", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(project),
+          body: JSON.stringify(nextProject),
         })
           .then((res) => res.json())
           .then((data) => {
@@ -66,17 +88,21 @@ export const useProjectStore = create<ProjectStoreState>()(
             set((s) => {
               const cur = s.projects[project.id];
               const nextProjects = !cur
-                ? { ...s.projects, [project.id]: data.project }
+                ? { ...s.projects, [project.id]: finalizeProjectAssets(data.project) }
                 : cur.updatedAt > data.project.updatedAt
                   ? {
                       ...s.projects,
-                      [project.id]: mergeApiSrcFromDisk(cur, data.project),
+                      [project.id]: finalizeProjectAssets(
+                        mergeApiSrcFromDisk(cur, data.project)
+                      ),
                     }
                   : data.project.updatedAt < sentAt
                     ? s.projects
                     : {
                         ...s.projects,
-                        [project.id]: mergeProjectWithDisk(cur, data.project),
+                        [project.id]: finalizeProjectAssets(
+                          mergeProjectWithDisk(cur, data.project)
+                        ),
                       };
               return {
                 projects: nextProjects,
@@ -137,8 +163,14 @@ export const useProjectStore = create<ProjectStoreState>()(
           let changed = false;
           projects.forEach((proj) => {
             const existing = updated[proj.id];
-            if (!existing || proj.updatedAt >= existing.updatedAt) {
+            if (!existing) {
               updated[proj.id] = proj;
+              changed = true;
+              return;
+            }
+            if (proj.updatedAt >= existing.updatedAt) {
+              // 保留本地 discarded，避免列表同步把已删素材冲回来
+              updated[proj.id] = mergeProjectWithDisk(existing, proj);
               changed = true;
             }
           });
@@ -148,6 +180,7 @@ export const useProjectStore = create<ProjectStoreState>()(
     }),
     {
       name: "vad.projects.v1",
+      skipHydration: true,
       storage: createJSONStorage(() => createIdbStorage()),
       partialize: (s) => ({ projects: s.projects }),
     }

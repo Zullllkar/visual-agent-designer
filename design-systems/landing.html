@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Visual Agent Designer</title>
+  <title>Vibeboard</title>
   <meta name="description" content="本地优先的可视化设计 Agent IDE。在画布上编排多 Agent 流水线，导出 Handoff 给 coding agent。" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -587,7 +587,7 @@
       <div class="wrap nav-inner">
         <a class="brand" href="#top" data-od-id="brand">
           <span class="brand-mark" aria-hidden="true">◇</span>
-          <span class="brand-name">Visual Agent Designer</span>
+          <span class="brand-name">Vibeboard</span>
         </a>
         <span class="nav-meta" data-od-id="nav-meta">
           <a href="#license" data-od-id="nav-license">Apache-2.0</a>
@@ -602,7 +602,7 @@
           </ul>
         </nav>
         <div class="nav-actions">
-          <a class="gh-star" id="gh-star" href="https://github.com/Zullllkar/visual-agent-designer" target="_blank" rel="noopener noreferrer" data-od-id="nav-github" aria-label="在 GitHub 上 Star 本仓库（新窗口打开）">
+          <a class="gh-star" id="gh-star" href="https://github.com/Zullllkar/vibeboard" target="_blank" rel="noopener noreferrer" data-od-id="nav-github" aria-label="在 GitHub 上 Star 本仓库（新窗口打开）">
             <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.68 7.68 0 018 4.14c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
             <span class="label">Star</span>
             <span class="count" id="gh-stars" data-state="loading" aria-live="polite">…</span>
@@ -623,10 +623,10 @@
           </p>
           <div class="actions" data-od-id="hero-actions">
             <a class="btn btn-primary" href="./canvas.html">打开 Canvas</a>
-            <a class="btn btn-ghost" id="hero-github" href="https://github.com/Zullllkar/visual-agent-designer" target="_blank" rel="noopener noreferrer">GitHub<span class="sr-only">（新窗口打开）</span></a>
+            <a class="btn btn-ghost" id="hero-github" href="https://github.com/Zullllkar/vibeboard" target="_blank" rel="noopener noreferrer">GitHub<span class="sr-only">（新窗口打开）</span></a>
           </div>
           <div class="install" data-od-id="install" aria-label="安装命令">
-            <code>git clone https://github.com/Zullllkar/visual-agent-designer.git</code>
+            <code>git clone https://github.com/Zullllkar/vibeboard.git</code>
             <code>pnpm install && pnpm dev</code>
           </div>
         </div>
@@ -724,7 +724,7 @@
             <h3>克隆仓库</h3>
             <p>可选 Daemon 处理落盘，避免热重载与长任务争抢。</p>
             <div class="clone-box">
-              <code id="clone-cmd">git clone https://github.com/Zullllkar/visual-agent-designer.git</code>
+              <code id="clone-cmd">git clone https://github.com/Zullllkar/vibeboard.git</code>
               <button type="button" id="btn-copy-clone" data-od-id="btn-copy-clone" aria-describedby="copy-status">复制</button>
             </div>
             <p class="sr-only" id="copy-status" role="status" aria-live="polite"></p>
@@ -736,28 +736,28 @@
           <div class="oss-block" data-od-id="oss-links-block">
             <h3>仓库入口</h3>
             <ul class="oss-links">
-              <li><a id="link-repo" href="https://github.com/Zullllkar/visual-agent-designer" target="_blank" rel="noopener noreferrer">Repository <span>源码</span><span class="sr-only">（新窗口）</span></a></li>
-              <li><a id="link-issues" href="https://github.com/Zullllkar/visual-agent-designer/issues" target="_blank" rel="noopener noreferrer">Issues <span>缺陷 / 需求</span><span class="sr-only">（新窗口）</span></a></li>
-              <li><a id="link-pr" href="https://github.com/Zullllkar/visual-agent-designer/pulls" target="_blank" rel="noopener noreferrer">Pull requests <span>贡献</span><span class="sr-only">（新窗口）</span></a></li>
-              <li><a id="link-license" href="https://github.com/Zullllkar/visual-agent-designer/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">LICENSE <span>Apache-2.0</span><span class="sr-only">（新窗口）</span></a></li>
-              <li><a id="link-readme" href="https://github.com/Zullllkar/visual-agent-designer#readme" target="_blank" rel="noopener noreferrer">README <span>快速开始</span><span class="sr-only">（新窗口）</span></a></li>
+              <li><a id="link-repo" href="https://github.com/Zullllkar/vibeboard" target="_blank" rel="noopener noreferrer">Repository <span>源码</span><span class="sr-only">（新窗口）</span></a></li>
+              <li><a id="link-issues" href="https://github.com/Zullllkar/vibeboard/issues" target="_blank" rel="noopener noreferrer">Issues <span>缺陷 / 需求</span><span class="sr-only">（新窗口）</span></a></li>
+              <li><a id="link-pr" href="https://github.com/Zullllkar/vibeboard/pulls" target="_blank" rel="noopener noreferrer">Pull requests <span>贡献</span><span class="sr-only">（新窗口）</span></a></li>
+              <li><a id="link-license" href="https://github.com/Zullllkar/vibeboard/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">LICENSE <span>Apache-2.0</span><span class="sr-only">（新窗口）</span></a></li>
+              <li><a id="link-readme" href="https://github.com/Zullllkar/vibeboard#readme" target="_blank" rel="noopener noreferrer">README <span>快速开始</span><span class="sr-only">（新窗口）</span></a></li>
             </ul>
           </div>
         </div>
 
         <div class="end" data-od-id="cta-band">
           <p>打开 <em>Canvas</em>，从 Brief 开始</p>
-          <a class="btn btn-ghost" id="cta-github" href="https://github.com/Zullllkar/visual-agent-designer" target="_blank" rel="noopener noreferrer">Star on GitHub<span class="sr-only">（新窗口打开）</span></a>
+          <a class="btn btn-ghost" id="cta-github" href="https://github.com/Zullllkar/vibeboard" target="_blank" rel="noopener noreferrer">Star on GitHub<span class="sr-only">（新窗口打开）</span></a>
           <a class="btn btn-primary" href="./canvas.html">进入工作台</a>
         </div>
       </section>
     </main>
 
     <footer class="site wrap" data-od-id="footer">
-      <span>Visual Agent Designer</span>
+      <span>Vibeboard</span>
       <a href="#license">Apache-2.0</a>
-      <a id="foot-github" href="https://github.com/Zullllkar/visual-agent-designer" target="_blank" rel="noopener noreferrer">GitHub<span class="sr-only">（新窗口）</span></a>
-      <a id="foot-issues" href="https://github.com/Zullllkar/visual-agent-designer/issues" target="_blank" rel="noopener noreferrer">Issues<span class="sr-only">（新窗口）</span></a>
+      <a id="foot-github" href="https://github.com/Zullllkar/vibeboard" target="_blank" rel="noopener noreferrer">GitHub<span class="sr-only">（新窗口）</span></a>
+      <a id="foot-issues" href="https://github.com/Zullllkar/vibeboard/issues" target="_blank" rel="noopener noreferrer">Issues<span class="sr-only">（新窗口）</span></a>
       <a href="./canvas.html">Canvas</a>
       <a href="./index.html">总览</a>
       <span class="sp">本地优先 · 开源</span>
@@ -765,7 +765,7 @@
   </div>
   <script>
     (function () {
-      var REPO = 'Zullllkar/visual-agent-designer';
+      var REPO = 'Zullllkar/vibeboard';
       var base = 'https://github.com/' + REPO;
       var clone = 'git clone ' + base + '.git';
 

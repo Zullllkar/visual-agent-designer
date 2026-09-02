@@ -1,8 +1,8 @@
 ---
 name: saas-landing
-description: 生成 SaaS 产品 Landing Page 首屏 + 关键 section，单页输出
+description: 生成 SaaS 落地页首屏与关键 section 的高保真视觉，单屏出图而不是长页代码
 kind: landing
-version: "0.1.0"
+version: "0.2.0"
 author: vad
 recommendedDesignSystem: linear-like
 inputs:
@@ -19,10 +19,10 @@ output:
   artifact: landing-page
   defaultPageSize:
     width: 1440
-    height: 3200
+    height: 900
   pageCountHint: 1
 agent:
-  steps: [brief, layout, image, content, critic, repair]
+  steps: [brief, image, critic, repair]
   imageRequired: true
   repairThreshold: 8.5
   maxRepairRounds: 2
@@ -30,23 +30,33 @@ agent:
 
 # SaaS Landing Skill
 
-你是产品官网设计师。当前任务是输出**单页长 Landing**（1440×3200），结构按以下顺序：
+你是产品官网设计师。默认出**首屏 Hero 高保真图**（1440×900）。需要更多 section 时各出一张完整构图，不要一张图里塞整站长页。
 
-1. **Hero**（h≈900）：左文右图 / 上文下图，必含产品名 / 一句话定位 / 主 CTA / 次 CTA / 社会证明
-2. **Features**（h≈600）：3 列功能卡片，每张图标 + 标题 + 一句话
-3. **Showcase**（h≈700）：产品截图大图，左右文字交错
-4. **Pricing**（h≈600）：3 档卡片（最便宜 / 推荐高亮 / 企业），高亮档要 visual lift
-5. **Footer**（h≈400）：3 列导航 + Logo + 版权
+## 构图骨架
 
-## 文案规则
+1. 顶导航 + Logo + 主/次 CTA
+2. 大标题（动词开头，≤8 字）+ 一句话定位（为谁、解决什么）
+3. 社会证明或产品画面占一半视觉权重
+4. 主 CTA 清晰，不要「点击查看」
 
-- 标题动词开头，简洁有力（≤8 字）
-- 一句话定位 ≤ 24 字，必须包含「为谁、解决什么、怎么解决」中的两个
-- CTA 用动词短语：「免费开始」/「预约演示」，不用「点击查看」
-- Pricing 价格写真实数字（$0 / $19 / Custom），不写「联系我们」
+后续 section 单独出图：功能三列、产品展示、三档定价。
 
-## 视觉规则
+## 英文 prompt 配方
 
-- 严格遵循 active DESIGN.md
-- Hero 大字体（72-96px）
-- Pricing 推荐档要带描边 + 阴影 + badge
+- Subject: SaaS marketing landing hero, one desktop viewport
+- Camera: straight-on website screenshot, generous margins
+- Light: clean software lighting, restrained gradient only if DESIGN.md allows
+- Type: real product name and CTA verbs (Start free / Book a demo)
+- Negative: dashboard chrome, fake app phone mockup soup, long pricing table crammed into hero, code editor
+
+## P0 视觉清单
+
+- 标题和 CTA 完整可见，不被裁切
+- 价格或卖点写真实数字，禁止占位「$$$」
+- 这是官网首屏，不是 App 界面，也不是节日促销海报
+
+## 硬性禁止
+
+- 禁止 3200px 长页一张出完
+- 禁止 HTML / Canvas JSON
+- 禁止假浏览器窗口叠三层阴影

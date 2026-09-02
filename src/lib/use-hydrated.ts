@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import { useProjectStore } from "@/store/project-store";
 import { useProviderStore } from "@/store/provider-store";
 
@@ -13,11 +13,34 @@ import { useProviderStore } from "@/store/provider-store";
  * 具体 store 的 hook，等待真正完成 rehydration。
  */
 export function useHydrated() {
-  return useSyncExternalStore(
-    () => () => {},
-    () => true,
-    () => false
-  );
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
+
+  return hydrated;
+}
+
+function usePersistHasHydrated(persist?: {
+  hasHydrated: () => boolean;
+  onFinishHydration: (fn: () => void) => () => void;
+}) {
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    if (!persist) {
+      setHydrated(true);
+      return;
+    }
+    if (persist.hasHydrated()) {
+      setHydrated(true);
+      return;
+    }
+    return persist.onFinishHydration(() => setHydrated(true));
+  }, [persist]);
+
+  return hydrated;
 }
 
 /**
@@ -30,15 +53,12 @@ export function useHydrated() {
  * 对于读 projects 字典的页面（ProjectList / ProjectWorkspace / IdeShell），
  * 应改用本 hook 替代 useHydrated。
  *
- * SSR 安全：服务端 useProjectStore.persist 仍存在，hasHydrated() 返回
- * false；effect 只跑在 client，订阅 onFinishHydration 即可。
+ * 必须在 useEffect 里订阅：onFinishHydration 若走 useSyncExternalStore，
+ * persist 的微任务会在 mount 完成前通知，触发 React 19 的
+ * “hasn't mounted yet” 控制台错误。
  */
 export function useProjectStoreHydrated() {
-  return useSyncExternalStore(
-    (onStoreChange) => useProjectStore.persist.onFinishHydration(onStoreChange),
-    () => useProjectStore.persist.hasHydrated(),
-    () => false
-  );
+  return usePersistHasHydrated(useProjectStore.persist);
 }
 
 /**
@@ -46,9 +66,5 @@ export function useProjectStoreHydrated() {
  * 未完成前 config 仍是默认 Mock，会导致首页误显示「未配置」。
  */
 export function useProviderStoreHydrated() {
-  return useSyncExternalStore(
-    (onStoreChange) => useProviderStore.persist.onFinishHydration(onStoreChange),
-    () => useProviderStore.persist.hasHydrated(),
-    () => false
-  );
+  return usePersistHasHydrated(useProviderStore.persist);
 }

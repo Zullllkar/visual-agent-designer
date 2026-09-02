@@ -1,8 +1,8 @@
-# Visual Agent Designer 项目方案
+# Vibeboard 项目方案
 
 ## 0. 文档目标
 
-本文是 Visual Agent Designer 的完整项目方案，重构整合了以下方向：
+本文是 Vibeboard 的完整项目方案，重构整合了以下方向：
 
 - 产品不是电商设计工具。
 - 产品核心是 UI 生成、产品原型、小红书图文和设计到开发的 handoff。
@@ -16,7 +16,7 @@
 
 ## 1. 产品定位
 
-Visual Agent Designer 是一个开源、本地优先的 AI 产品设计工具。
+Vibeboard 是一个开源、本地优先的 AI 产品设计工具。
 
 它帮助用户从一个产品想法出发，生成：
 

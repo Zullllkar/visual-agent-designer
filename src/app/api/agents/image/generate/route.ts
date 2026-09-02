@@ -1,38 +1,46 @@
-import { z } from "zod";
 import { nanoid } from "nanoid";
-import { resolveProviders } from "@/lib/providers/registry";
-import { ProviderConfigSchema } from "@/lib/providers/config-schema";
-import type { ImageAsset } from "@/lib/project/assets-schema";
+import { z } from "zod";
 
-/**
- * POST /api/agents/image/generate
- * --------------------------------------------------------------
- * 输入：{ prompt, n?, width?, height?, visualStyle?, providerConfig? }
- * 输出：{ assets: ImageAsset[] }
- *
- * 行为：
- *   1. resolveProviders(providerConfig) → ImageProvider
- *   2. 并发跑 N 次 generateImage（共享同一 prompt，不同 seed）
- *   3. 每次结果包成 ImageAsset，共享同一 batchId
- *   4. 任一次失败不影响其他成功的，部分失败时仍返回成功的数量
- *
- * 不直接落盘到 server side —— ImageAsset 由客户端写入 project-store /
- * IndexedDB；服务端只是"图像模型代理 + metadata 装配"层。
- */
+import {
+  buildDirectPendingAssets,
+  runDirectImageGenerationBatch,
+  type DirectImageGenerationRequest,
+} from "@/lib/agents/direct-image-generation";
+import { threadIdForProject } from "@/lib/agents/checkpoint";
+import { registerAllJobHandlers } from "@/lib/agents/job/job-handlers";
+import { jobScheduler } from "@/lib/agents/job/job-scheduler";
+import { stageGeneratingAssets } from "@/lib/canvas/stage-generating-assets";
+import { ProjectFileSchema } from "@/lib/project/schema";
+import type { ImageAsset } from "@/lib/project/assets-schema";
+import { ProviderConfigSchema } from "@/lib/providers/config-schema";
+import { resolveProviders } from "@/lib/providers/registry";
+import { loadMergedProjectFromVad, saveProjectToVad } from "@/lib/vad/storage";
 
 const InputSchema = z.object({
   prompt: z.string().min(1).max(2000),
   n: z.number().int().min(1).max(8).optional(),
   width: z.number().int().positive().max(4096).optional(),
   height: z.number().int().positive().max(4096).optional(),
-  /** 视觉风格前缀，会自动拼到 prompt 前（例如 brief.visualStyle） */
   visualStyle: z.string().max(200).optional(),
-  /** 关联到哪个 page 生成；只是元数据，不影响生成行为 */
   sourcePageId: z.string().optional(),
-  /** 可选 negative prompt */
   negativePrompt: z.string().max(500).optional(),
-  /** 用于图片编辑/风格参考的输入图。 */
   referenceImages: z.array(z.string().min(1).max(8_000_000)).max(4).optional(),
+  parentAssetId: z.string().optional(),
+  editInstruction: z.string().max(1000).optional(),
+  editRegion: z
+    .object({
+      x: z.number(),
+      y: z.number(),
+      w: z.number(),
+      h: z.number(),
+    })
+    .optional(),
+  role: z
+    .enum(["hero", "illustration", "product-shot", "background", "icon", "avatar"])
+    .optional(),
+  projectId: z.string().optional(),
+  threadId: z.string().optional(),
+  async: z.boolean().optional(),
   providerConfig: ProviderConfigSchema,
 });
 
@@ -54,64 +62,93 @@ export async function POST(req: Request) {
 
   const {
     prompt,
-    n = 4,
+    n = 1,
     width = 1024,
     height = 1024,
     visualStyle,
     sourcePageId,
     negativePrompt,
     referenceImages,
+    parentAssetId,
+    editInstruction,
+    editRegion,
+    role,
+    projectId,
+    threadId,
     providerConfig,
   } = parsed.data;
 
-  const { image } = resolveProviders(providerConfig);
-  const fullPrompt = visualStyle ? `${visualStyle}, ${prompt}` : prompt;
+  const request: DirectImageGenerationRequest = {
+    prompt,
+    count: n,
+    width,
+    height,
+    visualStyle,
+    sourcePageId,
+    negativePrompt,
+    referenceImages,
+    parentAssetId,
+    editInstruction,
+    editRegion,
+    role,
+  };
   const batchId = nanoid(8);
-  const now = new Date().toISOString();
 
-  // 并发调用，部分失败用 settle 兜底
-  const settled = await Promise.allSettled(
-    Array.from({ length: n }, () =>
-      image.generateImage({
-        prompt: fullPrompt,
-        width,
-        height,
-        negativePrompt,
-        referenceImages,
-      })
-    )
-  );
-
-  const assets: ImageAsset[] = [];
-  const errors: string[] = [];
-  for (const r of settled) {
-    if (r.status === "fulfilled") {
-      const out = r.value;
-      assets.push({
-        id: nanoid(10),
-        prompt: fullPrompt,
-        src: out.imageUrl,
-        width,
-        height,
-        model: out.model,
-        seed: out.seed,
-        durationMs: out.durationMs,
-        costUsd: out.cost,
-        createdAt: now,
-        batchId,
-        variantGroupId: batchId,
-        status: "candidate",
-        source: referenceImages?.length ? "edited" : "generated",
-        ...(sourcePageId ? { usedInPages: [] } : {}),
-      });
-    } else {
-      errors.push(String((r.reason as Error)?.message ?? r.reason));
+  if (projectId && parsed.data.async !== false) {
+    registerAllJobHandlers();
+    const project = await loadMergedProjectFromVad(projectId);
+    if (!project) {
+      return Response.json({ error: "project_not_found", projectId }, { status: 404 });
     }
+    const pendingAssets = buildDirectPendingAssets(request, batchId);
+    const updatedProject = ProjectFileSchema.parse(
+      stageGeneratingAssets(project, pendingAssets)
+    );
+    await saveProjectToVad(updatedProject);
+
+    const job = jobScheduler.submit({
+      type: "direct_image_generation",
+      payload: {
+        project: updatedProject,
+        providerConfig,
+        request,
+        pendingAssets,
+      },
+      batchId,
+      projectId,
+      threadId: threadId ?? threadIdForProject(projectId),
+      phase: "GENERATION",
+    });
+
+    return Response.json({
+      assets: pendingAssets,
+      batchId,
+      requested: n,
+      succeeded: 0,
+      project: updatedProject,
+      job: {
+        jobId: job.id,
+        jobType: job.type,
+        status: job.status,
+        progress: job.progress,
+        progressDetail: job.progressDetail,
+      },
+    });
   }
 
+  const { image } = resolveProviders(providerConfig);
+  const result = await runDirectImageGenerationBatch({
+    image,
+    input: request,
+    initialAssets: [],
+    pendingAssets: buildDirectPendingAssets(request, batchId),
+    concurrency: 2,
+  });
+
+  const assets: ImageAsset[] = result.generatedAssets;
   if (assets.length === 0) {
     return Response.json(
-      { error: "all_failed", errors: errors.slice(0, 5) },
+      { error: "all_failed", errors: result.errors.slice(0, 5) },
       { status: 502 }
     );
   }
@@ -121,6 +158,6 @@ export async function POST(req: Request) {
     batchId,
     requested: n,
     succeeded: assets.length,
-    errors: errors.length > 0 ? errors.slice(0, 5) : undefined,
+    errors: result.errors.length > 0 ? result.errors.slice(0, 5) : undefined,
   });
 }

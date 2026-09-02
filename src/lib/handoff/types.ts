@@ -9,6 +9,7 @@ import type { ProjectFile } from "@/lib/project/schema";
 
 export interface HandoffContext {
   project: ProjectFile;
+  requestOrigin?: string;
   /** 渲染后的页面截图（base64 或本地路径）。 */
   screenshots: Array<{ pageId: string; path: string }>;
   /** 图像模型产出的参考图。 */

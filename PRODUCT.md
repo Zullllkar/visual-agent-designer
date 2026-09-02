@@ -10,7 +10,7 @@ product
 
 ## Product Purpose
 
-Visual Agent Designer（VAD）把「产品想法 → Brief → 视觉方向 → 高保真图片素材 → Handoff 开发包」串成一条可追踪的本地优先流水线（对标 Lovart 式 ChatCanvas：Agent 在无限画布上产出成品视觉资产，而不是网页结构代码框）。
+Vibeboard把「产品想法 → Brief → 视觉方向 → 高保真图片素材 → Handoff 开发包」串成一条可追踪的本地优先流水线（对标 Lovart 式 ChatCanvas：Agent 在无限画布上产出成品视觉资产，而不是网页结构代码框）。
 
 成功标准：用户能在 IDE 工作台内用 Agent 生成、迭代、收藏图片素材，并导出包含 **PNG/视觉资产、prompts、设计 token / Brief 上下文** 的 Handoff 包，供 coding agent 直接使用——**不以 Canvas JSON / 网页结构稿作为主交付物**。
 

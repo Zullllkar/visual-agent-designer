@@ -3,14 +3,16 @@
 /**
  * useChatStream
  * --------------------------------------------------------------
- * 把 fetch /api/chat 的 SSE 流接入 React 状态。
+ * 把 WebSocket 事件流接入 React 状态。
+ *
+ * 唯一通道：WebSocket（/ws），不再支持 SSE 回退。
  *
  * 暴露：
  *   - status:        idle | streaming | done | error
  *   - liveEvents:    本轮已收到的事件（按到达顺序）
  *   - finalProject:  最后一帧 `final_project` 里的 ProjectFile（如果有）
  *   - send(input):   发起一轮请求
- *   - cancel():      中止（AbortController）
+ *   - cancel():      中止 WebSocket 运行
  *
  * 设计要点：
  *   - hook 只关心"流"的解析与状态；不做持久化（持久化交给 chat-store）
@@ -19,16 +21,21 @@
  *     消息历史，所以丢失 liveEvents 不影响"已落地的对话"
  */
 
-import { useCallback, useRef, useState } from "react";
-import { createSseParser } from "./sse-parser";
+import { useCallback, useState } from "react";
 import type { ChatMessage } from "@/lib/agents/chat-schema";
 import type { ProjectFile } from "@/lib/project/schema";
 import type { ProviderConfig } from "@/lib/providers/registry";
-
-export type ChatStreamStatus = "idle" | "streaming" | "done" | "error";
-
-export type { ChatLiveEvent } from "./chat-live-event";
 import type { ChatLiveEvent } from "./chat-live-event";
+import { useWsClient, type WsApprovalInput, type WsToolApprovalInput } from "./use-ws-client";
+
+export type ChatStreamStatus =
+  | "idle"
+  | "streaming"
+  | "waiting_user"
+  | "cancelling"
+  | "done"
+  | "error";
+export type { ChatLiveEvent } from "./chat-live-event";
 
 export interface ChatStreamCallbacks {
   /** 拿到 final_project 时回调，调用方负责 upsert 到 project store */
@@ -50,21 +57,59 @@ export interface ChatStreamSendInput {
   project: ProjectFile | null;
   messages: ChatMessage[];
   providerConfig?: ProviderConfig;
+  /** 当前会话 thread；多会话时必须传，避免串记忆 */
+  threadId?: string;
 }
+
+export type ChatStreamApprovalInput = WsApprovalInput;
+export type ChatStreamToolApprovalInput = WsToolApprovalInput;
 
 export function useChatStream(callbacks?: ChatStreamCallbacks) {
   const [status, setStatus] = useState<ChatStreamStatus>("idle");
   const [liveEvents, setLiveEvents] = useState<ChatLiveEvent[]>([]);
   const [finalProject, setFinalProject] = useState<ProjectFile | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
+
+  // WebSocket 客户端（唯一通道）
+  const wsClient = useWsClient({
+    onEvent: (ev) => {
+      if (ev.type === "run.cancelling") {
+        setStatus("cancelling");
+      }
+      if (ev.type === "project.update") {
+        const project = (ev.data as { project?: ProjectFile })?.project;
+        if (project) callbacks?.onFinalProject?.(project);
+      }
+      callbacks?.onEvent?.(ev);
+      setLiveEvents((current) => {
+        if (!ev.id) return [...current, ev];
+        const index = current.findIndex((item) => item.id === ev.id);
+        if (index < 0) return [...current, ev];
+        const next = current.slice();
+        next[index] = ev;
+        return next;
+      });
+    },
+    onDone: (ev) => {
+      callbacks?.onDone?.();
+      if (callbacks?.clearLiveEventsOnDone !== false) {
+        setLiveEvents([]);
+      }
+      setStatus(ev.type === "run.waiting_user" ? "waiting_user" : "done");
+    },
+    onError: (msg) => {
+      setError(msg);
+      setStatus("error");
+      callbacks?.onError?.(msg);
+    },
+    clearLiveEventsOnDone: callbacks?.clearLiveEventsOnDone,
+  });
 
   const send = useCallback(
     async (input: ChatStreamSendInput) => {
-      // 中止可能存在的上一轮
-      abortRef.current?.abort();
-      const ac = new AbortController();
-      abortRef.current = ac;
+      const lastUser = [...input.messages].reverse().find((m) => m.role === "user");
+      const prompt = lastUser?.content ?? "";
+      if (!prompt.trim()) return;
 
       setStatus("streaming");
       setLiveEvents([]);
@@ -72,88 +117,85 @@ export function useChatStream(callbacks?: ChatStreamCallbacks) {
       setError(null);
 
       try {
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(input),
-          signal: ac.signal,
+        await wsClient.send({
+          project: input.project,
+          messages: input.messages,
+          providerConfig: input.providerConfig,
+          projectId: input.project?.id,
+          threadId: input.threadId,
         });
-        if (!res.ok || !res.body) {
-          const text = await res.text().catch(() => "");
-          throw new Error(`chat request failed: ${res.status} ${text}`);
-        }
-
-        const reader = res.body.getReader();
-        const parser = createSseParser();
-        let lastFinalProject: ProjectFile | null = null;
-
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) {
-            for (const ev of parser.flush()) {
-              handleFrame(ev);
-            }
-            break;
-          }
-          if (!value) continue;
-          for (const ev of parser.feed(value)) {
-            handleFrame(ev);
-          }
-        }
-
-        function handleFrame(ev: { type: string; data: string }) {
-          let data: unknown = ev.data;
-          try {
-            data = JSON.parse(ev.data);
-          } catch {
-            // 保留原字符串
-          }
-
-          if (ev.type === "final_project") {
-            const proj = (data as { project: ProjectFile }).project;
-            lastFinalProject = proj;
-            setFinalProject(proj);
-            callbacks?.onFinalProject?.(proj);
-            return;
-          }
-
-          if (ev.type === "error") {
-            const msg = (data as { message?: string })?.message ?? "unknown error";
-            setError(msg);
-            callbacks?.onError?.(msg);
-          }
-
-          const live: ChatLiveEvent = { type: ev.type, data, at: Date.now() };
-          callbacks?.onEvent?.(live);
-          setLiveEvents((s) => [...s, live]);
-        }
-
-        callbacks?.onDone?.();
-        if (callbacks?.clearLiveEventsOnDone !== false) {
-          setLiveEvents([]);
-        }
-        setStatus("done");
-        return lastFinalProject;
-      } catch (e) {
-        if ((e as Error).name === "AbortError") {
-          setStatus("idle");
-          return null;
-        }
-        const msg = (e as Error).message;
-        setError(msg);
+        return null;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "发送失败";
+        setError(message);
         setStatus("error");
-        callbacks?.onError?.(msg);
+        callbacks?.onError?.(message);
         return null;
       }
     },
-    [callbacks]
+    [callbacks, wsClient.send]
   );
 
   const cancel = useCallback(() => {
-    abortRef.current?.abort();
-    abortRef.current = null;
-    setStatus("idle");
+    wsClient.cancel();
+  }, [wsClient]);
+
+  /** 切换/新建会话时清空本轮时间线视图（不中止后台 WS） */
+  const clearLiveEvents = useCallback((opts?: { resetStatus?: boolean }) => {
+    setLiveEvents([]);
+    setFinalProject(null);
+    setError(null);
+    if (opts?.resetStatus) {
+      setStatus("idle");
+      return;
+    }
+    setStatus((current) =>
+      current === "streaming" ||
+      current === "cancelling" ||
+      current === "waiting_user"
+        ? current
+        : "idle"
+    );
   }, []);
 
-  return { status, liveEvents, finalProject, error, send, cancel };
+  const approve = useCallback(
+    async (input: ChatStreamApprovalInput) => {
+      try {
+        await wsClient.approve(input);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Approval failed";
+        setError(message);
+        setStatus("error");
+        callbacks?.onError?.(message);
+      }
+    },
+    [callbacks, wsClient.approve]
+  );
+
+  const approveTool = useCallback(
+    async (input: ChatStreamToolApprovalInput) => {
+      try {
+        await wsClient.approveTool(input);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Tool approval failed";
+        setError(message);
+        setStatus("error");
+        callbacks?.onError?.(message);
+      }
+    },
+    [callbacks, wsClient.approveTool]
+  );
+
+  return {
+    status,
+    liveEvents,
+    finalProject,
+    error,
+    send,
+    approve,
+    approveTool,
+    cancel,
+    clearLiveEvents,
+    reconnect: wsClient.reconnect,
+  };
 }

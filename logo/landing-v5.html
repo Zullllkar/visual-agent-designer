@@ -1,0 +1,3236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vibeboard</title>
+  <link rel="icon" href="/api/projects/2536b0d8-98f7-4d0b-b612-ab700bc15bb6/raw/assets/logo-mark.svg?workspaceId=oouxonb8ijldxif727hhdu2q&workspaceMemberId=hlpx6umvk5x5oo9s2h9ep9xx" type="image/svg+xml" />
+  <meta name="description" content="本地优先的可视化 Agent 编排工作台。在画布上编排多 Agent 流水线，导出 Handoff。" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;1,500&display=swap" rel="stylesheet" />
+  <script>
+    try {
+      var t = localStorage.getItem('vad:theme') || 'light';
+      document.documentElement.setAttribute('data-theme', t);
+      if (localStorage.getItem('vad:motion') === '1') document.documentElement.classList.add('reduce-motion');
+    } catch (e) {}
+  </script>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --sidebar: #ffffff;
+      --surface: #ffffff;
+      --stage: #fbfbfa;
+      --fg: #1a1916;
+      --muted: #6b6560;
+      --faint: #948e88;
+      --line: rgba(26, 25, 22, 0.08);
+      --line-strong: rgba(26, 25, 22, 0.14);
+      --accent: #d06b5c;
+      --accent-soft: rgba(208, 107, 92, 0.1);
+      --accent-glow: rgba(208, 107, 92, 0.18);
+      --ink: #1a1916;
+      --ink-hover: #2e2c28;
+      --chip: #f4f3f1;
+      --chip-hover: #ebe9e6;
+      --fill-soft: rgba(26, 25, 22, 0.04);
+      --fill-hover: rgba(26, 25, 22, 0.07);
+      --shadow-sm: 0 1px 2px rgba(26, 25, 22, 0.04);
+      --shadow-float: 0 1px 2px rgba(26, 25, 22, 0.03), 0 12px 32px rgba(26, 25, 22, 0.08);
+      --shadow-prompt:
+        0 0 0 1px rgba(26, 25, 22, 0.06),
+        0 1px 1px rgba(26, 25, 22, 0.03),
+        0 16px 40px rgba(26, 25, 22, 0.07);
+      --shadow-card:
+        0 1px 2px rgba(26, 25, 22, 0.04),
+        0 14px 36px rgba(26, 25, 22, 0.08);
+      --radius: 12px;
+      --radius-lg: 20px;
+      --radius-pill: 999px;
+      --sans: 'Plus Jakarta Sans', 'Noto Sans SC', system-ui, sans-serif;
+      --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+      --sidebar-w: 256px;
+      --rail-w: 68px;
+      --ease: cubic-bezier(0.2, 0, 0, 1);
+    }
+    html[data-theme="dark"] {
+      --bg: #111110;
+      --sidebar: #161614;
+      --surface: #1c1b19;
+      --stage: #141412;
+      --fg: #f3f1ec;
+      --muted: #b4afa8;
+      --faint: #8a857e;
+      --line: rgba(255, 255, 255, 0.08);
+      --line-strong: rgba(255, 255, 255, 0.14);
+      --accent: #e08a7c;
+      --accent-soft: rgba(224, 138, 124, 0.16);
+      --accent-glow: rgba(224, 138, 124, 0.22);
+      --ink: #f3f1ec;
+      --ink-hover: #ffffff;
+      --chip: #242220;
+      --chip-hover: #2e2c28;
+      --fill-soft: rgba(255, 255, 255, 0.05);
+      --fill-hover: rgba(255, 255, 255, 0.09);
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+      --shadow-float: 0 1px 2px rgba(0, 0, 0, 0.2), 0 16px 40px rgba(0, 0, 0, 0.45);
+      --shadow-prompt:
+        0 0 0 1px rgba(255, 255, 255, 0.08),
+        0 16px 40px rgba(0, 0, 0, 0.4);
+      --shadow-card:
+        0 1px 2px rgba(0, 0, 0, 0.25),
+        0 14px 36px rgba(0, 0, 0, 0.4);
+    }
+    @media (prefers-color-scheme: dark) {
+      html[data-theme="system"] {
+        --bg: #111110;
+        --sidebar: #161614;
+        --surface: #1c1b19;
+        --stage: #141412;
+        --fg: #f3f1ec;
+        --muted: #b4afa8;
+        --faint: #8a857e;
+        --line: rgba(255, 255, 255, 0.08);
+        --line-strong: rgba(255, 255, 255, 0.14);
+        --accent: #e08a7c;
+        --accent-soft: rgba(224, 138, 124, 0.16);
+        --accent-glow: rgba(224, 138, 124, 0.22);
+        --ink: #f3f1ec;
+        --ink-hover: #ffffff;
+        --chip: #242220;
+        --chip-hover: #2e2c28;
+        --fill-soft: rgba(255, 255, 255, 0.05);
+        --fill-hover: rgba(255, 255, 255, 0.09);
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+        --shadow-float: 0 1px 2px rgba(0, 0, 0, 0.2), 0 16px 40px rgba(0, 0, 0, 0.45);
+        --shadow-prompt:
+          0 0 0 1px rgba(255, 255, 255, 0.08),
+          0 16px 40px rgba(0, 0, 0, 0.4);
+        --shadow-card:
+          0 1px 2px rgba(0, 0, 0, 0.25),
+          0 14px 36px rgba(0, 0, 0, 0.4);
+      }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font: 14px/1.7 var(--sans);
+      color: var(--fg);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      overflow: hidden;
+    }
+    button, input, textarea { font: inherit; color: inherit; }
+    button { cursor: pointer; border: 0; background: none; }
+    a { color: inherit; text-decoration: none; }
+    img { display: block; max-width: 100%; }
+    :focus { outline: none; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    .skip {
+      position: absolute; left: 14px; top: -48px; z-index: 80;
+      padding: 8px 12px; background: var(--ink); color: #fff;
+      border-radius: 8px; font-size: 13px; font-weight: 600;
+    }
+    .skip:focus { top: 12px; }
+    .sr-only {
+      position: absolute; width: 1px; height: 1px;
+      padding: 0; margin: -1px; overflow: hidden;
+      clip: rect(0,0,0,0); border: 0;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: var(--sidebar-w) 1fr;
+      height: 100%;
+      transition: grid-template-columns .28s var(--ease);
+    }
+    .app.is-rail { --sidebar-w: var(--rail-w); }
+
+    .sidebar {
+      background: var(--sidebar);
+      border-right: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      padding: 14px 12px 12px;
+      min-height: 0;
+      position: relative;
+      z-index: 8;
+    }
+    .side-top {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 4px 14px;
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 650;
+      font-size: 13px;
+      letter-spacing: -0.03em;
+      flex: 1;
+      min-width: 0;
+    }
+    .brand-mark {
+      width: 26px; height: 26px;
+      color: var(--fg);
+      display: grid; place-items: center;
+      flex-shrink: 0;
+    }
+    .brand-mark svg { width: 26px; height: 26px; display: block; }
+    .brand-name {
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .icon-btn {
+      width: 32px; height: 32px;
+      border-radius: 8px;
+      color: var(--muted);
+      display: grid; place-items: center;
+      transition: background .15s var(--ease), color .15s var(--ease);
+      flex-shrink: 0;
+    }
+    .icon-btn:hover { background: var(--fill-hover); color: var(--fg); }
+    .icon-btn:active { background: rgba(26,25,22,0.12); color: var(--fg); }
+    .icon-btn svg {
+      width: 15px; height: 15px;
+      stroke: currentColor; fill: none;
+      stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+    }
+    .icon-btn kbd {
+      display: none;
+    }
+
+    .btn-create {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 40px;
+      padding: 0 14px;
+      margin: 0 4px 14px;
+      background: var(--chip);
+      color: var(--fg);
+      border-radius: 10px;
+      font-weight: 650;
+      font-size: 13.5px;
+      letter-spacing: 0.01em;
+      box-shadow: inset 0 0 0 1px rgba(26,25,22,0.04);
+      transition: background .15s var(--ease), transform .1s var(--ease), box-shadow .15s;
+      position: relative;
+    }
+    .btn-create:hover {
+      background: var(--chip-hover);
+      color: var(--fg);
+      box-shadow: var(--shadow-sm);
+    }
+    .btn-create:active { transform: scale(0.985); }
+    .btn-create svg {
+      width: 14px; height: 14px;
+      stroke: currentColor; fill: none;
+      stroke-width: 2; stroke-linecap: round;
+    }
+
+    .nav-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      padding: 0 4px;
+    }
+    .nav-list a {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      height: 36px;
+      padding: 0 10px;
+      border-radius: 9px;
+      color: var(--muted);
+      font-size: 13.5px;
+      font-weight: 500;
+      line-height: 1.4;
+      transition: background .15s var(--ease), color .15s var(--ease);
+    }
+    .nav-list a:hover { background: var(--fill-soft); color: var(--fg); }
+    .nav-list a.active {
+      background: var(--accent-soft);
+      color: var(--fg);
+      font-weight: 600;
+    }
+    .nav-text { flex: 1; min-width: 0; }
+    .nav-count {
+      font-size: 11px;
+      font-weight: 550;
+      color: var(--faint);
+      font-variant-numeric: tabular-nums;
+    }
+    .nav-list a.active .nav-count { color: var(--muted); }
+    .nav-list svg {
+      width: 16px; height: 16px;
+      stroke: currentColor; fill: none;
+      stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+      flex-shrink: 0;
+    }
+
+    .recent {
+      margin-top: 22px;
+      padding: 0 4px;
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .recent-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--faint);
+      letter-spacing: 0.04em;
+      padding: 0 10px 8px;
+    }
+    .recent-list {
+      list-style: none;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .recent-list a {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 10px;
+      border-radius: 9px;
+      min-height: 42px;
+      position: relative;
+      transition: background .15s var(--ease);
+    }
+    .recent-list a:hover { background: var(--fill-soft); }
+    .recent-list a.active { background: var(--accent-soft); }
+    .recent-list a.active::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 11px; bottom: 11px;
+      width: 2px;
+      border-radius: 2px;
+      background: var(--accent);
+    }
+    .thumb {
+      width: 30px; height: 30px;
+      border-radius: 7px;
+      flex-shrink: 0;
+      overflow: hidden;
+      background: var(--chip);
+      box-shadow: inset 0 0 0 1px var(--line);
+    }
+    .thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .recent-meta { min-width: 0; }
+    .recent-meta span {
+      display: block;
+      font-size: 12.5px;
+      font-weight: 550;
+      color: var(--fg);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .recent-meta small {
+      display: block;
+      font-size: 11px;
+      color: var(--faint);
+      letter-spacing: 0.01em;
+    }
+
+    .side-foot {
+      border-top: 1px solid var(--line);
+      padding: 10px 4px 2px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      position: relative;
+      margin-top: auto;
+    }
+    .acct-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+      min-height: 44px;
+      padding: 4px 6px;
+      margin: 0 -6px;
+      border-radius: 10px;
+      text-align: left;
+      position: relative;
+      transition: background .15s var(--ease);
+    }
+    .acct-btn:hover { background: var(--fill-soft); }
+    .acct-btn[aria-expanded="true"] { background: var(--fill-hover); }
+    .avatar {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      background: var(--ink);
+      color: var(--bg);
+      display: grid; place-items: center;
+      font-size: 12px; font-weight: 700;
+      flex-shrink: 0;
+    }
+    .user-meta { flex: 1; min-width: 0; }
+    .user-meta strong {
+      display: block;
+      font-size: 12.5px;
+      font-weight: 650;
+      letter-spacing: 0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .user-meta span { font-size: 11px; color: var(--faint); }
+
+    .app.is-rail .sidebar { padding: 12px 8px 10px; }
+    .app.is-rail .side-top {
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      padding: 0 0 10px;
+    }
+    .app.is-rail .brand { justify-content: center; flex: 0; }
+    .app.is-rail .brand-name,
+    .app.is-rail .nav-text,
+    .app.is-rail .nav-count,
+    .app.is-rail .recent,
+    .app.is-rail .create-label,
+    .app.is-rail .user-meta,
+    .app.is-rail .gh-chip,
+    .app.is-rail #btn-search { display: none; }
+    .app.is-rail .btn-create {
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      margin: 0 auto 12px;
+      justify-content: center;
+    }
+    .app.is-rail .nav-list { padding: 0; align-items: center; }
+    .app.is-rail .nav-list a {
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      justify-content: center;
+    }
+    .app.is-rail .side-foot {
+      justify-content: center;
+      padding-top: 10px;
+    }
+    .app.is-rail .acct-btn {
+      flex: 0;
+      margin: 0;
+      padding: 4px;
+      justify-content: center;
+    }
+    .nav-list a { position: relative; }
+    .app.is-rail .nav-list a::after,
+    .app.is-rail .btn-create::after,
+    .app.is-rail .acct-btn::after {
+      content: attr(data-tip);
+      position: absolute;
+      left: calc(100% + 10px);
+      top: 50%;
+      transform: translateY(-50%);
+      background: var(--ink);
+      color: var(--bg);
+      font-size: 12px;
+      font-weight: 550;
+      padding: 5px 8px;
+      border-radius: 6px;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 20;
+    }
+    .app.is-rail .nav-list a:hover::after,
+    .app.is-rail .btn-create:hover::after,
+    .app.is-rail .acct-btn:hover::after { opacity: 1; }
+    .gh-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      height: 28px;
+      padding: 0 9px;
+      border-radius: 8px;
+      border: 1px solid var(--line-strong);
+      background: var(--surface);
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--fg);
+      transition: border-color .15s, background .15s;
+    }
+    .gh-chip:hover { border-color: rgba(26,25,22,0.28); background: var(--chip); color: var(--fg); }
+    .gh-chip svg { width: 12px; height: 12px; fill: currentColor; }
+    .gh-chip .count { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+    .main {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+      background: var(--stage);
+      overflow: auto;
+    }
+    .main-grid {
+      position: absolute; inset: 0;
+      pointer-events: none;
+      background-image: radial-gradient(rgba(26, 25, 22, 0.045) 1px, transparent 1px);
+      background-size: 20px 20px;
+      background-position: 10px 10px;
+      mask-image: linear-gradient(to bottom, #000 0%, #000 68%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 68%, transparent 100%);
+    }
+    .main-inner {
+      position: relative;
+      z-index: 1;
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 56px 32px 64px;
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .hero-brand {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    .hero-logo-wrap {
+      width: 56px; height: 56px;
+      margin-bottom: 18px;
+      color: var(--fg);
+    }
+    .hero-logo {
+      width: 100%; height: 100%;
+    }
+    .hero-logo svg { width: 56px; height: 56px; display: block; }
+    .hero-brand h1 {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      line-height: 1.2;
+    }
+    .hero-brand p {
+      margin-top: 8px;
+      font-size: 15px;
+      line-height: 1.7;
+      color: var(--muted);
+      max-width: 36ch;
+    }
+
+    .prompt {
+      width: 100%;
+      max-width: 640px;
+      background: var(--surface);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-prompt);
+      padding: 16px 16px 12px;
+      position: relative;
+    }
+    .prompt textarea {
+      width: 100%;
+      min-height: 72px;
+      border: 0;
+      resize: none;
+      outline: none;
+      font-size: 15px;
+      line-height: 1.7;
+      color: var(--fg);
+      background: transparent;
+      caret-color: var(--accent);
+    }
+    .prompt textarea::placeholder { color: var(--faint); }
+    .prompt-bar {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding-top: 8px;
+    }
+    .chip-wrap { position: relative; }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 32px;
+      padding: 0 10px;
+      border-radius: 9px;
+      color: var(--muted);
+      font-size: 12.5px;
+      font-weight: 550;
+      letter-spacing: 0.01em;
+      transition: background .15s, color .15s;
+    }
+    .chip:hover { background: var(--fill-soft); color: var(--fg); }
+    .chip[aria-expanded="true"] { background: var(--fill-hover); color: var(--fg); }
+    .chip svg {
+      width: 14px; height: 14px;
+      stroke: currentColor; fill: none;
+      stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+    }
+    .chip-plus {
+      width: 32px; height: 32px;
+      padding: 0;
+      justify-content: center;
+      border: 1px solid var(--line-strong);
+      border-radius: 50%;
+      background: var(--surface);
+    }
+    .chip-plus:hover { background: var(--fill-soft); color: var(--fg); }
+    .chip-model {
+      height: 34px;
+      padding: 0 8px 0 8px;
+      gap: 7px;
+      background: var(--chip);
+      color: var(--fg);
+      border-radius: 999px;
+      box-shadow: inset 0 0 0 1px rgba(26,25,22,0.04);
+    }
+    .chip-model:hover { background: var(--chip-hover); color: var(--fg); }
+    .chip-model[aria-expanded="true"] { background: var(--chip-hover); color: var(--fg); }
+    .chip-model .model-glyph {
+      width: 18px; height: 18px;
+      border-radius: 5px;
+      background: var(--ink);
+      color: var(--bg);
+      display: grid; place-items: center;
+      flex-shrink: 0;
+    }
+    .chip-model .model-glyph svg {
+      width: 11px; height: 11px;
+      stroke: currentColor; fill: none;
+      stroke-width: 1.8;
+    }
+    .chip-model .chev {
+      width: 12px; height: 12px;
+      color: var(--faint);
+    }
+    .model-panel {
+      position: absolute;
+      left: 0; bottom: calc(100% + 10px);
+      width: 300px;
+      background: var(--surface);
+      border-radius: 16px;
+      box-shadow: var(--shadow-float);
+      padding: 10px;
+      z-index: 14;
+    }
+    .model-panel-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 6px 10px;
+    }
+    .model-panel-head .avatar { width: 28px; height: 28px; font-size: 11px; }
+    .model-panel-head strong {
+      display: block;
+      font-size: 12.5px;
+      font-weight: 650;
+    }
+    .model-panel-head span { font-size: 11px; color: var(--faint); }
+    .model-sec {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--faint);
+      letter-spacing: 0.04em;
+      padding: 4px 6px 8px;
+    }
+    .model-search {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 36px;
+      padding: 0 10px;
+      margin-bottom: 6px;
+      border-radius: 10px;
+      background: var(--chip);
+    }
+    .model-search svg {
+      width: 14px; height: 14px;
+      stroke: var(--muted); fill: none;
+      stroke-width: 1.7; stroke-linecap: round;
+      flex-shrink: 0;
+    }
+    .model-search input {
+      flex: 1;
+      border: 0;
+      background: transparent;
+      outline: none;
+      font-size: 13px;
+      min-width: 0;
+    }
+    .model-list { max-height: 240px; overflow: auto; }
+    .model-list button {
+      display: flex;
+      width: 100%;
+      align-items: center;
+      gap: 8px;
+      text-align: left;
+      padding: 8px 10px;
+      border-radius: 9px;
+      font-size: 13.5px;
+      font-weight: 550;
+      color: var(--fg);
+    }
+    .model-list button:hover { background: var(--fill-soft); color: var(--fg); }
+    .model-list button.is-on { background: var(--fill-hover); }
+    .model-list button small {
+      display: block;
+      font-weight: 400;
+      color: var(--muted);
+      font-size: 11.5px;
+      margin-top: 1px;
+    }
+    .model-list .grow { flex: 1; min-width: 0; }
+    .tag {
+      flex-shrink: 0;
+      height: 18px;
+      padding: 0 6px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      line-height: 18px;
+    }
+    .tag-rec { background: var(--ink); color: var(--bg); }
+    .tag-new { background: var(--accent-soft); color: var(--accent); }
+    .model-more {
+      display: block;
+      width: 100%;
+      text-align: center;
+      padding: 8px;
+      margin-top: 4px;
+      font-size: 12.5px;
+      font-weight: 550;
+      color: var(--muted);
+      border-radius: 8px;
+    }
+    .model-more:hover { background: var(--fill-soft); color: var(--fg); }
+    .prompt-bar .spacer { flex: 1; }
+    .ver {
+      height: 26px;
+      padding: 0 10px;
+      border-radius: var(--radius-pill);
+      background: var(--chip);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .send {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: var(--chip);
+      color: var(--faint);
+      display: grid; place-items: center;
+      transition: background .15s, color .15s, transform .1s;
+    }
+    .send:disabled { cursor: not-allowed; }
+    .send.has-text {
+      background: var(--fg);
+      color: var(--bg);
+    }
+    .send.has-text:hover { background: var(--ink-hover); color: var(--bg); }
+    .send.has-text:active { transform: scale(0.96); }
+    .send svg {
+      width: 16px; height: 16px;
+      stroke: currentColor; fill: none;
+      stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+    }
+
+    .menu {
+      position: absolute;
+      left: 0; bottom: calc(100% + 8px);
+      min-width: 188px;
+      background: var(--surface);
+      border-radius: 12px;
+      box-shadow: var(--shadow-float);
+      padding: 6px;
+      z-index: 12;
+    }
+    .menu button {
+      display: flex;
+      width: 100%;
+      align-items: flex-start;
+      gap: 8px;
+      text-align: left;
+      padding: 8px 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 550;
+      color: var(--fg);
+      line-height: 1.4;
+    }
+    .menu button:hover { background: var(--fill-soft); color: var(--fg); }
+    .menu button small {
+      display: block;
+      font-weight: 400;
+      color: var(--muted);
+      font-size: 11.5px;
+      margin-top: 2px;
+    }
+    .menu button.is-on { background: var(--accent-soft); }
+
+    .starters {
+      width: 100%;
+      max-width: 640px;
+      margin-top: 14px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 8px;
+    }
+    .starter {
+      height: 32px;
+      padding: 0 12px;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.78);
+      color: var(--muted);
+      font-size: 12.5px;
+      font-weight: 550;
+      letter-spacing: 0.01em;
+      transition: background .15s, color .15s, border-color .15s;
+    }
+    .starter:hover {
+      background: var(--surface);
+      color: var(--fg);
+      border-color: var(--line-strong);
+    }
+
+    .filters {
+      width: 100%;
+      margin-top: 40px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .pill {
+      height: 32px;
+      padding: 0 13px;
+      border-radius: var(--radius-pill);
+      font-size: 13px;
+      font-weight: 550;
+      color: var(--muted);
+      background: transparent;
+      transition: background .15s, color .15s, box-shadow .15s;
+    }
+    .pill:hover { background: var(--fill-hover); color: var(--fg); }
+    .pill.active {
+      background: var(--fg);
+      color: var(--bg);
+      box-shadow: 0 2px 8px rgba(26,25,22,0.16);
+    }
+    .pill.active:hover { background: var(--ink-hover); color: var(--bg); }
+    .filters .links {
+      margin-left: auto;
+      display: flex;
+      gap: 16px;
+    }
+    .filters .links a {
+      font-size: 12.5px;
+      color: var(--muted);
+      font-weight: 550;
+      transition: color .15s;
+    }
+    .filters .links a:hover { color: var(--fg); }
+
+    .gallery {
+      width: 100%;
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+    .card {
+      background: var(--surface);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: var(--shadow-sm), inset 0 0 0 1px var(--line);
+      transition: box-shadow .2s var(--ease), transform .2s var(--ease);
+      display: block;
+    }
+    .card:hover {
+      transform: translateY(-3px);
+      box-shadow: var(--shadow-card);
+    }
+    .card-media {
+      aspect-ratio: 16 / 10;
+      background: #eceae6;
+      position: relative;
+      overflow: hidden;
+    }
+    .card-media img {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      transition: transform .45s var(--ease);
+    }
+    .card:hover .card-media img { transform: scale(1.035); }
+    .card-badge {
+      position: absolute;
+      left: 10px; top: 10px;
+      height: 22px;
+      padding: 0 8px;
+      border-radius: 7px;
+      background: rgba(255,255,255,0.88);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      box-shadow: 0 1px 4px rgba(26,25,22,0.1);
+      font-size: 10.5px;
+      font-weight: 650;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--fg);
+      display: grid; place-items: center;
+    }
+    .card-body { padding: 13px 14px 15px; }
+    .card-body h3 {
+      font-size: 14px;
+      font-weight: 650;
+      letter-spacing: 0;
+      line-height: 1.4;
+      margin-bottom: 4px;
+    }
+    .card-body p {
+      font-size: 12.5px;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    .empty {
+      display: none;
+      width: 100%;
+      margin-top: 18px;
+      padding: 36px 20px;
+      text-align: center;
+      border: 1px dashed var(--line-strong);
+      border-radius: 16px;
+      background: rgba(255,255,255,0.6);
+    }
+    .empty.show { display: block; }
+    .empty p {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.7;
+      margin-bottom: 12px;
+    }
+    .empty a {
+      display: inline-flex;
+      align-items: center;
+      height: 34px;
+      padding: 0 14px;
+      border-radius: 9px;
+      background: var(--ink);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .empty a:hover { background: var(--ink-hover); color: #fff; }
+
+    .oss-strip {
+      width: 100%;
+      margin-top: 28px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.82);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: inset 0 0 0 1px var(--line), var(--shadow-sm);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .oss-strip code {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--fg);
+      background: var(--chip);
+      padding: 9px 12px;
+      border-radius: 9px;
+      flex: 1;
+      min-width: 200px;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+    .oss-strip .btn-copy {
+      height: 34px;
+      padding: 0 14px;
+      border-radius: 9px;
+      background: var(--fg);
+      color: #fff;
+      font-size: 12.5px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      transition: background .15s, transform .1s;
+    }
+    .oss-strip .btn-copy:hover { background: var(--ink-hover); color: #fff; }
+    .oss-strip .btn-copy:active { transform: scale(0.98); }
+    .oss-strip .btn-copy[data-state="ok"] { background: var(--ink); }
+    .oss-meta {
+      width: 100%;
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      font-size: 12px;
+      color: var(--faint);
+    }
+    .oss-meta a { color: var(--muted); font-weight: 550; }
+    .oss-meta a:hover { color: var(--fg); }
+
+    .view { display: none; width: 100%; }
+    .view.is-on { display: flex; flex-direction: column; }
+    .view[hidden] { display: none !important; }
+    .view-home.is-on { align-items: center; }
+    .view-lib.is-on { align-items: stretch; }
+
+    .pane-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    .pane-head h2 {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 0;
+      line-height: 1.35;
+    }
+    .pane-head p {
+      margin-top: 4px;
+      font-size: 13.5px;
+      line-height: 1.7;
+      color: var(--muted);
+      max-width: 48ch;
+    }
+    .btn-ink {
+      height: 36px;
+      padding: 0 14px;
+      border-radius: 9px;
+      background: var(--ink);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      flex-shrink: 0;
+      transition: background .15s, transform .1s;
+    }
+    .btn-ink:hover { background: var(--ink-hover); color: #fff; }
+    .btn-ink:active { transform: scale(0.98); }
+    .btn-ghost {
+      height: 32px;
+      padding: 0 11px;
+      border-radius: 8px;
+      border: 1px solid var(--line-strong);
+      background: var(--surface);
+      color: var(--fg);
+      font-size: 12.5px;
+      font-weight: 550;
+      transition: background .15s, border-color .15s;
+    }
+    .btn-ghost:hover { background: var(--fill-soft); color: var(--fg); border-color: rgba(26,25,22,0.22); }
+    .btn-ghost:active { background: var(--fill-hover); }
+
+    .lib-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .search {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 36px;
+      padding: 0 12px;
+      border-radius: 10px;
+      background: var(--surface);
+      box-shadow: inset 0 0 0 1px var(--line);
+      min-width: min(240px, 100%);
+      flex: 1;
+    }
+    .search:focus-within { box-shadow: inset 0 0 0 1.5px var(--ink); }
+    .search svg {
+      width: 14px; height: 14px;
+      stroke: var(--faint); fill: none;
+      stroke-width: 1.7; stroke-linecap: round;
+      flex-shrink: 0;
+    }
+    .search input {
+      border: 0; background: transparent; outline: none;
+      width: 100%; font-size: 13.5px; line-height: 1.4;
+    }
+    .search input::placeholder { color: var(--faint); }
+    .lib-toolbar .pills { display: flex; gap: 4px; flex-wrap: wrap; }
+    .pill em {
+      font-style: normal;
+      margin-left: 5px;
+      font-size: 11px;
+      font-weight: 550;
+      opacity: 0.72;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .asset-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+    .asset-tile {
+      background: var(--surface);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: inset 0 0 0 1px var(--line), var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      transition: box-shadow .2s var(--ease), transform .2s var(--ease);
+    }
+    .asset-tile:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-card);
+    }
+    .asset-hit {
+      display: flex;
+      flex-direction: column;
+      text-align: left;
+      width: 100%;
+      flex: 1;
+      color: var(--fg);
+      background: transparent;
+    }
+    .asset-media {
+      aspect-ratio: 4 / 3;
+      background: #eceae6;
+      position: relative;
+      overflow: hidden;
+    }
+    .asset-media img {
+      width: 100%; height: 100%;
+      object-fit: cover;
+    }
+    .asset-doc {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 14px 14px 12px;
+      background:
+        linear-gradient(180deg, #f7f6f3 0%, #efece6 100%);
+    }
+    .asset-doc .doc-kind {
+      font-size: 10.5px;
+      font-weight: 650;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .asset-doc .doc-name {
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 1.45;
+      color: var(--fg);
+      margin-top: 10px;
+      word-break: break-all;
+    }
+    .asset-meta { padding: 11px 12px 6px; }
+    .asset-meta h3 {
+      font-size: 13px;
+      font-weight: 650;
+      line-height: 1.4;
+      letter-spacing: 0;
+    }
+    .asset-meta p {
+      font-size: 11.5px;
+      color: var(--faint);
+      line-height: 1.5;
+      margin-top: 2px;
+    }
+    .asset-actions {
+      display: flex;
+      gap: 6px;
+      padding: 0 10px 10px;
+    }
+    .asset-actions .btn-ghost { flex: 1; height: 30px; font-size: 12px; }
+
+    .skill-group { margin-bottom: 22px; }
+    .skill-label {
+      font-size: 11px;
+      font-weight: 650;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--faint);
+      margin-bottom: 10px;
+    }
+    .skill-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    #skill-pipeline { grid-template-columns: 1fr 1fr 1fr; }
+    .skill-grid.one { grid-template-columns: 1fr; }
+    .skill-card {
+      display: grid;
+      grid-template-columns: 40px 1fr auto;
+      gap: 12px;
+      align-items: start;
+      padding: 14px 14px 14px 12px;
+      background: var(--surface);
+      border-radius: 14px;
+      box-shadow: inset 0 0 0 1px var(--line), var(--shadow-sm);
+      transition: box-shadow .2s var(--ease);
+    }
+    .skill-card:hover { box-shadow: var(--shadow-card); }
+    .skill-card.is-off { opacity: 0.55; }
+    .skill-icon {
+      width: 40px; height: 40px;
+      border-radius: 10px;
+      background: var(--chip);
+      color: var(--fg);
+      display: grid; place-items: center;
+    }
+    .skill-icon svg {
+      width: 18px; height: 18px;
+      stroke: currentColor; fill: none;
+      stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+    }
+    .skill-body h3 {
+      font-size: 14px;
+      font-weight: 650;
+      letter-spacing: 0;
+      line-height: 1.4;
+    }
+    .skill-body .en {
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--faint);
+      margin-left: 6px;
+    }
+    .skill-body p {
+      margin-top: 4px;
+      font-size: 12.5px;
+      line-height: 1.65;
+      color: var(--muted);
+    }
+    .skill-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .skill-tags span {
+      height: 22px;
+      padding: 0 8px;
+      border-radius: 6px;
+      background: var(--chip);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 550;
+      display: inline-flex;
+      align-items: center;
+    }
+    .skill-side {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 10px;
+    }
+    .switch {
+      width: 36px; height: 22px;
+      border-radius: 999px;
+      background: #d8d5d0;
+      position: relative;
+      transition: background .15s;
+      flex-shrink: 0;
+    }
+    .switch::after {
+      content: '';
+      position: absolute;
+      top: 3px; left: 3px;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 2px rgba(26,25,22,0.18);
+      transition: transform .15s var(--ease);
+    }
+    .switch[aria-pressed="true"] { background: var(--ink); }
+    .switch[aria-pressed="true"]::after { transform: translateX(14px); }
+    .switch:hover { filter: brightness(0.96); }
+    .skill-stat {
+      margin-top: 2px;
+      font-size: 12.5px;
+      color: var(--muted);
+    }
+
+    .cmdk {
+      display: none;
+      position: fixed; inset: 0;
+      z-index: 60;
+      background: rgba(26,25,22,0.28);
+      align-items: flex-start;
+      justify-content: center;
+      padding-top: 14vh;
+    }
+    .cmdk.open { display: flex; }
+    .cmdk-panel {
+      width: min(440px, calc(100% - 32px));
+      background: var(--surface);
+      border-radius: 16px;
+      box-shadow: var(--shadow-prompt);
+      overflow: hidden;
+    }
+    .cmdk-panel input {
+      width: 100%;
+      height: 48px;
+      border: 0;
+      padding: 0 16px;
+      font-size: 15px;
+      background: transparent;
+      border-bottom: 1px solid var(--line);
+    }
+    .cmdk-list { padding: 8px; }
+    .cmdk-list button {
+      display: flex;
+      width: 100%;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      border-radius: 9px;
+      font-size: 13.5px;
+      font-weight: 550;
+      color: var(--fg);
+    }
+    .cmdk-list button:hover,
+    .cmdk-list button.is-active { background: var(--fill-soft); color: var(--fg); }
+    .cmdk-list button span { color: var(--faint); font-size: 11.5px; font-weight: 500; }
+
+    .toast {
+      position: fixed;
+      bottom: 22px; left: 50%;
+      transform: translateX(-50%) translateY(12px);
+      background: var(--ink);
+      color: #fff;
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-size: 12.5px;
+      font-weight: 550;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 70;
+      transition: opacity .2s, transform .2s;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    .acct-pop {
+      position: absolute;
+      left: 8px;
+      bottom: calc(100% + 8px);
+      width: 300px;
+      background: var(--surface);
+      border-radius: 16px;
+      box-shadow: var(--shadow-float);
+      padding: 12px;
+      z-index: 30;
+    }
+    .app.is-rail .acct-pop {
+      left: calc(100% + 10px);
+      bottom: 8px;
+    }
+    .acct-pop-user {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 4px 4px 12px;
+    }
+    .acct-pop-user .avatar { width: 36px; height: 36px; }
+    .acct-pop-user strong { display: block; font-size: 13.5px; font-weight: 650; }
+    .acct-pop-user span { font-size: 11.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
+    .acct-card {
+      background: var(--chip);
+      border-radius: 12px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+    }
+    .acct-card-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 32px;
+      font-size: 13px;
+      font-weight: 550;
+    }
+    .acct-card-row + .acct-card-row {
+      border-top: 1px solid var(--line);
+      margin-top: 6px;
+      padding-top: 6px;
+    }
+    .acct-card-row svg {
+      width: 15px; height: 15px;
+      stroke: currentColor; fill: none;
+      stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+      flex-shrink: 0;
+      color: var(--muted);
+    }
+    .acct-card-row .grow { flex: 1; }
+    .acct-card-row small { color: var(--faint); font-weight: 500; }
+    .acct-card-row .chev {
+      width: 14px; height: 14px;
+      color: var(--faint);
+    }
+    .acct-sec {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--faint);
+      letter-spacing: 0.06em;
+      padding: 8px 8px 4px;
+    }
+    .acct-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      min-height: 38px;
+      padding: 0 8px;
+      border-radius: 9px;
+      font-size: 13.5px;
+      font-weight: 550;
+      color: var(--fg);
+      text-align: left;
+    }
+    .acct-item:hover { background: var(--fill-soft); color: var(--fg); }
+    .acct-item svg {
+      width: 16px; height: 16px;
+      stroke: currentColor; fill: none;
+      stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+    .acct-item .grow { flex: 1; }
+    .acct-item .meta { color: var(--faint); font-size: 12px; font-weight: 500; }
+    .badge-new {
+      height: 16px;
+      padding: 0 5px;
+      border-radius: 4px;
+      background: var(--ink);
+      color: var(--bg);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      line-height: 16px;
+    }
+    .theme-seg {
+      display: inline-flex;
+      background: var(--chip);
+      border-radius: 8px;
+      padding: 2px;
+      gap: 1px;
+    }
+    .theme-seg button {
+      width: 28px; height: 26px;
+      border-radius: 6px;
+      color: var(--muted);
+      display: grid; place-items: center;
+    }
+    .theme-seg button svg {
+      width: 14px; height: 14px;
+      stroke: currentColor; fill: none;
+      stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+    }
+    .theme-seg button:hover { color: var(--fg); }
+    .theme-seg button.is-on {
+      background: var(--surface);
+      color: var(--fg);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .settings-root {
+      display: none;
+      position: fixed; inset: 0;
+      z-index: 80;
+      background: rgba(26, 25, 22, 0.32);
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .settings-root.open { display: flex; }
+    .settings {
+      width: min(760px, 100%);
+      height: min(560px, calc(100vh - 48px));
+      background: var(--surface);
+      border-radius: 18px;
+      box-shadow: var(--shadow-float);
+      display: grid;
+      grid-template-columns: 200px 1fr;
+      overflow: hidden;
+    }
+    .set-nav {
+      background: var(--stage);
+      border-right: 1px solid var(--line);
+      padding: 18px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .set-nav h2 {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      padding: 2px 10px 14px;
+    }
+    .set-nav button {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      height: 36px;
+      padding: 0 10px;
+      border-radius: 9px;
+      font-size: 13.5px;
+      font-weight: 550;
+      color: var(--muted);
+      text-align: left;
+    }
+    .set-nav button:hover { background: var(--fill-soft); color: var(--fg); }
+    .set-nav button.is-on {
+      background: var(--fill-hover);
+      color: var(--fg);
+      font-weight: 600;
+    }
+    .set-nav button svg {
+      width: 16px; height: 16px;
+      stroke: currentColor; fill: none;
+      stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+      flex-shrink: 0;
+    }
+    .set-main {
+      padding: 18px 22px 22px;
+      overflow: auto;
+      min-width: 0;
+    }
+    .set-main-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+    .set-main-head h3 {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+    .set-close {
+      width: 32px; height: 32px;
+      border-radius: 8px;
+      color: var(--muted);
+      display: grid; place-items: center;
+    }
+    .set-close:hover { background: var(--fill-hover); color: var(--fg); }
+    .set-close svg {
+      width: 16px; height: 16px;
+      stroke: currentColor; fill: none;
+      stroke-width: 1.8; stroke-linecap: round;
+    }
+    .set-pane { display: none; }
+    .set-pane.is-on { display: block; }
+    .set-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .set-row:last-child { border-bottom: 0; }
+    .set-row h4 {
+      font-size: 14px;
+      font-weight: 650;
+      line-height: 1.4;
+    }
+    .set-row p {
+      margin-top: 3px;
+      font-size: 12.5px;
+      color: var(--muted);
+      line-height: 1.6;
+      max-width: 36ch;
+    }
+    .set-sub {
+      font-size: 11.5px;
+      font-weight: 650;
+      color: var(--faint);
+      letter-spacing: 0.06em;
+      padding: 18px 0 4px;
+    }
+    .set-select {
+      height: 34px;
+      padding: 0 28px 0 12px;
+      border-radius: 9px;
+      border: 1px solid var(--line-strong);
+      background: var(--surface) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%236b6560' stroke-width='1.7' stroke-linecap='round'><path d='M3 4.5 6 7.5 9 4.5'/></svg>") no-repeat right 10px center;
+      appearance: none;
+      font-size: 13px;
+      font-weight: 550;
+      min-width: 112px;
+      color: var(--fg);
+    }
+    .set-select:hover { background-color: var(--chip); }
+    .toggle {
+      width: 40px; height: 24px;
+      border-radius: 999px;
+      background: #d8d5d0;
+      position: relative;
+      flex-shrink: 0;
+      margin-top: 2px;
+      transition: background .15s var(--ease);
+    }
+    html[data-theme="dark"] .toggle { background: #3a3834; }
+    @media (prefers-color-scheme: dark) {
+      html[data-theme="system"] .toggle { background: #3a3834; }
+    }
+    .toggle::after {
+      content: '';
+      position: absolute;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: #fff;
+      top: 3px; left: 3px;
+      box-shadow: 0 1px 2px rgba(26,25,22,0.18);
+      transition: transform .15s var(--ease);
+    }
+    .toggle[aria-pressed="true"] { background: var(--fg); }
+    .toggle[aria-pressed="true"]::after {
+      transform: translateX(16px);
+      background: var(--bg);
+    }
+    .toggle:hover { filter: brightness(0.97); }
+    .set-note { font-size: 12px; color: var(--faint); margin-top: 4px; }
+
+    .rail-open {
+      display: none;
+      position: absolute;
+      left: 10px; top: 12px;
+      z-index: 6;
+      width: 36px; height: 36px;
+      border-radius: 10px;
+      background: var(--surface);
+      box-shadow: var(--shadow-sm), inset 0 0 0 1px var(--line);
+      color: var(--muted);
+    }
+    .app.is-rail .rail-open { display: grid; place-items: center; }
+    .rail-open:hover { color: var(--fg); background: var(--chip); }
+    .rail-open svg {
+      width: 16px; height: 16px;
+      stroke: currentColor; fill: none;
+      stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+    }
+
+    .mobile-bar {
+      display: none;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(251,251,250,0.92);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--line);
+      padding: 10px 14px;
+      align-items: center;
+      gap: 10px;
+    }
+    .backdrop {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(26,25,22,0.28);
+      z-index: 30;
+    }
+    .backdrop.show { display: block; }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+      }
+      .card:hover .card-media img { transform: none; }
+    }
+    html.reduce-motion *,
+    html.reduce-motion *::before,
+    html.reduce-motion *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+    @media (max-width: 1100px) {
+      .asset-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 960px) {
+      .gallery { grid-template-columns: 1fr 1fr; }
+      .filters .links { width: 100%; margin-left: 0; }
+      .skill-grid,
+      #skill-pipeline { grid-template-columns: 1fr; }
+      .asset-grid { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 780px) {
+      .app { grid-template-columns: 1fr; }
+      .rail-open { display: none !important; }
+      .sidebar {
+        position: fixed;
+        left: 0; top: 0; bottom: 0;
+        width: min(280px, 86vw);
+        z-index: 40;
+        transform: translateX(-105%);
+        transition: transform .22s var(--ease);
+        box-shadow: var(--shadow-prompt);
+      }
+      .sidebar.open { transform: none; }
+      .mobile-bar { display: flex; }
+      .main-inner { padding: 24px 16px 48px; }
+      .gallery { grid-template-columns: 1fr; }
+      .asset-grid { grid-template-columns: 1fr; }
+      .hero-brand h1 { font-size: 22px; letter-spacing: 0; }
+      .pane-head { flex-direction: column; align-items: flex-start; }
+      .settings {
+        grid-template-columns: 1fr;
+        height: min(90vh, 640px);
+      }
+      .set-nav {
+        flex-direction: row;
+        overflow-x: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+        padding: 12px;
+      }
+      .set-nav h2 { display: none; }
+      .set-nav button { flex-shrink: 0; }
+      .acct-pop {
+        left: 8px;
+        width: min(300px, calc(100vw - 28px));
+      }
+      .model-panel { width: min(300px, calc(100vw - 48px)); }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#prompt-input">跳到输入框</a>
+  <div class="backdrop" id="backdrop" hidden></div>
+
+  <div class="app" data-od-id="app-shell">
+    <aside class="sidebar" id="sidebar" data-od-id="sidebar" aria-label="主导航">
+      <div class="side-top">
+        <a class="brand" href="./landing-v5.html" data-od-id="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32" fill="none"><rect x="7" y="7" width="18" height="18" rx="2.2" stroke="currentColor" stroke-width="1.6"/><rect x="5.15" y="5.15" width="3.7" height="3.7" rx="0.35" fill="currentColor"/><rect x="23.15" y="5.15" width="3.7" height="3.7" rx="0.35" fill="currentColor"/><rect x="5.15" y="23.15" width="3.7" height="3.7" rx="0.35" fill="currentColor"/><rect x="23.15" y="23.15" width="3.7" height="3.7" rx="0.35" fill="currentColor"/><rect x="13.6" y="14.6" width="8.4" height="7" rx="1.1" fill="currentColor"/></svg>
+          </span>
+          <span class="brand-name">Vibeboard</span>
+        </a>
+        <button class="icon-btn" type="button" id="btn-collapse" aria-label="收起侧栏" title="收起侧栏" data-od-id="btn-collapse">
+          <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M9 5v14"/></svg>
+        </button>
+        <button class="icon-btn" type="button" id="btn-search" aria-label="搜索（⌘K）" data-od-id="btn-search">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-3.5-3.5"/></svg>
+        </button>
+      </div>
+
+      <a class="btn-create" href="./canvas.html" data-od-id="btn-create" data-tip="开始创作">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        <span class="create-label">开始创作</span>
+      </a>
+
+      <nav>
+        <ul class="nav-list">
+          <li><a href="./marketing.html" data-od-id="nav-marketing" data-tip="项目官网"><svg viewBox="0 0 24 24"><path d="M4 10l8-6 8 6v9a1 1 0 01-1 1h-5v-6H10v6H5a1 1 0 01-1-1v-9z"/></svg><span class="nav-text">项目官网</span></a></li>
+          <li><a href="#assets" data-view="assets" data-od-id="nav-assets" data-tip="资产中心"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 15l4-4 3 3 3-4 6 5"/></svg><span class="nav-text">资产中心</span><span class="nav-count">10</span></a></li>
+          <li><a href="#skills" data-view="skills" data-od-id="nav-skill" data-tip="Skill"><svg viewBox="0 0 24 24"><path d="M12 3l2.2 4.5L19 8.2l-3.5 3.4.8 4.9L12 14.2 7.7 16.5l.8-4.9L5 8.2l4.8-.7L12 3z"/></svg><span class="nav-text">Skill</span><span class="nav-count">10</span></a></li>
+          <li><a class="active" href="#home" data-view="home" data-od-id="nav-all" data-tip="全部创作"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg><span class="nav-text">全部创作</span></a></li>
+        </ul>
+      </nav>
+
+      <div class="recent" data-od-id="recent">
+        <div class="recent-label">最近创作</div>
+        <ul class="recent-list">
+          <li>
+            <a class="active" href="./canvas.html" data-od-id="recent-1">
+              <span class="thumb"><img src="/api/projects/2536b0d8-98f7-4d0b-b612-ab700bc15bb6/raw/assets/canvas-cover.jpg?workspaceId=oouxonb8ijldxif727hhdu2q&workspaceMemberId=hlpx6umvk5x5oo9s2h9ep9xx" alt=""></span>
+              <span class="recent-meta"><span>saas-landing-brief</span><small>作品板 · 今天</small></span>
+            </a>
+          </li>
+          <li>
+            <a href="./canvas.html" data-od-id="recent-2">
+              <span class="thumb"><img src="/api/projects/2536b0d8-98f7-4d0b-b612-ab700bc15bb6/raw/assets/canvas-video-poster.jpg?workspaceId=oouxonb8ijldxif727hhdu2q&workspaceMemberId=hlpx6umvk5x5oo9s2h9ep9xx" alt=""></span>
+              <span class="recent-meta"><span>direction-board-v2</span><small>视频 · 昨天</small></span>
+            </a>
+          </li>
+          <li>
+            <a href="./canvas.html" data-od-id="recent-3">
+              <span class="thumb"><img src="/api/projects/2536b0d8-98f7-4d0b-b612-ab700bc15bb6/raw/assets/canvas-material.jpg?workspaceId=oouxonb8ijldxif727hhdu2q&workspaceMemberId=hlpx6umvk5x5oo9s2h9ep9xx" alt=""></span>
+              <span class="recent-meta"><span>handoff-token-pack</span><small>Token · 3 天前</small></span>
+            </a>
+          </li>
+          <li>
+            <a href="./canvas.html" data-od-id="recent-4">
+              <span class="thumb"><img src="/api/projects/2536b0d8-98f7-4d0b-b612-ab700bc15bb6/raw/assets/hero-product.jpg?workspaceId=oouxonb8ijldxif727hhdu2q&workspaceMemberId=hlpx6umvk5x5oo9s2h9ep9xx" alt=""></span>
+              <span class="recent-meta"><span>pipeline-seven-agent</span><small>文档 · 上周</small></span>
+            </a>
+          </li>
+        </ul>
+      </div>
+
+      <div class="side-foot" data-od-id="side-foot">
+        <button class="acct-btn" type="button" id="btn-account" aria-haspopup="dialog" aria-expanded="false" aria-controls="acct-pop" data-od-id="btn-account" data-tip="设置">
+          <div class="avatar" aria-hidden="true">开</div>
+          <div class="user-meta">
+            <strong>开源贡献者</strong>
+            <span>Apache-2.0 · 本地优先</span>
+          </div>
+        </button>
+        <a class="gh-chip" id="gh-star" href="https://github.com/Zullllkar/vibeboard" target="_blank" rel="noopener noreferrer" data-od-id="nav-github" aria-label="在 GitHub 上 Star（新窗口）">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.68 7.68 0 018 4.14c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          <span class="count" id="gh-stars" aria-live="polite">…</span>
+        </a>
+
+        <div class="acct-pop" id="acct-pop" hidden role="dialog" aria-label="账户与设置" data-od-id="acct-pop">
+          <div class="acct-pop-user">
+            <div class="avatar" aria-hidden="true">开</div>
+            <div>
+              <strong>开源贡献者</strong>
+              <span>UID · local-01</span>
+            </div>
+          </div>
+          <div class="acct-card">
+            <div class="acct-card-row">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.2"/><path d="M5 19c1.6-3 4-4.5 7-4.5S17.4 16 19 19"/></svg>
+              <span class="grow">本地账号</span>
+              <small>个人</small>
+            </div>
+            <a class="acct-card-row" href="https://github.com/Zullllkar/vibeboard" target="_blank" rel="noopener noreferrer">
+              <svg viewBox="0 0 24 24"><path d="M10 6H7a2 2 0 00-2 2v9a2 2 0 002 2h9a2 2 0 002-2v-3"/><path d="M14 4h6v6M20 4l-9 9"/></svg>
+              <span class="grow">GitHub</span>
+              <small>Zullllkar</small>
+              <svg class="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+            </a>
+            <div class="acct-card-row">
+              <svg viewBox="0 0 24 24"><path d="M12 3l7 4v6c0 4-3 7-7 8-4-1-7-4-7-8V7l7-4z"/></svg>
+              <span class="grow">许可证</span>
+              <small>Apache-2.0</small>
+            </div>
+          </div>
+          <div class="acct-sec">设置</div>
+          <div class="acct-item" style="cursor:default">
+            <svg viewBox="0 0 24 24"><path d="M12 3v3M12 18v3M4.9 6.3l2.2 2.2M16.9 15.5l2.2 2.2M3 12h3M18 12h3M4.9 17.7l2.2-2.2M16.9 8.5l2.2-2.2"/><circle cx="12" cy="12" r="3.2"/></svg>
+            <span class="grow">主题</span>
+            <div class="theme-seg" role="group" aria-label="主题">
+              <button type="button" data-theme="dark" aria-label="深色" title="深色"><svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1110.5 4 6.4 6.4 0 0020 14.5z"/></svg></button>
+              <button type="button" data-theme="light" class="is-on" aria-label="浅色" title="浅色"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M5 12H3M21 12h-2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M6.3 17.7l1.4-1.4M16.3 7.7l1.4-1.4"/></svg></button>
+              <button type="button" data-theme="system" aria-label="跟随系统" title="跟随系统"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M8 19h8"/></svg></button>
+            </div>
+          </div>
+          <button class="acct-item" type="button" id="btn-open-settings" data-od-id="btn-open-settings">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H8a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V8c.3.6.9 1 1.5 1.1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
+            <span class="grow">设置</span>
+            <svg class="chev" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+          <div class="acct-sec">帮助</div>
+          <a class="acct-item" href="https://github.com/Zullllkar/vibeboard#readme" target="_blank" rel="noopener noreferrer">
+            <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+            <span class="grow">教程</span>
+          </a>
+          <a class="acct-item" href="https://github.com/Zullllkar/vibeboard/releases" target="_blank" rel="noopener noreferrer">
+            <svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+            <span class="grow">更新日志</span>
+          </a>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main" id="main" data-od-id="main">
+      <div class="main-grid" aria-hidden="true"></div>
+      <button class="rail-open" type="button" id="btn-rail-open" aria-label="展开侧栏" data-od-id="btn-rail-open">
+        <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M9 5v14"/><path d="M13 9l3 3-3 3"/></svg>
+      </button>
+      <div class="mobile-bar">
+        <button class="icon-btn" type="button" id="btn-menu" aria-label="打开菜单" data-od-id="btn-menu">
+          <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <strong style="font-size:13.5px;letter-spacing:-0.03em">Vibeboard</strong>
+      </div>
+
+      <div class="main-inner">
+        <div class="view view-home is-on" id="view-home" data-od-id="view-home">
+        <div class="hero-brand" data-od-id="hero">
+          <div class="hero-logo-wrap" aria-hidden="true">
+            <div class="hero-logo">
+              <svg viewBox="0 0 32 32" fill="none"><rect x="7" y="7" width="18" height="18" rx="2.2" stroke="currentColor" stroke-width="1.6"/><rect x="5.15" y="5.15" width="3.7" height="3.7" rx="0.35" fill="currentColor"/><rect x="23.15" y="5.15" width="3.7" height="3.7" rx="0.35" fill="currentColor"/><rect x="5.15" y="23.15" width="3.7" height="3.7" rx="0.35" fill="currentColor"/><rect x="23.15" y="23.15" width="3.7" height="3.7" rx="0.35" fill="currentColor"/><rect x="13.6" y="14.6" width="8.4" height="7" rx="1.1" fill="currentColor"/></svg>
+            </div>
+          </div>
+          <h1 data-od-id="hero-title">Vibeboard</h1>
+          <p data-od-id="hero-lead">在画布上编排 Agent，把图、视频和文档一起交给开发。</p>
+        </div>
+
+        <form class="prompt" id="prompt-form" data-od-id="prompt" action="./canvas.html" method="get">
+          <label class="sr-only" for="prompt-input">描述你要编排的内容</label>
+          <textarea id="prompt-input" name="q" rows="3" placeholder="描述你要编排的流水线，或从下方模板开始…" data-od-id="prompt-input"></textarea>
+          <div class="prompt-bar">
+            <div class="chip-wrap">
+              <button class="chip chip-plus" type="button" id="btn-add" aria-label="添加附件" aria-haspopup="menu" aria-expanded="false" data-od-id="prompt-add">
+                <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+              </button>
+              <div class="menu" id="menu-add" hidden role="menu">
+                <button type="button" role="menuitem" data-attach="image">图片<small>放到作品板</small></button>
+                <button type="button" role="menuitem" data-attach="video">视频<small>预告或过程片</small></button>
+                <button type="button" role="menuitem" data-attach="doc">文档<small>Brief / README</small></button>
+              </div>
+            </div>
+            <div class="chip-wrap">
+              <button class="chip chip-model" type="button" id="btn-model" aria-haspopup="listbox" aria-expanded="false" data-od-id="prompt-model">
+                <span class="model-glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l7 4v6c0 4-3 7-7 8-4-1-7-4-7-8V7l7-4z"/></svg></span>
+                <span id="model-label">Composer</span>
+                <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <div class="model-panel" id="menu-model" hidden role="listbox" aria-label="选择模型" data-od-id="model-panel">
+                <div class="model-panel-head">
+                  <div class="avatar" aria-hidden="true">开</div>
+                  <div>
+                    <strong>开源贡献者</strong>
+                    <span>本地账号 · Apache-2.0</span>
+                  </div>
+                </div>
+                <div class="model-sec">模型选择</div>
+                <div class="model-search">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-3.5-3.5"/></svg>
+                  <input type="search" id="model-q" placeholder="搜索模型" autocomplete="off" />
+                </div>
+                <div class="model-list" id="model-list">
+                  <button type="button" role="option" class="is-on" data-model="Composer">
+                    <span class="grow">Composer<small>多步编排，默认工作流</small></span>
+                    <span class="tag tag-rec">推荐</span>
+                  </button>
+                  <button type="button" role="option" data-model="Fast">
+                    <span class="grow">Fast<small>单次改稿</small></span>
+                  </button>
+                  <button type="button" role="option" data-model="Architect">
+                    <span class="grow">Architect<small>结构与信息架构</small></span>
+                    <span class="tag tag-new">新</span>
+                  </button>
+                  <button type="button" role="option" data-model="Layout">
+                    <span class="grow">Layout<small>版式与栅格</small></span>
+                  </button>
+                  <button type="button" role="option" data-model="Reviewer">
+                    <span class="grow">Reviewer<small>审查与 Handoff</small></span>
+                  </button>
+                </div>
+                <button class="model-more" type="button" id="model-all">查看全部模型</button>
+              </div>
+            </div>
+            <div class="chip-wrap">
+              <button class="chip" type="button" id="btn-skill" aria-haspopup="menu" aria-expanded="false" data-od-id="prompt-skill">
+                <svg viewBox="0 0 24 24"><path d="M12 3l2.2 4.5L19 8.2l-3.5 3.4.8 4.9L12 14.2 7.7 16.5l.8-4.9L5 8.2l4.8-.7L12 3z"/></svg>
+                <span id="skill-label">Skill</span>
+              </button>
+              <div class="menu" id="menu-skill" hidden role="menu">
+                <button type="button" role="menuitem" data-skill="编排">编排<small>多 Agent 流水线</small></button>
+                <button type="button" role="menuitem" data-skill="设计系统">设计系统<small>Token 与组件</small></button>
+                <button type="button" role="menuitem" data-skill="Handoff">Handoff<small>导出开发包</small></button>
+                <button type="button" role="menuitem" data-skill="all">浏览全部 Skill<small>七个 Agent + 流水线</small></button>
+              </div>
+            </div>
+            <div class="chip-wrap">
+              <button class="chip" type="button" id="btn-folder" aria-haspopup="menu" aria-expanded="false" data-od-id="prompt-folder">
+                <svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
+                本地项目
+              </button>
+              <div class="menu" id="menu-folder" hidden role="menu">
+                <button type="button" role="menuitem" data-folder=".vad/projects/">.vad/projects/<small>本地优先，不上传</small></button>
+              </div>
+            </div>
+            <span class="spacer"></span>
+            <span class="ver" data-od-id="prompt-ver">本地 · OSS</span>
+            <button class="send" type="submit" aria-label="开始创作" data-od-id="prompt-send" id="prompt-send" disabled>
+              <svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+            </button>
+          </div>
+        </form>
+
+        <div class="starters" data-od-id="starters">
+          <button class="starter" type="button" data-fill="做一组封面与产品预告，放进作品板。">封面与预告</button>
+          <button class="starter" type="button" data-fill="整理 Token、字体与组件约定，随 Handoff 导出。">Token 与设计系统</button>
+          <button class="starter" type="button" data-fill="审查当前作品板，导出 PNG、Prompts 与 Brief。">导出 Handoff</button>
+        </div>
+
+        <div class="filters" id="gallery" data-od-id="filters">
+          <button class="pill active" type="button" data-filter="all">精选</button>
+          <button class="pill" type="button" data-filter="orchestrate">Agent 编排</button>
+          <button class="pill" type="button" data-filter="ds">设计系统</button>
+          <button class="pill" type="button" data-filter="handoff">Handoff</button>
+          <button class="pill" type="button" data-filter="skill">Skill</button>
+          <div class="links">
+            <a href="https://github.com/Zullllkar/vibeboard#readme" target="_blank" rel="noopener noreferrer" data-od-id="link-guide">使用指南 ↗</a>
+            <a href="https://github.com/Zullllkar/vibeboard" target="_blank" rel="noopener noreferrer" data-od-id="link-repo">GitHub ↗</a>
+          </div>
+        </div>
+
+        <div class="gallery" data-od-id="gallery-grid">
+          <a class="card" href="./canvas.html" data-filter="orchestrate" data-od-id="card-1">
+            <div class="card-media">
+              <img src="/api/projects/2536b0d8-98f7-4d0b-b612-ab700bc15bb6/raw/assets/canvas-cover.jpg?workspaceId=oouxonb8ijldxif727hhdu2q&workspaceMemberId=hlpx6umvk5x5oo9s2h9ep9xx" alt="封面静物：笔记本、咖啡与黄铜镇纸" />
+              <span class="card-badge">编排</span>
+            </div>
+            <div class="card-body">
+              <h3>封面与预告</h3>
+              <p>Brief 进画布，多 Agent 生成图、视频和文档，节点可拖可连。</p>
+            </div>
+          </a>
+          <a class="card" href="./canvas.html" data-filter="ds" data-od-id="card-2">
+            <div class="card-media">
+              <img src="/api/projects/2536b0d8-98f7-4d0b-b612-ab700bc15bb6/raw/assets/canvas-material.jpg?workspaceId=oouxonb8ijldxif727hhdu2q&workspaceMemberId=hlpx6umvk5x5oo9s2h9ep9xx" alt="材质与色板静物" />
+              <span class="card-badge">Tokens</span>
+            </div>
+            <div class="card-body">
+              <h3>设计系统随包走</h3>
+              <p>色板、字体与组件约定写入 Handoff，交给 Cursor 继续写。</p>
+            </div>
+          </a>
+          <a class="card" href="./canvas.html" data-filter="handoff" data-od-id="card-3">
+            <div class="card-media">
+              <img src="/api/projects/2536b0d8-98f7-4d0b-b612-ab700bc15bb6/raw/assets/canvas-video-poster.jpg?workspaceId=oouxonb8ijldxif727hhdu2q&workspaceMemberId=hlpx6umvk5x5oo9s2h9ep9xx" alt="产品预告画面" />
+              <span class="card-badge">Export</span>
+            </div>
+            <div class="card-body">
+              <h3>一键导出开发包</h3>
+              <p>PNG、Prompts、Token、Brief 一并打包，不编造指标。</p>
+            </div>
+          </a>
+        </div>
+
+        <div class="empty" id="empty-state" data-od-id="empty-gallery">
+          <p>这一类还没有精选作品。可以换筛选，或直接写 Brief 进画布。</p>
+          <a href="./canvas.html">打开画布</a>
+        </div>
+
+        <div class="oss-strip" data-od-id="oss-strip">
+          <code id="clone-cmd">git clone https://github.com/Zullllkar/vibeboard.git</code>
+          <button class="btn-copy" type="button" id="btn-copy" data-od-id="btn-copy">复制</button>
+          <div class="oss-meta">
+            <span>Apache-2.0</span>
+            <span>Next.js · tldraw · 本地优先</span>
+            <a href="https://github.com/Zullllkar/vibeboard/issues" target="_blank" rel="noopener noreferrer">Issues</a>
+            <a href="https://github.com/Zullllkar/vibeboard/pulls" target="_blank" rel="noopener noreferrer">Pull requests</a>
+            <a href="./canvas.html">打开画布</a>
+          </div>
+          <p class="sr-only" id="copy-status" role="status" aria-live="polite"></p>
+        </div>
+        </div>
+
+        <section class="view view-lib" id="view-assets" hidden data-od-id="view-assets">
+          <header class="pane-head">
+            <div>
+              <h2 data-od-id="assets-title">资产中心</h2>
+              <p>当前项目里的图、视频、文档和 Token。放到作品板，或加入 Brief 上下文。</p>
+            </div>
+            <button class="btn-ink" type="button" id="btn-import" data-od-id="btn-import">导入本地文件</button>
+          </header>
+          <div class="lib-toolbar">
+            <label class="search">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-3.5-3.5"/></svg>
+              <input id="asset-q" type="search" placeholder="搜索资产名称或类型…" autocomplete="off" data-od-id="asset-search" />
+            </label>
+            <div class="pills" role="tablist" aria-label="资产类型">
+              <button class="pill active" type="button" data-asset-filter="all">全部<em>10</em></button>
+              <button class="pill" type="button" data-asset-filter="image">图片<em>5</em></button>
+              <button class="pill" type="button" data-asset-filter="video">视频<em>1</em></button>
+              <button class="pill" type="button" data-asset-filter="doc">文档<em>3</em></button>
+              <button class="pill" type="button" data-asset-filter="token">Token<em>1</em></button>
+            </div>
+          </div>
+          <div class="asset-grid" id="asset-grid">
+            <article class="asset-tile" data-kind="image" data-name="封面 晨间桌面 jpg" data-od-id="asset-cover">
+              <button class="asset-hit" type="button" data-act="board">
+                <div class="asset-media">
+                  <img src="/api/projects/2536b0d8-98f7-4d0b-b612-ab700bc15bb6/raw/assets/canvas-cover.jpg?workspaceId=oouxonb8ijldxif727hhdu2q&workspaceMemberId=hlpx6umvk5x5oo9s2h9ep9xx" alt="封面静物：笔记本、咖啡与黄铜镇纸" />
+                  <span class="card-badge">图片</span>
+                </div>
+                <div class="asset-meta">
+                  <h3>封面 · 晨间桌面</h3>
+                  <p>saas-landing-brief · JPG · 4:3</p>
+                </div>
+              </button>
+              <div class="asset-actions">
+                <button class="btn-ghost" type="button" data-act="board">放到画布</button>
+                <button class="btn-ghost" type="button" data-act="prompt" data-prompt="参考封面静物「晨间桌面」，保持同一光线与材质。">加入上下文</button>
+              </div>
+            </article>
+            <article class="asset-tile" data-kind="video" data-name="产品预告 视频" data-od-id="asset-reel">
+              <button class="asset-hit" type="button" data-act="board">
+                <div class="asset-media">
+                  <img src="/api/projects/2536b0d8-98f7-4d0b-b612-ab700bc15bb6/raw/assets/canvas-video-poster.jpg?workspaceId=oouxonb8ijldxif727hhdu2q&workspaceMemberId=hlpx6umvk5x5oo9s2h9ep9xx" alt="产品预告画面" />
+                  <span class="card-badge">视频</span>
+                </div>
+                <div class="asset-meta">
+                  <h3>产品预告</h3>
+                  <p>direction-board-v2 · 0:18</p>
+                </div>
+              </button>
+              <div class="asset-actions">
+                <button class="btn-ghost" type="button" data-act="board">放到画布</button>
+                <button class="btn-ghost" type="button" data-act="prompt" data-prompt="以现有产品预告为参考，补一段 0:18 过程片。">加入上下文</button>
+              </div>
+            </article>
+            <article class="asset-tile" data-kind="image" data-name="材质研究 jpg" data-od-id="asset-material">
+              <button class="asset-hit" type="button" data-act="board">
+                <div class="asset-media">
+                  <img src="/api/projects/2536b0d8-98f7-4d0b-b612-ab700bc15bb6/raw/assets/canvas-material.jpg?workspaceId=oouxonb8ijldxif727hhdu2q&workspaceMemberId=hlpx6umvk5x5oo9s2h9ep9xx" alt="材质与色板静物" />
+                  <span class="card-badge">图片</span>
+                </div>
+                <div class="asset-meta">
+                  <h3>材质研究</h3>
+                  <p>handoff-token-pack · JPG · 1:1</p>
+                </div>
+              </button>
+              <div class="asset-actions">
+                <button class="btn-ghost" type="button" data-act="board">放到画布</button>
+                <button class="btn-ghost" type="button" data-act="prompt" data-prompt="沿用材质研究里的纸感与金属高光。">加入上下文</button>
+              </div>
+            </article>
+            <article class="asset-tile" data-kind="image" data-name="官网摄影 hero" data-od-id="asset-hero">
+              <button class="asset-hit" type="button" data-act="board">
+                <div class="asset-media">
+                  <img src="/api/projects/2536b0d8-98f7-4d0b-b612-ab700bc15bb6/raw/assets/hero-product.jpg?workspaceId=oouxonb8ijldxif727hhdu2q&workspaceMemberId=hlpx6umvk5x5oo9s2h9ep9xx" alt="官网产品摄影" />
+                  <span class="card-badge">图片</span>
+                </div>
+                <div class="asset-meta">
+                  <h3>官网摄影</h3>
+                  <p>marketing-hero · JPG</p>
+                </div>
+              </button>
+              <div class="asset-actions">
+                <button class="btn-ghost" type="button" data-act="board">放到画布</button>
+                <button class="btn-ghost" type="button" data-act="prompt" data-prompt="官网 Hero 用现有产品摄影，不要再生成假界面。">加入上下文</button>
+              </div>
+            </article>
+            <article class="asset-tile" data-kind="image" data-name="工作台截图 vad-home" data-od-id="asset-vad-home">
+              <button class="asset-hit" type="button" data-act="board">
+                <div class="asset-media">
+                  <img src="/api/projects/2536b0d8-98f7-4d0b-b612-ab700bc15bb6/raw/assets/vad-home.png?workspaceId=oouxonb8ijldxif727hhdu2q&workspaceMemberId=hlpx6umvk5x5oo9s2h9ep9xx" alt="工作台首页截图" />
+                  <span class="card-badge">图片</span>
+                </div>
+                <div class="asset-meta">
+                  <h3>工作台截图</h3>
+                  <p>pipeline-seven-agent · PNG</p>
+                </div>
+              </button>
+              <div class="asset-actions">
+                <button class="btn-ghost" type="button" data-act="board">放到画布</button>
+                <button class="btn-ghost" type="button" data-act="prompt" data-prompt="对照工作台截图补一帧产品界面，不要编造指标。">加入上下文</button>
+              </div>
+            </article>
+            <article class="asset-tile" data-kind="image" data-name="项目画布 vad-project" data-od-id="asset-vad-project">
+              <button class="asset-hit" type="button" data-act="board">
+                <div class="asset-media">
+                  <img src="/api/projects/2536b0d8-98f7-4d0b-b612-ab700bc15bb6/raw/assets/vad-project.png?workspaceId=oouxonb8ijldxif727hhdu2q&workspaceMemberId=hlpx6umvk5x5oo9s2h9ep9xx" alt="项目画布截图" />
+                  <span class="card-badge">图片</span>
+                </div>
+                <div class="asset-meta">
+                  <h3>项目画布</h3>
+                  <p>pipeline-seven-agent · PNG</p>
+                </div>
+              </button>
+              <div class="asset-actions">
+                <button class="btn-ghost" type="button" data-act="board">放到画布</button>
+                <button class="btn-ghost" type="button" data-act="prompt" data-prompt="参考项目画布的节点排布，继续往下接审查节点。">加入上下文</button>
+              </div>
+            </article>
+            <article class="asset-tile" data-kind="doc" data-name="brief md 文档" data-od-id="asset-brief">
+              <button class="asset-hit" type="button" data-act="board">
+                <div class="asset-media asset-doc">
+                  <span class="doc-kind">Markdown</span>
+                  <span class="doc-name">Brief.md</span>
+                </div>
+                <div class="asset-meta">
+                  <h3>项目 Brief</h3>
+                  <p>saas-landing-brief · 文档</p>
+                </div>
+              </button>
+              <div class="asset-actions">
+                <button class="btn-ghost" type="button" data-act="board">放到画布</button>
+                <button class="btn-ghost" type="button" data-act="prompt" data-prompt="以当前 Brief.md 为范围，不要扩大需求。">加入上下文</button>
+              </div>
+            </article>
+            <article class="asset-tile" data-kind="token" data-name="tokens json 设计系统" data-od-id="asset-tokens">
+              <button class="asset-hit" type="button" data-act="board">
+                <div class="asset-media asset-doc">
+                  <span class="doc-kind">JSON</span>
+                  <span class="doc-name">tokens.json</span>
+                </div>
+                <div class="asset-meta">
+                  <h3>设计 Token</h3>
+                  <p>snow_ink_coral · Token</p>
+                </div>
+              </button>
+              <div class="asset-actions">
+                <button class="btn-ghost" type="button" data-act="board">放到画布</button>
+                <button class="btn-ghost" type="button" data-act="prompt" data-prompt="沿用 tokens.json 的亮白 / 墨色 / 极省珊瑚，不要另开色板。">加入上下文</button>
+              </div>
+            </article>
+            <article class="asset-tile" data-kind="doc" data-name="spec md handoff" data-od-id="asset-spec">
+              <button class="asset-hit" type="button" data-act="board">
+                <div class="asset-media asset-doc">
+                  <span class="doc-kind">Markdown</span>
+                  <span class="doc-name">SPEC.md</span>
+                </div>
+                <div class="asset-meta">
+                  <h3>Handoff 规格</h3>
+                  <p>handoff-token-pack · 文档</p>
+                </div>
+              </button>
+              <div class="asset-actions">
+                <button class="btn-ghost" type="button" data-act="board">放到画布</button>
+                <button class="btn-ghost" type="button" data-act="prompt" data-prompt="导出时带上 SPEC.md，给 Cursor 当实现契约。">加入上下文</button>
+              </div>
+            </article>
+            <article class="asset-tile" data-kind="doc" data-name="cursor kickoff prompt" data-od-id="asset-prompt">
+              <button class="asset-hit" type="button" data-act="board">
+                <div class="asset-media asset-doc">
+                  <span class="doc-kind">Prompt</span>
+                  <span class="doc-name">cursor-kickoff.md</span>
+                </div>
+                <div class="asset-meta">
+                  <h3>Cursor 入口 Prompt</h3>
+                  <p>handoff/prompts · 文档</p>
+                </div>
+              </button>
+              <div class="asset-actions">
+                <button class="btn-ghost" type="button" data-act="board">放到画布</button>
+                <button class="btn-ghost" type="button" data-act="prompt" data-prompt="Handoff 里带上 cursor-kickoff.md，coding agent 从这一份开始。">加入上下文</button>
+              </div>
+            </article>
+          </div>
+          <div class="empty" id="asset-empty">
+            <p>没有匹配的资产。换个关键词，或导入本地文件。</p>
+            <button class="btn-ink" type="button" id="btn-import-empty">导入本地文件</button>
+          </div>
+        </section>
+
+        <section class="view view-lib" id="view-skills" hidden data-od-id="view-skills">
+          <header class="pane-head">
+            <div>
+              <h2 data-od-id="skills-title">Skill</h2>
+              <p>流水线技能与七个 Agent。启用后可在输入框调用，或直接进画布。</p>
+              <p class="skill-stat" id="skill-stat">已启用 10 / 10</p>
+            </div>
+          </header>
+          <div class="lib-toolbar">
+            <label class="search">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-3.5-3.5"/></svg>
+              <input id="skill-q" type="search" placeholder="搜索 Skill 或 Agent…" autocomplete="off" data-od-id="skill-search" />
+            </label>
+          </div>
+
+          <div class="skill-group" data-od-id="skill-pipeline">
+            <div class="skill-label">流水线</div>
+            <div class="skill-grid" id="skill-pipeline">
+              <article class="skill-card" data-skill="编排" data-fill="按七个 Agent 顺序编排：架构师 → 方向 → 布局 → 文案 → 图片规划 → 执行 → 审查。" data-od-id="skill-orchestrate">
+                <div class="skill-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="2"/><circle cx="12" cy="6" r="2"/><circle cx="18" cy="12" r="2"/><path d="M8 12h8M12 8v8"/></svg></div>
+                <div class="skill-body">
+                  <h3>编排 <span class="en">Orchestrate</span></h3>
+                  <p>把 Brief 拆成多 Agent 流水线，在画布上推进，而不是单次对话猜完全部。</p>
+                  <div class="skill-tags"><span>默认开启</span><span>多 Agent</span></div>
+                </div>
+                <div class="skill-side">
+                  <button class="switch" type="button" aria-pressed="true" aria-label="启用编排"></button>
+                  <button class="btn-ghost" type="button" data-use>使用</button>
+                </div>
+              </article>
+              <article class="skill-card" data-skill="设计系统" data-fill="整理 Token、字体与组件约定，写入 tokens.json，随 Handoff 导出。" data-od-id="skill-ds">
+                <div class="skill-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg></div>
+                <div class="skill-body">
+                  <h3>设计系统 <span class="en">Tokens</span></h3>
+                  <p>色板、字体与组件约定跟作品走，交给 Cursor 时不必再猜视觉规则。</p>
+                  <div class="skill-tags"><span>默认开启</span><span>Token</span></div>
+                </div>
+                <div class="skill-side">
+                  <button class="switch" type="button" aria-pressed="true" aria-label="启用设计系统"></button>
+                  <button class="btn-ghost" type="button" data-use>使用</button>
+                </div>
+              </article>
+              <article class="skill-card" data-skill="Handoff" data-fill="审查当前作品板，导出 PNG、Prompts、Token 与 Brief。" data-od-id="skill-handoff">
+                <div class="skill-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 19h14"/></svg></div>
+                <div class="skill-body">
+                  <h3>Handoff <span class="en">Export</span></h3>
+                  <p>导出给 coding agent 的开发包：PNG、prompts、设计 token、完整上下文。</p>
+                  <div class="skill-tags"><span>默认开启</span><span>导出</span></div>
+                </div>
+                <div class="skill-side">
+                  <button class="switch" type="button" aria-pressed="true" aria-label="启用 Handoff"></button>
+                  <button class="btn-ghost" type="button" data-use>使用</button>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <div class="skill-group" data-od-id="skill-agents">
+            <div class="skill-label">七个 Agent</div>
+            <div class="skill-grid" id="skill-agents">
+              <article class="skill-card" data-skill="架构师" data-fill="先让架构师拆 Brief：范围、页面结构、不要做的事。" data-od-id="skill-architect">
+                <div class="skill-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 19V7l8-4 8 4v12"/><path d="M9 19v-6h6v6"/></svg></div>
+                <div class="skill-body">
+                  <h3>架构师 <span class="en">Architect</span></h3>
+                  <p>把 Brief 收成结构与范围，后面的 Agent 按同一份边界干活。</p>
+                  <div class="skill-tags"><span>结构</span></div>
+                </div>
+                <div class="skill-side">
+                  <button class="switch" type="button" aria-pressed="true" aria-label="启用架构师"></button>
+                  <button class="btn-ghost" type="button" data-use>使用</button>
+                </div>
+              </article>
+              <article class="skill-card" data-skill="设计方向" data-fill="请设计方向定气质：亮白工作台、墨色主调、极省珊瑚。" data-od-id="skill-director">
+                <div class="skill-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg></div>
+                <div class="skill-body">
+                  <h3>设计方向 <span class="en">Director</span></h3>
+                  <p>定视觉气质与禁区，避免后面各步各自发明一套风格。</p>
+                  <div class="skill-tags"><span>方向</span></div>
+                </div>
+                <div class="skill-side">
+                  <button class="switch" type="button" aria-pressed="true" aria-label="启用设计方向"></button>
+                  <button class="btn-ghost" type="button" data-use>使用</button>
+                </div>
+              </article>
+              <article class="skill-card" data-skill="布局工程师" data-fill="请布局工程师在画布上排层级：Hero、能力、流水线、开源。" data-od-id="skill-layout">
+                <div class="skill-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M10 10v10"/></svg></div>
+                <div class="skill-body">
+                  <h3>布局工程师 <span class="en">Layout</span></h3>
+                  <p>在无限画布上排几何与层级，产出可落地的构图，不是线框示意。</p>
+                  <div class="skill-tags"><span>构图</span></div>
+                </div>
+                <div class="skill-side">
+                  <button class="switch" type="button" aria-pressed="true" aria-label="启用布局工程师"></button>
+                  <button class="btn-ghost" type="button" data-use>使用</button>
+                </div>
+              </article>
+              <article class="skill-card" data-skill="文案" data-fill="请文案按 Brief 写标题、说明和按钮，不要编造使用量。" data-od-id="skill-copy">
+                <div class="skill-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 5h14v14H5z"/><path d="M8 9h8M8 13h5"/></svg></div>
+                <div class="skill-body">
+                  <h3>文案 <span class="en">Content</span></h3>
+                  <p>写标题、正文和按钮。开源项目只陈述事实，不编指标。</p>
+                  <div class="skill-tags"><span>文案</span></div>
+                </div>
+                <div class="skill-side">
+                  <button class="switch" type="button" aria-pressed="true" aria-label="启用文案"></button>
+                  <button class="btn-ghost" type="button" data-use>使用</button>
+                </div>
+              </article>
+              <article class="skill-card" data-skill="图片规划" data-fill="请图片规划列出需要的槽位：封面、预告、材质，并写生成提示。" data-od-id="skill-plan">
+                <div class="skill-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 15l4-4 3 3 3-4 6 5"/></svg></div>
+                <div class="skill-body">
+                  <h3>图片规划 <span class="en">Planner</span></h3>
+                  <p>列出要生成的槽位与提示词，执行步按清单落图，而不是随机出图。</p>
+                  <div class="skill-tags"><span>规划</span></div>
+                </div>
+                <div class="skill-side">
+                  <button class="switch" type="button" aria-pressed="true" aria-label="启用图片规划"></button>
+                  <button class="btn-ghost" type="button" data-use>使用</button>
+                </div>
+              </article>
+              <article class="skill-card" data-skill="图片执行" data-fill="请图片执行按规划槽位生成成品图，放到作品板。" data-od-id="skill-exec">
+                <div class="skill-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 19l7-14 7 14"/><path d="M8.5 12h7"/></svg></div>
+                <div class="skill-body">
+                  <h3>图片执行 <span class="en">Executor</span></h3>
+                  <p>按规划生成成品视觉，直接放到作品板，不产出 HTML mock。</p>
+                  <div class="skill-tags"><span>生成</span></div>
+                </div>
+                <div class="skill-side">
+                  <button class="switch" type="button" aria-pressed="true" aria-label="启用图片执行"></button>
+                  <button class="btn-ghost" type="button" data-use>使用</button>
+                </div>
+              </article>
+              <article class="skill-card" data-skill="审查员" data-fill="请审查员对照 Brief 检查作品板，列出要修的点和 Handoff 缺口。" data-od-id="skill-critic">
+                <div class="skill-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M8 12l2.5 2.5L16 9"/></svg></div>
+                <div class="skill-body">
+                  <h3>审查员 <span class="en">Critic</span></h3>
+                  <p>对照 Brief 做质量审查与修复建议，导出前把缺口补上。</p>
+                  <div class="skill-tags"><span>审查</span></div>
+                </div>
+                <div class="skill-side">
+                  <button class="switch" type="button" aria-pressed="true" aria-label="启用审查员"></button>
+                  <button class="btn-ghost" type="button" data-use>使用</button>
+                </div>
+              </article>
+            </div>
+          </div>
+          <div class="empty" id="skill-empty">
+            <p>没有匹配的 Skill。试试「编排」「Handoff」或某个 Agent 名称。</p>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div class="cmdk" id="cmdk" role="dialog" aria-modal="true" aria-label="命令面板" hidden>
+    <div class="cmdk-panel">
+      <input id="cmdk-input" type="search" placeholder="跳转到项目、画布或仓库…" autocomplete="off" />
+      <div class="cmdk-list" id="cmdk-list">
+        <button type="button" data-href="./canvas.html">打开画布 <span>↵</span></button>
+        <button type="button" data-view="assets">资产中心 <span>图 / 视频 / 文档</span></button>
+        <button type="button" data-view="skills">Skill <span>流水线 · Agent</span></button>
+        <button type="button" data-href="./canvas.html">saas-landing-brief <span>作品板</span></button>
+        <button type="button" data-href="./marketing.html">项目官网 <span>介绍</span></button>
+        <button type="button" data-settings="1">设置 <span>账户与偏好</span></button>
+        <button type="button" data-href="https://github.com/Zullllkar/vibeboard">GitHub <span>新窗口</span></button>
+      </div>
+    </div>
+  </div>
+  <div class="settings-root" id="settings-root" hidden data-od-id="settings-root">
+    <div class="settings" role="dialog" aria-modal="true" aria-labelledby="settings-title" data-od-id="settings">
+      <nav class="set-nav" aria-label="设置分类">
+        <h2 id="settings-title">设置</h2>
+        <button type="button" class="is-on" data-pane="general"><svg viewBox="0 0 24 24"><path d="M4 8h16M4 16h10"/><circle cx="18" cy="16" r="2"/><circle cx="8" cy="8" r="2"/></svg>通用</button>
+        <button type="button" data-pane="account"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.2"/><path d="M5 19c1.6-3 4-4.5 7-4.5S17.4 16 19 19"/></svg>账号</button>
+        <button type="button" data-pane="storage"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16"/></svg>存储</button>
+        <button type="button" data-pane="network"><svg viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/><circle cx="12" cy="12" r="8"/></svg>网络</button>
+        <button type="button" data-pane="memory"><svg viewBox="0 0 24 24"><path d="M9 8h6M9 12h6M9 16h3"/><rect x="5" y="4" width="14" height="16" rx="2"/></svg>记忆</button>
+        <button type="button" data-pane="assets"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 15l4-4 3 3 3-4 6 5"/></svg>资产中心</button>
+        <button type="button" data-pane="advanced"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1A1.7 1.7 0 007 19.4a1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1A1.7 1.7 0 004.6 9a1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1A1.7 1.7 0 007 4.6H8A1.7 1.7 0 009 3.1V3a2 2 0 114 0v.1A1.7 1.7 0 0014 4.6a1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1A1.7 1.7 0 0018.4 9V8c.3.6.9 1 1.5 1.1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>高级</button>
+        <button type="button" data-pane="update"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0114.9-4M20 12a8 8 0 01-14.9 4"/><path d="M19 4v5h-5M5 20v-5h5"/></svg>软件更新</button>
+      </nav>
+      <div class="set-main">
+        <div class="set-main-head">
+          <h3 id="set-pane-title">通用</h3>
+          <button class="set-close" type="button" id="btn-settings-close" aria-label="关闭设置">
+            <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+
+        <div class="set-pane is-on" id="pane-general" data-od-id="pane-general">
+          <div class="set-row">
+            <div>
+              <h4>语言</h4>
+              <p>界面文案语言。当前原型以简体中文交付。</p>
+            </div>
+            <select class="set-select" id="set-lang" aria-label="语言">
+              <option value="zh-CN" selected>中文</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+          <div class="set-row">
+            <div>
+              <h4>主题</h4>
+              <p>工作台底色。默认浅色，与创作首页一致。</p>
+            </div>
+            <select class="set-select" id="set-theme" aria-label="主题">
+              <option value="light" selected>浅色</option>
+              <option value="dark">深色</option>
+              <option value="system">跟随系统</option>
+            </select>
+          </div>
+          <div class="set-row">
+            <div>
+              <h4>精简侧栏</h4>
+              <p>收成图标轨，画布区更宽。也可点侧栏顶部按钮。</p>
+            </div>
+            <button class="toggle" type="button" id="set-rail" aria-pressed="false" aria-label="精简侧栏"></button>
+          </div>
+          <div class="set-row">
+            <div>
+              <h4>减少动效</h4>
+              <p>关闭侧栏开合与卡片抬升。系统「减少动态效果」开启时会自动遵循。</p>
+            </div>
+            <button class="toggle" type="button" id="set-motion" aria-pressed="false" aria-label="减少动效"></button>
+          </div>
+          <div class="set-sub">系统</div>
+          <div class="set-row">
+            <div>
+              <h4>启动时打开上次项目</h4>
+              <p>下次进入创作首页，默认停在最近的作品板。</p>
+            </div>
+            <button class="toggle" type="button" id="set-restore" aria-pressed="true" aria-label="启动时打开上次项目"></button>
+          </div>
+          <div class="set-row">
+            <div>
+              <h4>本地优先</h4>
+              <p>项目写在 .vad/projects/，不上传云端。</p>
+            </div>
+            <button class="toggle" type="button" id="set-local" aria-pressed="true" aria-label="本地优先"></button>
+          </div>
+        </div>
+
+        <div class="set-pane" id="pane-account" hidden>
+          <div class="set-row">
+            <div>
+              <h4>显示名称</h4>
+              <p>开源贡献者 · UID local-01，仅存在本机。</p>
+            </div>
+          </div>
+          <div class="set-row">
+            <div>
+              <h4>GitHub</h4>
+              <p>Zullllkar/vibeboard</p>
+            </div>
+            <a class="chip" href="https://github.com/Zullllkar/vibeboard" target="_blank" rel="noopener noreferrer" style="border:1px solid var(--line-strong)">打开仓库</a>
+          </div>
+          <div class="set-row">
+            <div>
+              <h4>许可证</h4>
+              <p>Apache-2.0。源码可改、可分发。</p>
+            </div>
+            <a class="chip" href="https://github.com/Zullllkar/vibeboard/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" style="border:1px solid var(--line-strong)">LICENSE</a>
+          </div>
+        </div>
+
+        <div class="set-pane" id="pane-storage" hidden>
+          <div class="set-row">
+            <div>
+              <h4>项目目录</h4>
+              <p>本地项目默认写在仓库旁的 .vad/projects/。</p>
+            </div>
+            <span class="ver">.vad/projects/</span>
+          </div>
+          <div class="set-row">
+            <div>
+              <h4>导入不上传</h4>
+              <p>资产中心的「导入本地文件」只读本机，不经过服务器。</p>
+            </div>
+            <button class="toggle" type="button" aria-pressed="true" data-set="import-local" aria-label="导入不上传"></button>
+          </div>
+          <div class="set-row">
+            <div>
+              <h4>缓存作品图</h4>
+              <p>封面与预告缩略图缓存在浏览器，可随时清掉。</p>
+            </div>
+            <button class="chip" type="button" id="btn-clear-cache" style="border:1px solid var(--line-strong)">清除缓存</button>
+          </div>
+        </div>
+
+        <div class="set-pane" id="pane-network" hidden>
+          <div class="set-row">
+            <div>
+              <h4>离线可用</h4>
+              <p>编排与画布不依赖账号登录。GitHub 星标在离线时显示为 —。</p>
+            </div>
+            <button class="toggle" type="button" aria-pressed="true" data-set="offline" aria-label="离线可用"></button>
+          </div>
+          <div class="set-row">
+            <div>
+              <h4>GitHub API</h4>
+              <p>仅用于读取公开仓库的 Star 数，不授权私有内容。</p>
+            </div>
+            <button class="toggle" type="button" aria-pressed="true" data-set="gh-api" aria-label="GitHub API"></button>
+          </div>
+        </div>
+
+        <div class="set-pane" id="pane-memory" hidden>
+          <div class="set-row">
+            <div>
+              <h4>保留 Brief 上下文</h4>
+              <p>从资产中心「加入上下文」的句子会留在输入框，直到你清空。</p>
+              <p class="set-note">当前：已开启</p>
+            </div>
+            <button class="toggle" type="button" aria-pressed="true" data-set="brief-ctx" aria-label="保留 Brief 上下文"></button>
+          </div>
+          <div class="set-row">
+            <div>
+              <h4>记住选用的模型</h4>
+              <p>Composer / Fast 等选择会写到本机，下次打开仍在。</p>
+            </div>
+            <button class="toggle" type="button" id="set-remember-model" aria-pressed="true" aria-label="记住选用的模型"></button>
+          </div>
+        </div>
+
+        <div class="set-pane" id="pane-assets" hidden>
+          <div class="set-row">
+            <div>
+              <h4>默认打开资产中心</h4>
+              <p>侧栏点「资产中心」进入库视图，而不是滚到页面底部。</p>
+            </div>
+            <button class="toggle" type="button" aria-pressed="true" data-set="assets-view" aria-label="默认打开资产中心"></button>
+          </div>
+          <div class="set-row">
+            <div>
+              <h4>放到画布后跳转</h4>
+              <p>从资产中心「放到画布」会打开作品板。</p>
+            </div>
+            <button class="toggle" type="button" aria-pressed="true" data-set="jump-canvas" aria-label="放到画布后跳转"></button>
+          </div>
+        </div>
+
+        <div class="set-pane" id="pane-advanced" hidden>
+          <div class="set-row">
+            <div>
+              <h4>命令面板</h4>
+              <p>⌘K / Ctrl+K 搜索项目、资产和仓库。</p>
+            </div>
+            <button class="toggle" type="button" aria-pressed="true" data-set="cmdk" aria-label="命令面板"></button>
+          </div>
+          <div class="set-row">
+            <div>
+              <h4>开发者标记</h4>
+              <p>在导出 Handoff 时附带 data-od-id，方便对照原型。</p>
+            </div>
+            <button class="toggle" type="button" aria-pressed="false" data-set="dev-ids" aria-label="开发者标记"></button>
+          </div>
+        </div>
+
+        <div class="set-pane" id="pane-update" hidden>
+          <div class="set-row">
+            <div>
+              <h4>当前版本</h4>
+              <p>开源主干。以 GitHub Releases 为准，本页不编造版本号。</p>
+            </div>
+            <a class="chip" href="https://github.com/Zullllkar/vibeboard/releases" target="_blank" rel="noopener noreferrer" style="border:1px solid var(--line-strong)">Releases</a>
+          </div>
+          <div class="set-row">
+            <div>
+              <h4>检查更新</h4>
+              <p>打开仓库的最新 Release 页面。</p>
+            </div>
+            <a class="chip" href="https://github.com/Zullllkar/vibeboard/releases/latest" target="_blank" rel="noopener noreferrer" style="border:1px solid var(--line-strong)">查看最新</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <input type="file" id="import-file" hidden multiple accept="image/*,video/*,.md,.json,.txt,.png,.jpg,.jpeg" />
+
+  <script>
+    (function () {
+      var REPO = 'Zullllkar/vibeboard';
+      var toastEl = document.getElementById('toast');
+      function toast(msg) {
+        if (!toastEl) return;
+        toastEl.textContent = msg;
+        toastEl.classList.add('show');
+        clearTimeout(toast._t);
+        toast._t = setTimeout(function () { toastEl.classList.remove('show'); }, 1600);
+      }
+
+      var starEl = document.getElementById('gh-stars');
+      if (starEl) {
+        fetch('https://api.github.com/repos/' + REPO)
+          .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+          .then(function (d) {
+            starEl.textContent = typeof d.stargazers_count === 'number' ? String(d.stargazers_count) : '—';
+          })
+          .catch(function () { starEl.textContent = '—'; });
+      }
+
+      var input = document.getElementById('prompt-input');
+      var send = document.getElementById('prompt-send');
+      function syncSend() {
+        if (!send || !input) return;
+        var on = !!input.value.trim();
+        send.classList.toggle('has-text', on);
+        send.disabled = !on;
+      }
+      if (input) {
+        input.addEventListener('input', syncSend);
+        input.addEventListener('keydown', function (e) {
+          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+            e.preventDefault();
+            if (input.value.trim()) document.getElementById('prompt-form').requestSubmit();
+          }
+        });
+        syncSend();
+      }
+
+      var form = document.getElementById('prompt-form');
+      if (form) {
+        form.addEventListener('submit', function (e) {
+          e.preventDefault();
+          var q = (input && input.value) || '';
+          if (!q.trim()) return;
+          location.href = './canvas.html?q=' + encodeURIComponent(q.trim());
+        });
+      }
+
+      document.querySelectorAll('.starter').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          if (!input) return;
+          input.value = btn.getAttribute('data-fill') || '';
+          syncSend();
+          input.focus();
+        });
+      });
+
+      var modelMenu = document.getElementById('menu-model');
+      var modelBtn = document.getElementById('btn-model');
+      var acctPop = document.getElementById('acct-pop');
+      var acctBtn = document.getElementById('btn-account');
+
+      function closeAcct() {
+        if (acctPop) acctPop.hidden = true;
+        if (acctBtn) acctBtn.setAttribute('aria-expanded', 'false');
+      }
+      function closeModel() {
+        if (modelMenu) modelMenu.hidden = true;
+        if (modelBtn) modelBtn.setAttribute('aria-expanded', 'false');
+      }
+      function closeMenus(except) {
+        document.querySelectorAll('.menu').forEach(function (m) {
+          if (m !== except) m.hidden = true;
+        });
+        document.querySelectorAll('.chip-wrap [aria-expanded="true"]').forEach(function (b) {
+          if (!except || b.nextElementSibling !== except) b.setAttribute('aria-expanded', 'false');
+        });
+        if (except !== modelMenu) closeModel();
+      }
+      function bindMenu(btnId, menuId, onPick) {
+        var btn = document.getElementById(btnId);
+        var menu = document.getElementById(menuId);
+        if (!btn || !menu) return;
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var open = menu.hidden;
+          closeMenus(open ? menu : null);
+          closeAcct();
+          menu.hidden = !open;
+          btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
+        menu.querySelectorAll('button').forEach(function (item) {
+          item.addEventListener('click', function () {
+            menu.querySelectorAll('button').forEach(function (b) { b.classList.remove('is-on'); });
+            item.classList.add('is-on');
+            if (onPick) onPick(item);
+            closeMenus();
+          });
+        });
+      }
+      bindMenu('btn-add', 'menu-add', function (item) {
+        toast('已附加' + (item.getAttribute('data-attach') === 'image' ? '图片' : item.getAttribute('data-attach') === 'video' ? '视频' : '文档') + '，进入画布后放到作品板');
+      });
+      bindMenu('btn-skill', 'menu-skill', function (item) {
+        var skill = item.getAttribute('data-skill');
+        if (skill === 'all') {
+          showView('skills');
+          return;
+        }
+        var label = document.getElementById('skill-label');
+        if (label) label.textContent = skill;
+      });
+      bindMenu('btn-folder', 'menu-folder', function () {
+        toast('项目写入 .vad/projects/，本地优先');
+      });
+
+      function pickModel(name) {
+        var label = document.getElementById('model-label');
+        if (label) label.textContent = name;
+        if (modelMenu) {
+          modelMenu.querySelectorAll('[data-model]').forEach(function (b) {
+            b.classList.toggle('is-on', b.getAttribute('data-model') === name);
+          });
+        }
+        try {
+          if (localStorage.getItem('vad:remember-model') !== '0') localStorage.setItem('vad:model', name);
+        } catch (err) {}
+        toast('已选用 ' + name);
+      }
+      if (modelBtn && modelMenu) {
+        modelBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var open = modelMenu.hidden;
+          closeMenus(open ? modelMenu : null);
+          closeAcct();
+          modelMenu.hidden = !open;
+          modelBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+          if (open) {
+            var q = document.getElementById('model-q');
+            if (q) { q.value = ''; filterModels(); q.focus(); }
+          }
+        });
+        modelMenu.addEventListener('click', function (e) { e.stopPropagation(); });
+        modelMenu.querySelectorAll('[data-model]').forEach(function (item) {
+          item.addEventListener('click', function () {
+            pickModel(item.getAttribute('data-model'));
+            closeModel();
+          });
+        });
+        var modelAll = document.getElementById('model-all');
+        if (modelAll) modelAll.addEventListener('click', function () {
+          closeModel();
+          showView('skills');
+        });
+        var modelQ = document.getElementById('model-q');
+        function filterModels() {
+          var q = (modelQ && modelQ.value ? modelQ.value : '').trim().toLowerCase();
+          modelMenu.querySelectorAll('[data-model]').forEach(function (b) {
+            var text = (b.textContent || '').toLowerCase();
+            b.style.display = !q || text.indexOf(q) !== -1 ? '' : 'none';
+          });
+        }
+        if (modelQ) modelQ.addEventListener('input', filterModels);
+        try {
+          var savedModel = localStorage.getItem('vad:model');
+          if (savedModel) {
+            var label = document.getElementById('model-label');
+            if (label) label.textContent = savedModel;
+            modelMenu.querySelectorAll('[data-model]').forEach(function (b) {
+              b.classList.toggle('is-on', b.getAttribute('data-model') === savedModel);
+            });
+          }
+        } catch (err) {}
+      }
+
+      document.addEventListener('click', function (e) {
+        if (e.target.closest('#menu-model, #btn-model, #acct-pop, #btn-account, #settings-root')) return;
+        closeMenus();
+        closeAcct();
+      });
+
+      var views = { home: 'view-home', assets: 'view-assets', skills: 'view-skills' };
+      function showView(name, opts) {
+        if (!views[name]) name = 'home';
+        var id = views[name];
+        document.querySelectorAll('.view').forEach(function (v) {
+          var on = v.id === id;
+          v.classList.toggle('is-on', on);
+          v.hidden = !on;
+        });
+        document.querySelectorAll('.nav-list a[data-view]').forEach(function (a) {
+          var on = a.getAttribute('data-view') === name;
+          a.classList.toggle('active', on);
+          if (on) a.setAttribute('aria-current', 'page');
+          else a.removeAttribute('aria-current');
+        });
+        var main = document.getElementById('main');
+        if (main && !(opts && opts.keepScroll)) main.scrollTop = 0;
+        try { history.replaceState(null, '', '#' + name); } catch (err) {}
+        closeSide();
+      }
+      document.querySelectorAll('.nav-list a[data-view]').forEach(function (a) {
+        a.addEventListener('click', function (e) {
+          e.preventDefault();
+          showView(a.getAttribute('data-view'));
+        });
+      });
+      function applyHash() {
+        var h = (location.hash || '#home').replace('#', '');
+        if (h === 'gallery' || h === '') h = 'home';
+        if (views[h]) showView(h, { keepScroll: true });
+      }
+      window.addEventListener('hashchange', applyHash);
+
+      var gallery = document.querySelector('.gallery');
+      var empty = document.getElementById('empty-state');
+      document.querySelectorAll('#gallery .pill').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var f = btn.getAttribute('data-filter');
+          if (f === 'skill') {
+            showView('skills');
+            return;
+          }
+          document.querySelectorAll('#gallery .pill').forEach(function (b) { b.classList.remove('active'); });
+          btn.classList.add('active');
+          var shown = 0;
+          document.querySelectorAll('.gallery .card').forEach(function (card) {
+            var show = f === 'all' || card.getAttribute('data-filter') === f;
+            card.style.display = show ? '' : 'none';
+            if (show) shown += 1;
+          });
+          if (empty) empty.classList.toggle('show', shown === 0);
+          if (gallery) gallery.style.display = shown === 0 ? 'none' : '';
+        });
+      });
+
+      var assetFilter = 'all';
+      function filterAssets() {
+        var qEl = document.getElementById('asset-q');
+        var q = (qEl && qEl.value ? qEl.value : '').trim().toLowerCase();
+        var shown = 0;
+        document.querySelectorAll('#asset-grid .asset-tile').forEach(function (tile) {
+          var kind = tile.getAttribute('data-kind') || '';
+          var name = (tile.getAttribute('data-name') || '') + ' ' + (tile.textContent || '');
+          var okKind = assetFilter === 'all' || kind === assetFilter;
+          var okQ = !q || name.toLowerCase().indexOf(q) !== -1;
+          var show = okKind && okQ;
+          tile.style.display = show ? '' : 'none';
+          if (show) shown += 1;
+        });
+        var ae = document.getElementById('asset-empty');
+        var grid = document.getElementById('asset-grid');
+        if (ae) ae.classList.toggle('show', shown === 0);
+        if (grid) grid.style.display = shown === 0 ? 'none' : '';
+      }
+      document.querySelectorAll('[data-asset-filter]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          document.querySelectorAll('[data-asset-filter]').forEach(function (b) { b.classList.remove('active'); });
+          btn.classList.add('active');
+          assetFilter = btn.getAttribute('data-asset-filter') || 'all';
+          filterAssets();
+        });
+      });
+      var assetQ = document.getElementById('asset-q');
+      if (assetQ) assetQ.addEventListener('input', filterAssets);
+
+      function onAssetAct(act, tile) {
+        if (!tile) return;
+        var title = ((tile.querySelector('h3') || {}).textContent || '资产').trim();
+        if (act === 'board') {
+          toast('已把「' + title + '」放到作品板');
+          location.href = './canvas.html';
+          return;
+        }
+        var btn = tile.querySelector('[data-act="prompt"]');
+        var extra = (btn && btn.getAttribute('data-prompt')) || ('参考资产：' + title);
+        if (input) {
+          input.value = extra;
+          syncSend();
+        }
+        showView('home');
+        if (input) input.focus();
+        toast('已加入 Brief 上下文');
+      }
+      document.querySelectorAll('#asset-grid .asset-tile').forEach(function (tile) {
+        tile.querySelectorAll('[data-act]').forEach(function (btn) {
+          btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            onAssetAct(btn.getAttribute('data-act'), tile);
+          });
+        });
+      });
+
+      var importFile = document.getElementById('import-file');
+      function openImport() {
+        if (importFile) importFile.click();
+        else toast('本地导入写入 .vad/projects/，不上传');
+      }
+      var btnImport = document.getElementById('btn-import');
+      var btnImportEmpty = document.getElementById('btn-import-empty');
+      if (btnImport) btnImport.addEventListener('click', openImport);
+      if (btnImportEmpty) btnImportEmpty.addEventListener('click', openImport);
+      if (importFile) {
+        importFile.addEventListener('change', function () {
+          var n = importFile.files ? importFile.files.length : 0;
+          importFile.value = '';
+          if (!n) return;
+          toast(n === 1 ? '已加入 1 个本地文件（不上传）' : '已加入 ' + n + ' 个本地文件（不上传）');
+        });
+      }
+
+      function filterSkills() {
+        var qEl = document.getElementById('skill-q');
+        var q = (qEl && qEl.value ? qEl.value : '').trim().toLowerCase();
+        var shown = 0;
+        document.querySelectorAll('#view-skills .skill-card').forEach(function (card) {
+          var text = (card.textContent || '').toLowerCase();
+          var show = !q || text.indexOf(q) !== -1;
+          card.style.display = show ? '' : 'none';
+          if (show) shown += 1;
+        });
+        document.querySelectorAll('#view-skills .skill-group').forEach(function (g) {
+          var any = false;
+          g.querySelectorAll('.skill-card').forEach(function (c) {
+            if (c.style.display !== 'none') any = true;
+          });
+          g.style.display = any ? '' : 'none';
+        });
+        var se = document.getElementById('skill-empty');
+        if (se) se.classList.toggle('show', shown === 0);
+      }
+      var skillQ = document.getElementById('skill-q');
+      if (skillQ) skillQ.addEventListener('input', filterSkills);
+
+      function syncSkillStat() {
+        var all = document.querySelectorAll('#view-skills .skill-card');
+        var on = document.querySelectorAll('#view-skills .switch[aria-pressed="true"]').length;
+        var el = document.getElementById('skill-stat');
+        if (el) el.textContent = '已启用 ' + on + ' / ' + all.length;
+      }
+      function useSkill(card) {
+        if (!card) return;
+        var name = card.getAttribute('data-skill') || 'Skill';
+        var sw = card.querySelector('.switch');
+        if (sw && sw.getAttribute('aria-pressed') !== 'true') {
+          toast('「' + name + '」已停用，先打开开关');
+          return;
+        }
+        var fill = card.getAttribute('data-fill') || '';
+        var label = document.getElementById('skill-label');
+        if (label) label.textContent = name;
+        if (input) {
+          input.value = fill;
+          syncSend();
+        }
+        showView('home');
+        if (input) input.focus();
+        toast('已选用「' + name + '」');
+      }
+      document.querySelectorAll('#view-skills .skill-card').forEach(function (card) {
+        var sw = card.querySelector('.switch');
+        if (sw) {
+          sw.addEventListener('click', function () {
+            var on = sw.getAttribute('aria-pressed') !== 'true';
+            sw.setAttribute('aria-pressed', on ? 'true' : 'false');
+            card.classList.toggle('is-off', !on);
+            syncSkillStat();
+            toast(on ? '已启用「' + (card.getAttribute('data-skill') || '') + '」' : '已停用');
+          });
+        }
+        var useBtn = card.querySelector('[data-use]');
+        if (useBtn) useBtn.addEventListener('click', function () { useSkill(card); });
+      });
+      syncSkillStat();
+
+      applyHash();
+
+      var copyBtn = document.getElementById('btn-copy');
+      var cloneCmd = document.getElementById('clone-cmd');
+      var statusEl = document.getElementById('copy-status');
+      if (copyBtn && cloneCmd) {
+        copyBtn.addEventListener('click', function () {
+          var text = cloneCmd.textContent || '';
+          function ok() {
+            copyBtn.dataset.state = 'ok';
+            copyBtn.textContent = '已复制';
+            if (statusEl) statusEl.textContent = '已复制到剪贴板';
+            setTimeout(function () {
+              copyBtn.dataset.state = '';
+              copyBtn.textContent = '复制';
+              if (statusEl) statusEl.textContent = '';
+            }, 1600);
+          }
+          function fail() {
+            copyBtn.textContent = '失败';
+            if (statusEl) statusEl.textContent = '复制失败，请手动选择';
+            setTimeout(function () { copyBtn.textContent = '复制'; if (statusEl) statusEl.textContent = ''; }, 1800);
+          }
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(ok).catch(fail);
+          } else {
+            try {
+              var ta = document.createElement('textarea');
+              ta.value = text; document.body.appendChild(ta); ta.select();
+              document.execCommand('copy'); document.body.removeChild(ta); ok();
+            } catch (err) { fail(); }
+          }
+        });
+      }
+
+      var sidebar = document.getElementById('sidebar');
+      var backdrop = document.getElementById('backdrop');
+      var btnMenu = document.getElementById('btn-menu');
+      var btnCollapse = document.getElementById('btn-collapse');
+      var appShell = document.querySelector('.app');
+      var btnRailOpen = document.getElementById('btn-rail-open');
+      function isMobile() { return window.matchMedia('(max-width: 780px)').matches; }
+      function closeSide() {
+        if (!sidebar) return;
+        sidebar.classList.remove('open');
+        if (backdrop) { backdrop.hidden = true; backdrop.classList.remove('show'); }
+      }
+      function openSide() {
+        if (!sidebar) return;
+        sidebar.classList.add('open');
+        if (backdrop) { backdrop.hidden = false; backdrop.classList.add('show'); }
+      }
+      function railOn() {
+        try { return localStorage.getItem('vad:rail') === '1'; } catch (err) { return false; }
+      }
+      function applyRail() {
+        var on = railOn() && !isMobile();
+        if (appShell) appShell.classList.toggle('is-rail', on);
+        if (btnCollapse) {
+          btnCollapse.setAttribute('aria-label', on ? '展开侧栏' : '收起侧栏');
+          btnCollapse.setAttribute('title', on ? '展开侧栏' : '收起侧栏');
+        }
+        var railToggle = document.getElementById('set-rail');
+        if (railToggle) railToggle.setAttribute('aria-pressed', railOn() ? 'true' : 'false');
+      }
+      function setRail(on) {
+        try { localStorage.setItem('vad:rail', on ? '1' : '0'); } catch (err) {}
+        applyRail();
+      }
+      if (btnMenu) btnMenu.addEventListener('click', openSide);
+      if (btnCollapse) {
+        btnCollapse.addEventListener('click', function () {
+          if (isMobile()) closeSide();
+          else setRail(!railOn());
+        });
+      }
+      if (btnRailOpen) btnRailOpen.addEventListener('click', function () { setRail(false); });
+      if (backdrop) backdrop.addEventListener('click', closeSide);
+      applyRail();
+      window.addEventListener('resize', applyRail);
+
+      function applyTheme(mode) {
+        if (!mode) mode = 'light';
+        document.documentElement.setAttribute('data-theme', mode);
+        try { localStorage.setItem('vad:theme', mode); } catch (err) {}
+        document.querySelectorAll('[data-theme]').forEach(function (b) {
+          if (!b.closest('.theme-seg')) return;
+          b.classList.toggle('is-on', b.getAttribute('data-theme') === mode);
+        });
+        var sel = document.getElementById('set-theme');
+        if (sel && sel.value !== mode) sel.value = mode;
+      }
+      document.querySelectorAll('.theme-seg button[data-theme]').forEach(function (b) {
+        b.addEventListener('click', function (e) {
+          e.stopPropagation();
+          applyTheme(b.getAttribute('data-theme'));
+        });
+      });
+      try {
+        applyTheme(localStorage.getItem('vad:theme') || 'light');
+      } catch (err) { applyTheme('light'); }
+
+      if (acctBtn && acctPop) {
+        acctBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var open = acctPop.hidden;
+          closeMenus();
+          acctPop.hidden = !open;
+          acctBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
+        acctPop.addEventListener('click', function (e) { e.stopPropagation(); });
+      }
+
+      var settingsRoot = document.getElementById('settings-root');
+      var paneTitles = {
+        general: '通用', account: '账号', storage: '存储', network: '网络',
+        memory: '记忆', assets: '资产中心', advanced: '高级', update: '软件更新'
+      };
+      function openSettings(pane) {
+        if (!settingsRoot) return;
+        closeAcct();
+        closeMenus();
+        settingsRoot.hidden = false;
+        settingsRoot.classList.add('open');
+        if (pane) showPane(pane);
+        var closeBtn = document.getElementById('btn-settings-close');
+        if (closeBtn) closeBtn.focus();
+      }
+      function closeSettings() {
+        if (!settingsRoot) return;
+        settingsRoot.hidden = true;
+        settingsRoot.classList.remove('open');
+      }
+      function showPane(name) {
+        document.querySelectorAll('.set-pane').forEach(function (p) {
+          var on = p.id === 'pane-' + name;
+          p.classList.toggle('is-on', on);
+          p.hidden = !on;
+        });
+        document.querySelectorAll('.set-nav button[data-pane]').forEach(function (b) {
+          b.classList.toggle('is-on', b.getAttribute('data-pane') === name);
+        });
+        var title = document.getElementById('set-pane-title');
+        if (title) title.textContent = paneTitles[name] || '设置';
+      }
+      var btnOpenSettings = document.getElementById('btn-open-settings');
+      if (btnOpenSettings) btnOpenSettings.addEventListener('click', function () { openSettings('general'); });
+      var btnSettingsClose = document.getElementById('btn-settings-close');
+      if (btnSettingsClose) btnSettingsClose.addEventListener('click', closeSettings);
+      if (settingsRoot) {
+        settingsRoot.addEventListener('click', function (e) {
+          if (e.target === settingsRoot) closeSettings();
+        });
+      }
+      document.querySelectorAll('.set-nav button[data-pane]').forEach(function (b) {
+        b.addEventListener('click', function () { showPane(b.getAttribute('data-pane')); });
+      });
+
+      var setTheme = document.getElementById('set-theme');
+      if (setTheme) setTheme.addEventListener('change', function () { applyTheme(setTheme.value); });
+      var setLang = document.getElementById('set-lang');
+      if (setLang) {
+        setLang.addEventListener('change', function () {
+          document.documentElement.lang = setLang.value;
+          toast(setLang.value === 'zh-CN' ? '界面语言：中文' : 'English UI is not fully translated yet');
+        });
+      }
+      var setRailBtn = document.getElementById('set-rail');
+      if (setRailBtn) {
+        setRailBtn.addEventListener('click', function () {
+          setRail(!railOn());
+        });
+      }
+      var setMotion = document.getElementById('set-motion');
+      function applyMotion(on) {
+        document.documentElement.classList.toggle('reduce-motion', on);
+        if (setMotion) setMotion.setAttribute('aria-pressed', on ? 'true' : 'false');
+        try { localStorage.setItem('vad:motion', on ? '1' : '0'); } catch (err) {}
+      }
+      if (setMotion) {
+        try { if (localStorage.getItem('vad:motion') === '1') applyMotion(true); } catch (err) {}
+        setMotion.addEventListener('click', function () {
+          applyMotion(setMotion.getAttribute('aria-pressed') !== 'true');
+        });
+      }
+      document.querySelectorAll('.set-pane .toggle[data-set], #set-restore, #set-local, #set-remember-model').forEach(function (btn) {
+        var key = 'vad:set:' + (btn.id || btn.getAttribute('data-set') || '');
+        try {
+          var saved = localStorage.getItem(key);
+          if (saved === '1') btn.setAttribute('aria-pressed', 'true');
+          if (saved === '0') btn.setAttribute('aria-pressed', 'false');
+        } catch (err) {}
+        btn.addEventListener('click', function () {
+          var on = btn.getAttribute('aria-pressed') !== 'true';
+          btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+          try { localStorage.setItem(key, on ? '1' : '0'); } catch (err) {}
+          if (btn.id === 'set-remember-model') {
+            try { localStorage.setItem('vad:remember-model', on ? '1' : '0'); } catch (e2) {}
+          }
+        });
+      });
+      var btnClear = document.getElementById('btn-clear-cache');
+      if (btnClear) btnClear.addEventListener('click', function () { toast('缩略图缓存已清除'); });
+
+      var cmdk = document.getElementById('cmdk');
+      var cmdkInput = document.getElementById('cmdk-input');
+      function openCmdk() {
+        if (!cmdk) return;
+        cmdk.hidden = false;
+        cmdk.classList.add('open');
+        if (cmdkInput) { cmdkInput.value = ''; cmdkInput.focus(); }
+      }
+      function closeCmdk() {
+        if (!cmdk) return;
+        cmdk.hidden = true;
+        cmdk.classList.remove('open');
+      }
+      var btnSearch = document.getElementById('btn-search');
+      if (btnSearch) btnSearch.addEventListener('click', openCmdk);
+      if (cmdk) {
+        cmdk.addEventListener('click', function (e) { if (e.target === cmdk) closeCmdk(); });
+        document.querySelectorAll('#cmdk-list button').forEach(function (b) {
+          b.addEventListener('click', function () {
+            if (b.getAttribute('data-settings')) {
+              closeCmdk();
+              openSettings('general');
+              return;
+            }
+            var view = b.getAttribute('data-view');
+            if (view) {
+              closeCmdk();
+              showView(view);
+              return;
+            }
+            var href = b.getAttribute('data-href');
+            if (!href) return;
+            if (href.indexOf('http') === 0) window.open(href, '_blank', 'noopener');
+            else location.href = href;
+          });
+        });
+      }
+      document.addEventListener('keydown', function (e) {
+        if ((e.metaKey || e.ctrlKey) && String(e.key).toLowerCase() === 'k') {
+          e.preventDefault();
+          if (cmdk && cmdk.classList.contains('open')) closeCmdk();
+          else openCmdk();
+        }
+        if (e.key === 'Escape') {
+          if (settingsRoot && settingsRoot.classList.contains('open')) { closeSettings(); return; }
+          if (acctPop && !acctPop.hidden) { closeAcct(); return; }
+          closeMenus(); closeCmdk(); closeSide();
+        }
+        if (e.key === '[' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          var t = e.target;
+          if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+          if (!isMobile()) setRail(!railOn());
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

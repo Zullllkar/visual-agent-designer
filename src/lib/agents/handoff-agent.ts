@@ -12,6 +12,10 @@ import type { ProjectFile } from "@/lib/project/schema";
 import type { HandoffTarget } from "@/lib/handoff/types";
 import type { HandoffArtifact } from "@/lib/handoff/types";
 import { createHandoffTarget } from "@/lib/handoff/markdown-target";
+import {
+  coerceHandoffExportTarget,
+  resolveHandoffPackKind,
+} from "@/lib/handoff/pack-kind";
 
 export interface HandoffAgentResult {
   target: HandoffTarget["name"];
@@ -28,12 +32,17 @@ export const HandoffAgent: Agent<
   async run({ project, target = "markdown" }, ctx) {
     const resolvedTarget = pickTarget(target, project);
     const handoffTarget = createHandoffTarget(resolvedTarget);
+    const requestOrigin =
+      typeof ctx.scratch.requestOrigin === "string"
+        ? ctx.scratch.requestOrigin
+        : undefined;
     const artifact = await handoffTarget.build({
       project,
+      requestOrigin,
       screenshots: [],
       aiReferenceImages: (project.assets ?? []).map((a) => ({
         name: a.id,
-        path: `design/assets/${a.id}.png`,
+        path: `assets/final/${a.id}.png`,
         prompt: a.prompt,
       })),
     });
@@ -57,6 +66,10 @@ function pickTarget(
   explicit: HandoffTarget["name"],
   project: ProjectFile
 ): HandoffTarget["name"] {
+  const pack = resolveHandoffPackKind(project);
+  if (pack !== "code-kickoff") {
+    return coerceHandoffExportTarget(pack, explicit);
+  }
   const targets = project.brief?.outputTargets ?? [];
   if (explicit !== "markdown") return explicit;
   if (targets.includes("cursor")) return "cursor";

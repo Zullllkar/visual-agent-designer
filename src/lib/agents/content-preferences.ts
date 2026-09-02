@@ -81,6 +81,14 @@ export function injectProviderScratch(
   if (s?.contentLocale) scratch.contentLocale = s.contentLocale;
   if (s?.pageCount) scratch.pageCount = s.pageCount;
   if (s?.styleIntensity) scratch.styleIntensity = s.styleIntensity;
+
+  const prefs = providerConfig?.generationPrefs;
+  if (prefs) {
+    scratch.generationPrefs = prefs;
+    if (prefs.mode) scratch.generationMode = prefs.mode;
+    if (prefs.defaultImageSize) scratch.defaultImageSize = prefs.defaultImageSize;
+    if (prefs.defaultVideoParams) scratch.defaultVideoParams = prefs.defaultVideoParams;
+  }
 }
 
 export function readContentPrefs(scratch: Record<string, unknown>): {

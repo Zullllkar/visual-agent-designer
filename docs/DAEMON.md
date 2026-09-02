@@ -1,4 +1,4 @@
-# VAD Daemon（`.vad` 独立落盘进程）
+# Vibeboard Daemon（`.vad` 独立落盘进程）
 
 > 阶段 1：独立 Node 进程写 `.vad/projects/`，Next.js 通过 HTTP 转发。  
 > 浏览器仍只访问 `/api/*`，无需改前端 store。

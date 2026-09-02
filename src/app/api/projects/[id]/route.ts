@@ -7,7 +7,8 @@
  */
 
 import { NextResponse } from "next/server";
-import { loadMergedProjectFromVad } from "@/lib/vad/storage";
+import { isSafeProjectId } from "@/lib/studio/project-actions";
+import { deleteProjectFromVad, loadMergedProjectFromVad } from "@/lib/vad/storage";
 
 export async function GET(
   _req: Request,
@@ -24,6 +25,26 @@ export async function GET(
     console.error("[projects-id-api] GET error:", error);
     return NextResponse.json(
       { error: "Failed to load project" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  _req: Request,
+  ctx: { params: Promise<{ id: string }> }
+) {
+  const { id } = await ctx.params;
+  if (!isSafeProjectId(id)) {
+    return NextResponse.json({ error: "invalid_id" }, { status: 400 });
+  }
+  try {
+    await deleteProjectFromVad(id);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("[projects-id-api] DELETE error:", error);
+    return NextResponse.json(
+      { error: "Failed to delete project" },
       { status: 500 }
     );
   }

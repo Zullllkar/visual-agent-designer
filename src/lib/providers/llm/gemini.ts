@@ -29,7 +29,7 @@ export function createGeminiProvider(cfg: GeminiConfig): LlmProvider {
   return {
     name: `gemini::${defaultModel}`,
     supportsToolCalling: true,
-    async generateText({ system, prompt, schema, images }) {
+    async generateText({ system, prompt, schema, images, temperature, maxTokens }) {
       // Gemini 官方 API 端点格式：
       // POST https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=YOUR_API_KEY
       const cleanModel = defaultModel.replace(/^models\//, "");
@@ -37,6 +37,7 @@ export function createGeminiProvider(cfg: GeminiConfig): LlmProvider {
       const wantJson = !!schema;
 
       const parts: any[] = [{ text: prompt }];
+      let embeddedImages = 0;
 
       if (images && images.length > 0) {
         for (const img of images) {
@@ -48,8 +49,14 @@ export function createGeminiProvider(cfg: GeminiConfig): LlmProvider {
                 data: parsed.base64,
               },
             });
+            embeddedImages += 1;
           }
         }
+      }
+      if (images?.length && embeddedImages === 0) {
+        throw new Error(
+          "Gemini vision requires data:image URL; image was not embedded"
+        );
       }
 
       const body: Record<string, unknown> = {
@@ -63,7 +70,10 @@ export function createGeminiProvider(cfg: GeminiConfig): LlmProvider {
           parts: [{ text: system }],
         },
         generationConfig: {
-          temperature: 0.4,
+          temperature: typeof temperature === "number" ? temperature : 0.4,
+          ...(typeof maxTokens === "number" && maxTokens > 0
+            ? { maxOutputTokens: maxTokens }
+            : {}),
           ...(wantJson ? { responseMimeType: "application/json" } : {}),
         },
       };

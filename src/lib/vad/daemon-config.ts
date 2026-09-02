@@ -1,5 +1,5 @@
 /**
- * VAD Daemon 配置
+ * Vibeboard Daemon 配置
  * --------------------------------------------------------------
  * 设置 VAD_DAEMON_URL 后，Next.js API 将落盘请求转发到独立 Daemon 进程。
  *

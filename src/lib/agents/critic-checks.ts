@@ -130,6 +130,10 @@ function describe(n: CanvasNode): string {
       return `card "${n.title ?? ""}"`;
     case "frame":
       return `frame`;
+    case "line":
+      return `line`;
+    case "shape":
+      return `${n.shape} shape`;
   }
 }
 

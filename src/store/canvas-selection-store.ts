@@ -26,8 +26,10 @@ export interface CanvasSelection {
   pageId: string;
   /** 展示名：页面名或 prompt 摘要 */
   pageName: string;
-  /** 选中 image-asset 时的资产 id */
+  /** 选中 image-asset 时的资产 id（单选） */
   assetId?: string;
+  /** 多选 image-asset 时的资产 id 列表 */
+  assetIds?: string[];
   nodeId?: string;
   nodeLabel?: string;
 }

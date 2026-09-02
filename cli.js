@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
 /**
- * Visual Agent Designer - Local MCP Server & CLI Tool
+ * Vibeboard - Local MCP Server & CLI Tool
  * --------------------------------------------------------------
  * 参考 Open Design 架构，作为一个标准 Model Context Protocol (MCP) 服务运行。
  * 支持 Stdio 双向通信，可一键注入 Claude Code、Cursor、Claude Desktop。
  * 
  * 主要职责：
- *   1. 作为一个本地 stdio 进程，暴露 Visual Agent Designer 画布中的最新设计上下文。
+ *   1. 作为一个本地 stdio 进程，暴露 Vibeboard 画布中的最新设计上下文。
  *   2. 允许终端中的 claude、codex 或 Cursor 中的 AI 助理跨目录直接读取当前画布的 
  *      产品规范 (SPEC.md)、设计 tokens.json 和高保真 SVG 视觉稿，完成 1:1 精确写码。
  * 
@@ -147,7 +147,7 @@ async function processMcpRequest(req) {
         tools: {},
       },
       serverInfo: {
-        name: "visual-agent-designer-mcp",
+        name: "vibeboard-mcp",
         version: "1.0.0",
       },
     });
@@ -351,13 +351,13 @@ async function main() {
       console.log("No projects found under .vad/projects/");
       return;
     }
-    console.log("=== Active Visual Agent Designer Projects ===");
+    console.log("=== Active Vibeboard Projects ===");
     projects.forEach((p, i) => {
       console.log(`${i + 1}. [${p.id}] ${p.title} (${p.updatedAt})`);
       console.log(`   Idea: ${p.rawIdea}`);
     });
   } else {
-    console.log("=== Visual Agent Designer Local CLI Tool ===");
+    console.log("=== Vibeboard Local CLI Tool ===");
     console.log("Usage:");
     console.log("  node cli.js list    - List all active designer projects on local disk");
     console.log("  node cli.js mcp     - Run stdio Model Context Protocol (MCP) server");

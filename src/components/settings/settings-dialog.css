@@ -1,0 +1,270 @@
+.vad-settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, #18181c 42%, transparent);
+}
+
+.vad-settings-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.vad-settings {
+  display: grid;
+  grid-template-columns: 196px minmax(0, 1fr);
+  width: min(880px, calc(100vw - 48px));
+  height: min(640px, calc(100vh - 48px));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow-elevated);
+  color: var(--foreground);
+  position: relative;
+  z-index: 1;
+}
+
+.vad-settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 16px 12px;
+  border-right: 1px solid var(--border);
+  background: color-mix(in srgb, var(--background) 70%, var(--surface));
+}
+
+.vad-settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted-strong);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vad-settings-nav-item:hover {
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  color: var(--foreground);
+}
+
+.vad-settings-nav-item.is-active {
+  background: color-mix(in srgb, var(--foreground) 7%, transparent);
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.vad-settings-nav-item:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.vad-settings-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.vad-settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 8px;
+}
+
+.vad-settings-head h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.vad-settings-close {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.vad-settings-close:hover {
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  color: var(--foreground);
+}
+
+.vad-settings-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 24px 28px;
+}
+
+.vad-settings-group {
+  margin: 18px 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.vad-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 64px;
+  padding: 12px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+}
+
+.vad-settings-row:last-child {
+  border-bottom: 0;
+}
+
+.vad-settings-copy {
+  min-width: 0;
+}
+
+.vad-settings-copy strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.vad-settings-copy p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.vad-settings-select {
+  height: 34px;
+  min-width: 108px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: 13px;
+}
+
+.vad-settings-select:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.vad-settings-switch {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  cursor: pointer;
+}
+
+.vad-settings-switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  transition: transform 0.16s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.vad-settings-switch.is-on {
+  background: var(--primary);
+}
+
+.vad-settings-switch.is-on::after {
+  transform: translateX(18px);
+}
+
+.vad-settings-btn {
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.vad-settings-btn:hover {
+  background: var(--surface-muted);
+}
+
+.vad-settings-kbd {
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-muted);
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 24px;
+  white-space: nowrap;
+}
+
+.vad-settings-path {
+  margin-top: 6px;
+  color: var(--muted);
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 11.5px;
+  word-break: break-all;
+}
+
+.vad-settings-models .vad-provider-header {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .vad-settings {
+    grid-template-columns: 1fr;
+    height: min(92vh, 720px);
+  }
+
+  .vad-settings-nav {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .vad-settings-nav-item {
+    flex-shrink: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vad-settings-switch::after {
+    transition: none;
+  }
+}

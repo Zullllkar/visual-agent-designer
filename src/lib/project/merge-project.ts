@@ -3,6 +3,7 @@
  * @author：wangjunhua
  */
 
+import { mergeAssetsPreferDiscarded } from "./asset-visibility";
 import type { ProjectFile } from "./schema";
 
 /** 用磁盘/API 路径替换同 id 资产的 base64 src（体积更小） */
@@ -23,7 +24,7 @@ export function mergeApiSrcFromDisk(
 
 /**
  * 磁盘较旧但内存更新时：保留内存 pages/assets，仅合并 API src。
- * 磁盘较新时：以磁盘为准，但若内存资产更多则保留内存资产列表。
+ * 磁盘较新时：以磁盘为准，但保留本地 discarded，避免刷新后「删掉的又回来」。
  */
 export function mergeProjectWithDisk(
   local: ProjectFile,
@@ -37,10 +38,19 @@ export function mergeProjectWithDisk(
   const diskAssetCount = disk.assets?.length ?? 0;
   if (localAssetCount > diskAssetCount) {
     return mergeApiSrcFromDisk(
-      { ...disk, assets: local.assets, pages: local.pages },
+      {
+        ...disk,
+        assets: mergeAssetsPreferDiscarded(local.assets, disk.assets),
+        pages: local.pages,
+      },
       disk
     );
   }
 
-  return disk;
+  return {
+    ...disk,
+    assets: mergeAssetsPreferDiscarded(local.assets, disk.assets),
+    pages: local.pages?.length ? local.pages : disk.pages,
+    canvasSnapshot: disk.canvasSnapshot ?? local.canvasSnapshot,
+  };
 }

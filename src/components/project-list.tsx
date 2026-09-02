@@ -24,7 +24,15 @@ export function ProjectList() {
   useEffect(() => {
     if (hydrated) {
       fetch("/api/projects")
-        .then((res) => res.json())
+        .then(async (res) => {
+          const type = res.headers.get("content-type") ?? "";
+          if (!res.ok || !type.includes("application/json")) {
+            throw new Error(
+              `GET /api/projects failed: HTTP ${res.status} (${type || "unknown"})`
+            );
+          }
+          return res.json();
+        })
         .then((data) => {
           if (Array.isArray(data)) {
             importProjectsQuietly(data);

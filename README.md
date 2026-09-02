@@ -1,94 +1,84 @@
-# Visual Agent Designer (VAD)
+<div align="center">
 
-[English](#english) · [中文](#中文)
+# Vibeboard
 
----
+### The design studio that talks to your coding agent.
 
-## 中文
+Write a brief. Watch a team of AI agents design, iterate, and produce pixel-perfect visual assets on an infinite canvas. Export a handoff package — and your Cursor / Claude Code / Codex turns it into shipped code.
 
-**本地优先的可视化设计 Agent IDE** — 把「产品想法 → Brief → 视觉方向 → 高保真图片素材 → Handoff 开发包」串成一条可追踪流水线，供 Cursor / Claude Code / Codex 等 coding agent 直接落地代码。
+**No Figma. No design background. No API keys leaving your machine.**
 
-### 核心能力
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Next.js](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org)
+[![React](https://img.shields.io/badge/React-19-61dafb)](https://react.dev)
+[![tldraw](https://img.shields.io/badge/tldraw-5-000000)](https://tldraw.dev)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-- **ChatCanvas 工作台**：在无限画布（tldraw）上产出成品视觉资产，而非网页结构 mock
-- **多 Agent 流水线**：Brief → Architect → Design Direction → Layout → Content → Image Plan → Image Execute → Critic / Repair
-- **本地优先**：项目数据落盘 `.vad/projects/`，LLM / 生图 Provider 在设置页配置，API Key 不上传云端
-- **Handoff 导出**：PNG 素材、prompts、设计 token、Brief 上下文一键打包
-- **可选 Daemon**：独立进程处理落盘，避免 Next.js 热重载与长任务争抢（见 [docs/DAEMON.md](docs/DAEMON.md)）
+[English](#what-is-this) · [中文](README.zh.md) · [Roadmap](ROADMAP.md) · [Contributing](CONTRIBUTING.md)
 
-### 技术栈
-
-Next.js 16 · React 19 · TypeScript · tldraw 5 · Zustand · Tailwind CSS 4
-
-### 快速开始
-
-```bash
-pnpm install
-cp .env.example .env.local   # 可选
-pnpm dev
-```
-
-浏览器打开 [http://localhost:3000](http://localhost:3000)。
-
-**可选：启用 Daemon（推荐开发时使用）**
-
-```bash
-# 终端 1
-pnpm daemon
-
-# 终端 2 — 在 .env.local 中设置 VAD_DAEMON_URL=http://127.0.0.1:3921
-pnpm dev
-```
-
-### 常用命令
-
-| 命令 | 说明 |
-|------|------|
-| `pnpm dev` | 启动 Next.js 开发服务器 |
-| `pnpm daemon` | 启动 VAD 落盘 Daemon（默认 `127.0.0.1:3921`） |
-| `pnpm build` | 生产构建 |
-| `pnpm start` | 启动生产服务器 |
-| `pnpm lint` | ESLint 检查 |
-
-### 文档
-
-- [架构概览](docs/ARCHITECTURE.md)
-- [Daemon 说明](docs/DAEMON.md)
-- [产品设计](PRODUCT.md)
-
-### 适用人群
-
-独立开发者与一人全栈团队：手头有产品想法，需要快速产出**可交付的视觉素材图**，并把图片、prompt 与设计上下文打包交给 coding agent 实现代码。
+</div>
 
 ---
 
-## English
+## What is this?
 
-**A local-first visual design Agent IDE** — turns product ideas into deliverable visual assets through a traceable pipeline: Brief → Design Direction → High-fidelity Images → Handoff package, ready for Cursor, Claude Code, Codex, and other coding agents.
+You're a developer. You have a product idea. You know what it should look like — roughly — but you can't design it, and you don't want to pay a designer for something that might change tomorrow.
 
-### Key Features
+**Vibeboard** sits in the gap between "I have an idea" and "Cursor is writing the code."
 
-- **ChatCanvas workspace**: produce finished visual assets on an infinite canvas (tldraw), not wireframe-style page mocks
-- **Multi-agent pipeline**: Brief → Architect → Design Direction → Layout → Content → Image Plan → Image Execute → Critic / Repair
-- **Local-first**: projects persist to `.vad/projects/`; LLM and image providers are configured in-app — API keys never leave your machine
-- **Handoff export**: one-click bundle of PNG assets, prompts, design tokens, and Brief context
-- **Optional daemon**: separate process for disk I/O, keeping long agent tasks away from Next.js hot reload ([docs/DAEMON.md](docs/DAEMON.md))
+You write a brief. A team of AI agents — Architect, Design Director, Layout Engineer, Content Writer, Image Planner, Image Executor, and a Critic — collaborate on an infinite canvas to produce **finished visual assets**, not wireframes, not HTML mockups, not "design files" that someone still has to interpret. Then you click one button and everything — PNGs, prompts, design tokens, context — gets bundled into a folder your coding agent reads and understands.
 
-### Tech Stack
+```
+Your idea ──→ Brief ──→ 7 agents collaborate on canvas ──→ Handoff package ──→ Cursor ships code
+                                    ↑
+                          you watch, iterate, refine
+```
 
-Next.js 16 · React 19 · TypeScript · tldraw 5 · Zustand · Tailwind CSS 4
+### Pipeline
 
-### Quick Start
+```
+Product Idea → Brief → Architect → Design Direction → Layout → Content
+                                                         ↓
+                              Image Plan → Image Execute → Critic / Repair
+                                                         ↓
+                                         Handoff Package (PNG + Prompts + Tokens)
+```
+
+## Why it's different
+
+- **Outputs images, not wireframes** — Every asset on the canvas is a finished, high-fidelity visual. Not a boxy gray mockup. Not a "design file" someone has to interpret. Something you can put in a README today.
+- **7-agent pipeline, not a chat box** — Instead of one AI guessing everything, specialized agents handle structure, visual direction, layout, copy, image planning, image generation, and quality review — each doing one thing well.
+- **Handoff package, not a screenshot** — Export isn't just PNGs. It's PNGs + prompts + design tokens + full context, structured so Cursor / Claude Code / Codex can read it and write code that matches the design.
+- **Your API keys never touch the cloud** — LLM and image providers are configured in-app. Keys stay on your machine. Projects persist to local filesystem. No account, no telemetry, no upload.
+- **It's an IDE, not a landing page** — The workspace feels like a tool, not a marketing site. Dense, keyboard-friendly, status-visible. You see what each agent is doing, when, and why.
+
+## Quick Start
+
+### Prerequisites
+
+- **Node.js** 18.18+ (or 20+)
+- **pnpm** 8+ (`npm i -g pnpm`)
+- An LLM API key (OpenAI, Anthropic, or any OpenAI-compatible provider)
+
+### Install & Run
 
 ```bash
+git clone https://github.com/Zullllkar/vibeboard.git
+cd vibeboard
 pnpm install
-cp .env.example .env.local   # optional
+cp .env.example .env.local   # optional — configure providers in-app instead
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:3000](http://localhost:3000) in your browser (debug). Desktop window:
 
-**Optional: enable the Daemon (recommended for development)**
+```bash
+pnpm dev:desktop
+```
+
+If `pnpm dev` is already running, this only opens a window and will not spawn a second server.
+
+### Optional: Enable the Daemon (recommended for development)
 
 ```bash
 # Terminal 1
@@ -102,24 +92,68 @@ pnpm dev
 
 | Command | Description |
 |---------|-------------|
-| `pnpm dev` | Start Next.js dev server |
-| `pnpm daemon` | Start VAD persistence daemon (default `127.0.0.1:3921`) |
+| `pnpm dev` | Start Next.js dev server (browser debug) |
+| `pnpm dev:desktop` | Open the desktop app (userData, port 18765) |
+| `pnpm dist:desktop` | Build unsigned NSIS / DMG |
+| `pnpm dist:desktop:dir` | Unpacked app folder for smoke tests |
+| `pnpm daemon` | Start Vibeboard persistence daemon (default `127.0.0.1:3921`) |
 | `pnpm build` | Production build |
 | `pnpm start` | Start production server |
 | `pnpm lint` | Run ESLint |
 
-### Documentation
+## Built with
 
-- [Architecture](docs/ARCHITECTURE.md)
-- [Daemon](docs/DAEMON.md)
-- [Product spec](PRODUCT.md)
+| Layer | Technology |
+|-------|-----------|
+| Framework | Next.js 16 (App Router) |
+| UI | React 19 · Tailwind CSS 4 |
+| Canvas | tldraw 5 |
+| State | Zustand |
+| Language | TypeScript 5 |
+| Persistence | Your filesystem — `.vad/projects/` |
 
-### Who It's For
+## How it works
 
-Solo developers and one-person full-stack teams who need **production-ready visual assets** fast, with prompts and design context packaged for coding agents — without uploading sensitive API keys to the cloud.
+```
+1. Write a brief          →  Name, positioning, target users, platform, visual style, core features
+2. Agents go to work      →  Architect → Design Direction → Layout → Content → Image Plan → Execute → Critic
+3. Watch on canvas        →  Everything lands on an infinite tldraw canvas. Iterate, rearrange, refine.
+4. Click Export Handoff   →  PNGs + prompts + design tokens + Brief context → one folder → feed to your coding agent
+```
 
----
+## How it compares
+
+| | Vibeboard | v0 | Figma AI | Lovart |
+|---|---|---|---|---|
+| What it outputs | Finished images | Code | Design files | Chat + images |
+| Infinite canvas | ✅ tldraw | ❌ | ❌ | ✅ |
+| Multi-agent pipeline | ✅ 7 specialized agents | ❌ single pass | ❌ | ~ partial |
+| Handoff for coding agents | ✅ PNG + prompts + tokens + context | code only | design files | chat history |
+| API keys stay local | ✅ | N/A | ❌ | ❌ |
+| Open source | ✅ Apache 2.0 | ❌ | ❌ | ❌ |
+| Requires design skills | ❌ | ❌ | ✅ | ❌ |
+
+## Documentation
+
+- [Architecture Overview](docs/ARCHITECTURE.md)
+- [Daemon Guide](docs/DAEMON.md)
+- [Product Specification](PRODUCT.md)
+- [Design System](DESIGN.md)
+- [Roadmap](ROADMAP.md)
+- [Changelog](CHANGELOG.md)
+
+## Who it's for
+
+You write code. You have ideas. You don't have a designer — or you do, but you need to move faster than the design review cycle allows. Vibeboard is built for the **indie hacker, the one-person full-stack team, the weekend project builder** who needs to go from "I think this should look like..." to "Cursor, here's the design, build it" in one session.
+
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on bug reports, feature requests, and pull requests.
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for planned features and milestones.
 
 ## License
 
-Apache License 2.0
+[Apache License 2.0](LICENSE)

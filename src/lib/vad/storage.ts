@@ -8,6 +8,7 @@
 
 import type { ProjectFile } from "@/lib/project/schema";
 import type { ChatMessage } from "@/lib/agents/chat-schema";
+import { mergeAssetsPreferDiscarded } from "@/lib/project/asset-visibility";
 import type { VadFileNode } from "./types";
 import {
   applyFileEditToProject,
@@ -41,9 +42,23 @@ async function withFallback<T>(
 export async function saveProjectToVad(
   project: ProjectFile
 ): Promise<ProjectFile> {
+  // 落盘前与磁盘合并 discarded，避免 Job/Agent 旧快照把已删素材写回
+  let toSave = project;
+  try {
+    const existing = await loadProjectFromVad(project.id);
+    if (existing?.assets?.length) {
+      toSave = {
+        ...project,
+        assets: mergeAssetsPreferDiscarded(existing.assets, project.assets),
+      };
+    }
+  } catch {
+    /* 首次保存或读盘失败：按入参写入 */
+  }
+
   return withFallback(
-    () => daemon.daemonSaveProject(project),
-    () => local.saveProjectToVad(project),
+    () => daemon.daemonSaveProject(toSave),
+    () => local.saveProjectToVad(toSave),
     "saveProject"
   );
 }
@@ -77,6 +92,17 @@ export async function listProjectsFromVad(): Promise<ProjectFile[]> {
     () => local.listProjectsFromVad(),
     "listProjects"
   );
+}
+
+export async function deleteProjectFromVad(projectId: string): Promise<void> {
+  return local.deleteProjectFromVad(projectId);
+}
+
+export async function duplicateProjectFromVad(
+  projectId: string,
+  newId: string
+): Promise<ProjectFile> {
+  return local.duplicateProjectFromVad(projectId, newId);
 }
 
 export async function saveChatHistoryToVad(

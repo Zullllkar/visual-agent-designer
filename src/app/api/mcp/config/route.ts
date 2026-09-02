@@ -13,7 +13,7 @@ export async function GET() {
     const cliPath = join(process.cwd(), "cli.js");
 
     const cursorConfig = {
-      name: "visual-agent-designer",
+      name: "vibeboard",
       type: "stdio",
       command: nodePath,
       args: [cliPath, "mcp"],

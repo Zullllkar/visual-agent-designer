@@ -36,11 +36,13 @@ export function PipelineLogPanel({
   maxHeight = "280px",
   title = "执行日志",
   showHeader = true,
+  tone = "terminal",
 }: {
   entries: PipelineLogEntry[];
   maxHeight?: string;
   title?: string;
   showHeader?: boolean;
+  tone?: "terminal" | "panel";
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -69,22 +71,45 @@ export function PipelineLogPanel({
         </div>
       ) : null}
       <div
-        className="overflow-y-auto bg-zinc-950 p-3 font-mono text-[11px] leading-relaxed text-zinc-300"
+        className={
+          tone === "panel"
+            ? "vad-inspector-log"
+            : "overflow-y-auto bg-zinc-950 p-3 font-mono text-[11px] leading-relaxed text-zinc-300"
+        }
         style={{ maxHeight }}
       >
         {entries.length === 0 ? (
-          <p className="text-zinc-500">等待日志…</p>
+          <p className={tone === "panel" ? "text-[var(--muted)]" : "text-zinc-500"}>
+            等待日志…
+          </p>
         ) : (
           entries.map((e) => (
             <div key={e.id} className="mb-1.5 flex gap-2">
-              <span className="shrink-0 text-zinc-600">{formatTime(e.at)}</span>
-              <span className="shrink-0 text-[var(--primary)]">
+              <span
+                className={
+                  tone === "panel"
+                    ? "vad-inspector-log__time shrink-0"
+                    : "shrink-0 text-zinc-600"
+                }
+              >
+                {formatTime(e.at)}
+              </span>
+              <span
+                className={
+                  tone === "panel"
+                    ? "vad-inspector-log__stage shrink-0"
+                    : "shrink-0 text-[var(--primary)]"
+                }
+              >
                 [{PIPELINE_STAGE_LABELS[e.stage ?? ""] ?? e.stage ?? "—"}]
               </span>
               <span className={LEVEL_CLASS[e.level] ?? ""}>
                 {e.message}
                 {e.durationMs != null ? (
-                  <span className="text-zinc-500"> +{e.durationMs}ms</span>
+                  <span className={tone === "panel" ? "text-[var(--muted)]" : "text-zinc-500"}>
+                    {" "}
+                    +{e.durationMs}ms
+                  </span>
                 ) : null}
               </span>
             </div>

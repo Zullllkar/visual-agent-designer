@@ -81,6 +81,17 @@ function renderNode(node: CanvasNode): string {
         : "";
       return `<g><rect x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" fill="${esc(node.fill ?? "#ffffff")}" rx="${node.radius ?? 12}" ry="${node.radius ?? 12}" stroke="#E4E4E7" stroke-width="1"/>${title}${body}</g>`;
     }
+    case "line":
+      return `<line x1="${node.x}" y1="${node.y}" x2="${node.x2}" y2="${node.y2}" stroke="${esc(node.stroke ?? "#111827")}" stroke-width="${node.strokeWidth ?? 1}"${node.arrow ? ' marker-end="url(#arrowhead)"' : ""}/>`;
+    case "shape": {
+      const fill = esc(node.fill ?? "transparent");
+      const stroke = esc(node.stroke ?? "transparent");
+      const strokeWidth = node.strokeWidth ?? 0;
+      if (node.shape === "ellipse") {
+        return `<ellipse cx="${node.x + node.width / 2}" cy="${node.y + node.height / 2}" rx="${node.width / 2}" ry="${node.height / 2}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}"/>`;
+      }
+      return `<rect x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" rx="${node.radius ?? 0}"/>`;
+    }
   }
 }
 

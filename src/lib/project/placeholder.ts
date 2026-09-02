@@ -8,12 +8,18 @@ import type { ProjectFile } from "./schema";
 
 export function createPlaceholderProject(
   id: string,
-  rawIdea: string
+  rawIdea: string,
+  options?: {
+    targetId?: string;
+    targetLocked?: boolean;
+    directionCardId?: string;
+    skillId?: string;
+    skillVersion?: string;
+    designSystemId?: string;
+  },
 ): ProjectFile {
   const now = new Date().toISOString();
-  const title =
-    rawIdea.trim().slice(0, 48) +
-    (rawIdea.trim().length > 48 ? "…" : "") || "新项目";
+  const title = rawIdea.trim().slice(0, 48) + (rawIdea.trim().length > 48 ? "…" : "") || "新项目";
   const slug = id
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -28,5 +34,11 @@ export function createPlaceholderProject(
     createdAt: now,
     updatedAt: now,
     pages: [],
+    targetId: options?.targetId,
+    targetLocked: options?.targetLocked,
+    directionCardId: options?.directionCardId,
+    skillId: options?.skillId,
+    skillVersion: options?.skillVersion,
+    designSystemId: options?.designSystemId,
   };
 }

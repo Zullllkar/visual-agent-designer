@@ -32,19 +32,32 @@ export function createOpenAICompatibleProvider(
   return {
     name: `openai-compatible::${shortHost(cfg.baseURL)}::${cfg.model}`,
     supportsToolCalling: true,
-    async generateText({ system, prompt, schema, images }) {
+    async generateText({
+      system,
+      prompt,
+      schema,
+      images,
+      imageDetail,
+      temperature,
+      maxTokens,
+    }) {
       const url = joinURL(cfg.baseURL, "/chat/completions");
       const wantJson = !!schema;
+      const detail = imageDetail ?? "auto";
 
       // OpenAI Vision 风格的 user content：text + 多张图
+      // 注意：detail=high 对长屏拆解至关重要（默认/low 常只看缩略图）
       const userContent =
         images && images.length > 0
           ? [
-              { type: "text", text: prompt },
-              ...images.map((url) => ({
+              ...images.map((imgUrl) => ({
                 type: "image_url",
-                image_url: { url },
+                image_url: {
+                  url: imgUrl,
+                  ...(detail !== "auto" ? { detail } : {}),
+                },
               })),
+              { type: "text", text: prompt },
             ]
           : prompt;
 
@@ -54,14 +67,19 @@ export function createOpenAICompatibleProvider(
           { role: "system", content: system },
           { role: "user", content: userContent },
         ],
-        temperature: 0.4,
+        temperature: typeof temperature === "number" ? temperature : 0.4,
       };
+      if (typeof maxTokens === "number" && maxTokens > 0) {
+        body.max_tokens = maxTokens;
+      }
       if (wantJson) {
         // 多数兼容服务支持 json_object，少数只支持普通 text；
         // 失败时上游会用 stripJsonFence 兜底。
         body.response_format = { type: "json_object" };
       }
 
+      // Vision 请求体大、耗时长：单次给足时间，少重试，避免 3×120s 空转
+      const hasImages = Boolean(images?.length);
       const res = await fetchWithRetry(
         url,
         {
@@ -72,11 +90,33 @@ export function createOpenAICompatibleProvider(
           },
           body: JSON.stringify(body),
         },
-        { timeoutMs: 120_000, maxAttempts: 3 }
+        {
+          timeoutMs: hasImages ? 240_000 : 120_000,
+          maxAttempts: hasImages ? 2 : 3,
+        }
       );
 
-      const data = (await res.json()) as ChatCompletionResponse;
+      const rawText = await res.text();
+      let data: ChatCompletionResponse;
+      try {
+        data = JSON.parse(rawText) as ChatCompletionResponse;
+      } catch {
+        throw new Error(
+          `LLM 返回非 JSON (HTTP ${res.status}): ${rawText.slice(0, 180)}`
+        );
+      }
+      if (!res.ok) {
+        const errMsg =
+          (data as { error?: { message?: string } }).error?.message ||
+          rawText.slice(0, 240);
+        throw new Error(`LLM HTTP ${res.status}: ${errMsg}`);
+      }
       const choice = data.choices?.[0]?.message?.content ?? "";
+      if (!choice.trim()) {
+        throw new Error(
+          "LLM 返回空内容（可能模型不支持 Vision / 图未嵌入 / 网关丢弃了 images）"
+        );
+      }
       const text = wantJson ? stripJsonFence(choice) : choice;
 
       return {

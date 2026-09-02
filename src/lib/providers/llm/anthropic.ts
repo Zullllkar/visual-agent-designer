@@ -28,14 +28,16 @@ export function createAnthropicProvider(cfg: AnthropicConfig): LlmProvider {
   return {
     name: `anthropic::${defaultModel}`,
     supportsToolCalling: true,
-    async generateText({ system, prompt, schema, images }) {
+    async generateText({ system, prompt, schema, images, temperature, maxTokens }) {
       const url = joinURL(baseURL, "/v1/messages");
       const wantJson = !!schema;
 
       // 组装 content 块（Anthropic 图像只能是 base64 形式，且需拆解 media_type 和 raw base64）
       let userContent: unknown;
+      let embeddedImages = 0;
       if (images && images.length > 0) {
-        const blocks: any[] = [{ type: "text", text: prompt }];
+        // 图像在前：更接近单独 Chat 调用「先看图再答」的效果
+        const blocks: any[] = [];
         for (const img of images) {
           const parsed = parseDataUrl(img);
           if (parsed) {
@@ -47,19 +49,28 @@ export function createAnthropicProvider(cfg: AnthropicConfig): LlmProvider {
                 data: parsed.base64,
               },
             });
+            embeddedImages += 1;
           }
         }
+        blocks.push({ type: "text", text: prompt });
         userContent = blocks;
       } else {
         userContent = prompt;
+      }
+      if (images?.length && embeddedImages === 0) {
+        throw new Error(
+          "Anthropic vision requires data:image URL; image was not embedded"
+        );
       }
 
       const body: Record<string, unknown> = {
         model: defaultModel,
         system, // Anthropic 系统提示词在根节点
         messages: [{ role: "user", content: userContent }],
-        max_tokens: 4096,
-        temperature: 0.4,
+        // 多区域拆解 JSON 很容易超过 4k；单独调用时通常给更大输出预算
+        max_tokens:
+          typeof maxTokens === "number" && maxTokens > 0 ? maxTokens : 8192,
+        temperature: typeof temperature === "number" ? temperature : 0.4,
       };
 
       const res = await safeFetch(url, {

@@ -1,8 +1,8 @@
 ---
 name: xhs-cover
-description: 生成小红书封面（1080×1440）+ 配套标题 / 正文 / 标签
+description: 生成小红书封面（1080×1440）以及配套的短标题钩子，不是长文排版
 kind: xhs
-version: "0.1.0"
+version: "0.2.0"
 author: vad
 recommendedDesignSystem: xhs-style
 inputs:
@@ -22,34 +22,39 @@ output:
     height: 1440
   pageCountHint: 1
 agent:
-  steps: [brief, layout, image, content, critic, repair]
+  steps: [brief, image, critic, repair]
   imageRequired: true
   repairThreshold: 8
   maxRepairRounds: 2
 ---
 
-# XHS Cover Skill
+# 小红书封面
 
-你是小红书爆款内容设计师。任务是输出**单张封面**（1080×1440 竖版）+ 配套文案。
+你是小红书封面设计师。输出**一张 1080×1440 竖版封面图**。正文和标签可在对话里给，不要排进画面变成长文。
 
-## 封面构图
+## 构图骨架
 
-- 主标题 36-72px，带描边或彩色背景，视觉冲击优先
-- 副标题 24-32px，补充说明
-- 角标 / 标签 16-20px，颜色对比强（小红书红 / 黄 / 黑）
-- 必须有一个视觉焦点（产品 / 人物 / 物品），用 ImageAgent 生成
-- 不要小说排版式的密集文字
+1. 一个视觉焦点（人 / 产品 / 场景）占 50% 以上
+2. 主标题 ≤14 字，钩子句式（数字 / 反差 / 福利）
+3. 副标题 ≤20 字，可选
+4. 一枚角标（干货 / 步骤 / 测评）
 
-## 文案
+## 英文 prompt 配方
 
-- 主标题：钩子句式（数字 / 反差 / 福利），≤14 字
-- 副标题：补充承诺，≤20 字
-- 正文：3-5 段，每段 1-3 行，自然口吻不广告
-- 标签：8-12 个，用 # 分隔，关键词覆盖品类 / 痛点 / 人群
+- Subject: Xiaohongshu / Red vertical cover, lifestyle photograph plus short Chinese title
+- Camera: 3:4 portrait, subject large, phone-first readability
+- Light: warm daylight or soft flash, creamy background
+- Type: 2-8 Chinese characters on a color block or stroke, not a paragraph
+- Negative: dashboard UI, SaaS landing, tiny unreadable body text, cold blue corporate palette, browser chrome
 
-## 视觉风格
+## P0 视觉清单
 
-- 严格遵循 active DESIGN.md（如 xhs-style）
-- 小红书红：#FF2442 是主 CTA / 高亮色
-- 圆角 16-24px，温和不尖锐
-- 留白比 web 更紧凑，但要有呼吸
+- 标题不被刘海、贴纸、产品挡住
+- 禁止画面里写满 4 行以上说明
+- 禁止把封面画成 App 界面或知识付费长图
+
+## 硬性禁止
+
+- 不要小说排版
+- 不要工业蓝紫渐变
+- 不要输出 HTML

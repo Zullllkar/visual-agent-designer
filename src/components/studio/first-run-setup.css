@@ -1,0 +1,411 @@
+.vad-first-run-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+html.vad-desktop .vad-first-run-overlay {
+  top: 40px;
+  bottom: 28px;
+}
+
+.vad-first-run {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.92fr);
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.vad-first-run-art {
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  color: var(--foreground);
+  background-color: var(--background);
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--foreground) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--foreground) 7%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 28px 28px;
+}
+
+.vad-first-run-svg {
+  width: min(100%, 420px);
+  height: auto;
+  color: var(--foreground);
+}
+
+.vad-first-run.is-models {
+  grid-template-columns: minmax(0, 1fr) minmax(420px, 1.05fr);
+}
+
+.vad-first-run-top {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+}
+
+.vad-first-run-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 20px 40px 24px;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+}
+
+.vad-first-run-skip {
+  height: 32px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--muted-strong);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.vad-first-run-skip:hover {
+  color: var(--foreground);
+}
+
+.vad-first-run-copy-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  width: min(28rem, 100%);
+  margin: 0 auto;
+  min-height: 0;
+  animation: vad-first-run-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.vad-first-run-copy-body.is-models {
+  justify-content: flex-start;
+  width: min(38rem, 100%);
+  overflow: auto;
+  padding: 8px 0 12px;
+}
+
+.vad-first-run-mark {
+  margin-bottom: 18px;
+  color: var(--foreground);
+}
+
+.vad-first-run-copy-body h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+.vad-first-run-copy-body p {
+  margin: 12px 0 0;
+  max-width: 36em;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--muted-strong);
+}
+
+.vad-first-run-points {
+  display: grid;
+  gap: 0;
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vad-first-run-points li {
+  display: grid;
+  gap: 4px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+
+.vad-first-run-points li:last-child {
+  border-bottom: 1px solid var(--border);
+}
+
+.vad-first-run-points strong {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.vad-first-run-points span {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted-strong);
+}
+
+.vad-first-run-form {
+  display: grid;
+  gap: 28px;
+  margin-top: 28px;
+}
+
+.vad-first-run-form fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.vad-first-run-form legend {
+  padding: 0;
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.vad-first-run-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.vad-first-run-tiles button {
+  display: grid;
+  min-width: 68px;
+  justify-items: center;
+  gap: 6px;
+  padding: 10px 8px 8px;
+  border: 1.5px solid transparent;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 11px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.vad-first-run-tiles button:hover {
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.vad-first-run-tiles button.is-on {
+  border-color: var(--primary);
+  background: var(--background);
+}
+
+.vad-first-run-tiles .vad-provider-logo {
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 0;
+  background: transparent;
+  color: var(--brand-color);
+}
+
+.vad-first-run-tiles .vad-provider-logo svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.vad-first-run-field {
+  display: grid;
+  grid-template-columns: 5.6rem minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--muted-strong);
+}
+
+.vad-first-run-field input,
+.vad-first-run-field select {
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--foreground) 4.5%, var(--surface));
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+}
+
+.vad-first-run-field input.is-mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.vad-first-run-combo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  min-width: 0;
+}
+
+.vad-first-run-combo input {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.vad-first-run-combo-pick {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 38px;
+  border-radius: 0 10px 10px 0;
+  background: color-mix(in srgb, var(--foreground) 4.5%, var(--surface));
+  color: var(--muted-strong);
+}
+
+.vad-first-run-combo-pick select {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.vad-first-run-combo .vad-first-run-combo-pick svg {
+  pointer-events: none;
+}
+
+.vad-first-run-combo:focus-within {
+  border-radius: 10px;
+  box-shadow: var(--shadow-glow);
+}
+
+.vad-first-run-combo input:focus-visible {
+  box-shadow: none;
+}
+
+.vad-first-run-field input:focus-visible,
+.vad-first-run-field select:focus-visible,
+.vad-first-run-tiles button:focus-visible,
+.vad-first-run-skip:focus-visible,
+.vad-first-run-back:focus-visible,
+.vad-first-run-continue:focus-visible,
+.vad-first-run-key button:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-glow);
+}
+
+.vad-first-run-key {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  align-items: center;
+}
+
+.vad-first-run-key input {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.vad-first-run-key button {
+  display: grid;
+  place-items: center;
+  height: 38px;
+  border: 0;
+  border-radius: 0 10px 10px 0;
+  background: color-mix(in srgb, var(--foreground) 4.5%, var(--surface));
+  color: var(--muted-strong);
+  cursor: pointer;
+}
+
+.vad-first-run-foot {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 16px;
+}
+
+.vad-first-run-count {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.vad-first-run-back,
+.vad-first-run-continue {
+  height: 40px;
+  padding: 0 22px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.vad-first-run-back {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--foreground);
+}
+
+.vad-first-run-back:hover {
+  background: var(--surface-muted);
+}
+
+.vad-first-run-continue {
+  margin-left: auto;
+  border: 0;
+  background: var(--primary);
+  color: var(--vad-accent-fg-on);
+}
+
+.vad-first-run-continue:hover {
+  background: var(--primary-strong);
+}
+
+.vad-first-run-continue.is-ink {
+  background: var(--foreground);
+  color: var(--background);
+}
+
+.vad-first-run-continue.is-ink:hover {
+  background: var(--muted-strong);
+  color: var(--background);
+}
+
+@keyframes vad-first-run-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vad-first-run-copy-body {
+    animation: none;
+  }
+}
+
+html.reduce-motion .vad-first-run-copy-body {
+  animation: none;
+}
+
+@media (max-width: 960px) {
+  .vad-first-run {
+    grid-template-columns: 1fr;
+    grid-template-rows: 200px minmax(0, 1fr);
+  }
+
+  .vad-first-run-art {
+    padding: 16px;
+  }
+
+  .vad-first-run-svg {
+    width: min(100%, 280px);
+  }
+
+  .vad-first-run-copy {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    padding: 12px 24px 20px;
+  }
+}

@@ -29,10 +29,10 @@ export function createOpenAICompatibleImageProvider(
     name: `openai-image::${shortHost(cfg.baseURL)}::${cfg.model}`,
     async generateImage(input: ImageGenerateInput) {
       const startedAt = Date.now();
-      const url = joinURL(cfg.baseURL, "/images/generations");
       const gptImage = isGptImageModel(cfg.model);
       const size =
         cfg.defaultSize ?? pickSize(input.width, input.height, cfg.model);
+      const usableRefs = pickUsableReferenceImages(input.referenceImages);
 
       const body: Record<string, unknown> = {
         model: cfg.model,
@@ -53,19 +53,9 @@ export function createOpenAICompatibleImageProvider(
         // 仅部分服务接受；OpenAI 官方不识别此字段会忽略
         body.negative_prompt = input.negativePrompt;
       }
+      attachReferenceImagesToBody(body, usableRefs);
 
-      const res = await fetchWithRetry(
-        url,
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: `Bearer ${cfg.apiKey}`,
-          },
-          body: JSON.stringify(body),
-        },
-        { timeoutMs: 180_000, maxAttempts: 3 }
-      );
+      const res = await postImageApi(cfg, body, usableRefs, input.signal);
 
       if (!res.ok) {
         const text = await res.text().catch(() => "");
@@ -106,6 +96,147 @@ interface ImageGenerationResponse {
     seed?: number | string;
     revised_prompt?: string;
   }>;
+}
+
+export function pickUsableReferenceImages(
+  referenceImages?: string[]
+): string[] {
+  return (referenceImages ?? []).filter(
+    (src) =>
+      (src.startsWith("data:image/") && !src.startsWith("data:image/svg+xml")) ||
+      /^https?:\/\//i.test(src)
+  );
+}
+
+export function resolveImageApiPath(
+  hasReferenceImages: boolean
+): "/images/edits" | "/images/generations" {
+  return hasReferenceImages ? "/images/edits" : "/images/generations";
+}
+
+export function shouldFallbackToGenerations(status: number): boolean {
+  return status === 404 || status === 405;
+}
+
+export function shouldRetryEditsAsMultipart(status: number): boolean {
+  return status === 400 || status === 415 || status === 422;
+}
+
+/** 生图 POST 非幂等：超时/5xx 后重试会在服务商侧再出一张图。只重试明确的 429。 */
+export function shouldRetryImageHttp(err: unknown): boolean {
+  const status = (err as Error & { status?: number }).status;
+  return status === 429;
+}
+
+const IMAGE_HTTP_TIMEOUT_MS = 480_000;
+const IMAGE_HTTP_RETRY = {
+  timeoutMs: IMAGE_HTTP_TIMEOUT_MS,
+  maxAttempts: 3,
+  shouldRetry: shouldRetryImageHttp,
+} as const;
+
+export function attachReferenceImagesToBody(
+  body: Record<string, unknown>,
+  referenceImages?: string[]
+): void {
+  const usable = pickUsableReferenceImages(referenceImages);
+  if (usable.length === 0) return;
+  body.image = usable[0];
+  body.images = usable;
+}
+
+async function postImageApi(
+  cfg: OpenAIImageConfig,
+  body: Record<string, unknown>,
+  usableRefs: string[],
+  signal?: AbortSignal
+): Promise<Response> {
+  const authHeaders = { authorization: `Bearer ${cfg.apiKey}` };
+  const jsonHeaders = {
+    ...authHeaders,
+    "content-type": "application/json",
+  };
+  const editsUrl = joinURL(cfg.baseURL, "/images/edits");
+  const generationsUrl = joinURL(cfg.baseURL, "/images/generations");
+  const primaryUrl = usableRefs.length > 0 ? editsUrl : generationsUrl;
+
+  let res = await fetchWithRetry(
+    primaryUrl,
+    {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify(body),
+      signal,
+    },
+    { ...IMAGE_HTTP_RETRY, signal }
+  );
+
+  if (
+    usableRefs.length > 0 &&
+    !res.ok &&
+    shouldFallbackToGenerations(res.status)
+  ) {
+    res = await fetchWithRetry(
+      generationsUrl,
+      {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify(body),
+        signal,
+      },
+      { ...IMAGE_HTTP_RETRY, signal }
+    );
+  }
+
+  if (
+    usableRefs.length > 0 &&
+    !res.ok &&
+    shouldRetryEditsAsMultipart(res.status)
+  ) {
+    const form = buildEditsFormData(body, usableRefs);
+    if (form) {
+      res = await fetchWithRetry(
+        editsUrl,
+        {
+          method: "POST",
+          headers: authHeaders,
+          body: form,
+          signal,
+        },
+        { ...IMAGE_HTTP_RETRY, signal }
+      );
+    }
+  }
+
+  return res;
+}
+
+function buildEditsFormData(
+  body: Record<string, unknown>,
+  usableRefs: string[]
+): FormData | null {
+  const file = dataUrlToFile(usableRefs[0]);
+  if (!file) return null;
+  const form = new FormData();
+  form.append("image", file);
+  form.append("prompt", String(body.prompt ?? ""));
+  form.append("model", String(body.model ?? ""));
+  if (body.size) form.append("size", String(body.size));
+  if (body.n != null) form.append("n", String(body.n));
+  if (body.response_format) {
+    form.append("response_format", String(body.response_format));
+  }
+  if (body.quality) form.append("quality", String(body.quality));
+  if (body.output_format) form.append("output_format", String(body.output_format));
+  return form;
+}
+
+function dataUrlToFile(src: string | undefined): File | null {
+  if (!src) return null;
+  const match = src.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) return null;
+  const bytes = Buffer.from(match[2], "base64");
+  return new File([bytes], "reference.png", { type: match[1] });
 }
 
 function joinURL(base: string, path: string) {

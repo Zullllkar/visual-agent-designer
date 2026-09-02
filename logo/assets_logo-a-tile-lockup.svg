@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 152 32" width="152" height="32" fill="none" role="img" aria-label="Vibeboard">
+  <rect x="8.4" y="10.8" width="15.2" height="10.4" rx="1.9" fill="#1A1916"/>
+  <rect x="5.5" y="8" width="2.5" height="2.5" rx="0.2" fill="#1A1916"/>
+  <rect x="24" y="8" width="2.5" height="2.5" rx="0.2" fill="#1A1916"/>
+  <rect x="5.5" y="21.5" width="2.5" height="2.5" rx="0.2" fill="#1A1916"/>
+  <rect x="24" y="21.5" width="2.5" height="2.5" rx="0.2" fill="#1A1916"/>
+  <text x="40" y="21.4" fill="#1A1916" font-family="Inter, Inter Tight, ui-sans-serif, system-ui, sans-serif" font-size="15" letter-spacing="-0.03em"><tspan font-weight="700">Vibe</tspan><tspan font-weight="500">board</tspan></text>
+</svg>

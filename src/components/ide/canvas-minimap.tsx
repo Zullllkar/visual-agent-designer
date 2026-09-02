@@ -24,9 +24,7 @@ export function CanvasMinimap() {
       const content = editor.getCurrentPageBounds();
       const viewport = editor.getViewportPageBounds();
       const shapes = editor.getCurrentPageShapes().filter((s) =>
-        ["canvas-page", "image-asset", "reference-card"].includes(
-          s.type as string
-        )
+        ["image-asset", "reference-card"].includes(s.type as string)
       );
       return { content, viewport, shapeCount: shapes.length };
     },
@@ -141,7 +139,7 @@ export function CanvasMinimap() {
 
   return (
     <div
-      className="vad-canvas-minimap absolute bottom-6 right-[7.5rem] z-10 overflow-hidden"
+      className="vad-canvas-minimap overflow-hidden"
       style={{ width: MAP_W, height: MAP_H }}
     >
       <div
@@ -171,9 +169,7 @@ export function CanvasMinimap() {
         />
         {editor.getCurrentPageShapes().map((shape) => {
           if (
-            !["canvas-page", "image-asset", "reference-card"].includes(
-              shape.type as string
-            )
+            !["image-asset", "reference-card"].includes(shape.type as string)
           )
             return null;
           const bounds = editor.getShapePageBounds(shape.id);

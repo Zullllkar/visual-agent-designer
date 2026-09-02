@@ -9,6 +9,7 @@
 import type { LlmProvider } from "@/lib/providers/llm/types";
 import type { ImageProvider } from "@/lib/providers/image/types";
 import type { Skill, DesignSystem } from "@/lib/skills/schema";
+import type { BaseCheckpointSaver } from "@langchain/langgraph";
 
 export interface AgentContext {
   /** 项目 id。 */
@@ -32,6 +33,12 @@ export interface AgentContext {
    * 当前激活的设计系统（DESIGN.md）。
    */
   designSystem?: DesignSystem | null;
+  /** LangGraph 会话线程 ID（用于 checkpoint 持久化）。 */
+  threadId?: string;
+  /** LangGraph checkpointer（SqliteSaver 单例）。 */
+  checkpointer?: BaseCheckpointSaver;
+  /** AbortSignal，用于取消 Agent 运行。 */
+  abortSignal?: AbortSignal;
 }
 
 export interface Agent<TInput = unknown, TOutput = unknown> {

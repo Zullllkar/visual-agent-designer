@@ -18,13 +18,12 @@
  *   - 生成中显示骨架占位（占位图框 + spinner），让用户感知进度。
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Check,
   ImageIcon,
   Loader2,
   Paperclip,
-  Sparkles,
   Star,
   Trash2,
   TriangleAlert,
@@ -37,9 +36,23 @@ import { useCanvasSelectionStore } from "@/store/canvas-selection-store";
 import type { ProjectFile } from "@/lib/project/schema";
 import type { ImageAsset, ReferenceAsset } from "@/lib/project/assets-schema";
 import { applyAssetToImageNode } from "@/lib/project/asset-drop";
+import { discardAssetsInProject } from "@/lib/project/discard-assets";
+import { GeneratingArtworkFace } from "@/components/generating-artwork-face";
+
+interface ImageJobProgress {
+  jobId: string;
+  status: string;
+  progress: number;
+  message?: string;
+  completed?: number;
+  failed?: number;
+  total?: number;
+}
 
 interface ImagePaneProps {
   project: ProjectFile | null;
+  /** library：只浏览素材，出图走右侧对话 */
+  variant?: "workspace" | "library";
 }
 
 const SIZE_PRESETS: Array<{
@@ -52,20 +65,30 @@ const SIZE_PRESETS: Array<{
   { label: "9:16 · 1024×1792", width: 1024, height: 1792 },
 ];
 
-export function ImagePane({ project }: ImagePaneProps) {
+export function ImagePane({ project, variant = "workspace" }: ImagePaneProps) {
+  const library = variant === "library";
   const providerConfig = useProviderStore((s) => s.config);
   const upsert = useProjectStore((s) => s.upsert);
+  const reloadFromDisk = useProjectStore((s) => s.reloadFromDisk);
   const selection = useCanvasSelectionStore((s) => s.selection);
 
   const [prompt, setPrompt] = useState("");
-  const [n, setN] = useState(4);
+  const [n, setN] = useState(1);
   const [sizeIdx, setSizeIdx] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [jobProgress, setJobProgress] = useState<ImageJobProgress | null>(null);
   const [useSelectionAsReference, setUseSelectionAsReference] = useState(true);
   const [selectedReferenceIds, setSelectedReferenceIds] = useState<string[]>([]);
 
-  const assets = (project?.assets ?? []).filter((a) => a.status !== "discarded");
+  const assets = useMemo(() => {
+    const source = (project?.assets ?? []).filter((a) => a.status !== "discarded");
+    const byId = new Map<string, ImageAsset>();
+    for (const asset of source) {
+      byId.set(asset.id, asset);
+    }
+    return [...byId.values()];
+  }, [project?.assets]);
   const references = project?.references ?? [];
   const visualStyle = project?.brief?.visualStyle;
   const imageKind = providerConfig.image?.kind ?? "mock";
@@ -79,6 +102,7 @@ export function ImagePane({ project }: ImagePaneProps) {
     if (!project || !prompt.trim() || loading) return;
     setLoading(true);
     setError(null);
+    setJobProgress(null);
     try {
       const size = SIZE_PRESETS[sizeIdx];
       const res = await fetch("/api/agents/image/generate", {
@@ -90,6 +114,7 @@ export function ImagePane({ project }: ImagePaneProps) {
           width: size.width,
           height: size.height,
           visualStyle,
+          projectId: project.id,
           referenceImages: buildReferenceImages({
             references,
             selectedReferenceIds,
@@ -107,12 +132,21 @@ export function ImagePane({ project }: ImagePaneProps) {
       if (!res.ok) {
         throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
       }
-      const newAssets = data.assets as ImageAsset[];
-      upsert({
-        ...project,
-        assets: [...(project.assets ?? []), ...newAssets],
-        updatedAt: new Date().toISOString(),
-      });
+      if (data.project) {
+        upsert(data.project as ProjectFile);
+      } else if (Array.isArray(data.assets)) {
+        const newAssets = data.assets as ImageAsset[];
+        upsert({
+          ...project,
+          assets: [...(project.assets ?? []), ...newAssets],
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      const jobId = data?.job?.jobId as string | undefined;
+      if (jobId) {
+        await pollImageJob(jobId, project.id);
+        return;
+      }
     } catch (err) {
       const msg = (err as Error).message;
       // localStorage 写入失败（quota）常见，给提示
@@ -125,6 +159,55 @@ export function ImagePane({ project }: ImagePaneProps) {
       }
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function pollImageJob(jobId: string, projectId: string) {
+    setJobProgress({
+      jobId,
+      status: "pending",
+      progress: 0,
+      message: "Queued",
+      total: n,
+    });
+    while (true) {
+      await delay(900);
+      const res = await fetch(`/api/jobs/${jobId}?projectId=${projectId}`, { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+      }
+      const job = data.job as {
+        status: string;
+        progress?: number;
+        error?: string;
+        progressDetail?: {
+          message?: string;
+          completed?: number;
+          failed?: number;
+          total?: number;
+        };
+        result?: { updatedProject?: ProjectFile };
+      };
+      setJobProgress({
+        jobId,
+        status: job.status,
+        progress: job.progress ?? 0,
+        message: job.progressDetail?.message,
+        completed: job.progressDetail?.completed,
+        failed: job.progressDetail?.failed,
+        total: job.progressDetail?.total,
+      });
+      if (job.status === "completed") {
+        await reloadFromDisk(projectId);
+        return;
+      }
+      if (job.status === "failed") {
+        throw new Error(job.error || "Image generation failed");
+      }
+      if (job.status === "cancelled") {
+        throw new Error("Image generation cancelled");
+      }
     }
   }
 
@@ -143,11 +226,9 @@ export function ImagePane({ project }: ImagePaneProps) {
 
   function discard(id: string) {
     if (!project) return;
-    upsert({
-      ...project,
-      assets: (project.assets ?? []).filter((a) => a.id !== id),
-      updatedAt: new Date().toISOString(),
-    });
+    const latest =
+      useProjectStore.getState().projects[project.id] ?? project;
+    upsert(discardAssetsInProject(latest, [id]));
   }
 
   async function uploadReferences(files: FileList | null) {
@@ -202,7 +283,8 @@ export function ImagePane({ project }: ImagePaneProps) {
   }
 
   return (
-    <div className="flex h-full flex-col bg-white dark:bg-zinc-950">
+    <div className="flex h-full flex-col">
+      {library ? null : (
       <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
         <div className="flex items-center gap-2">
           <ImageIcon className="size-4 text-zinc-500" />
@@ -214,6 +296,7 @@ export function ImagePane({ project }: ImagePaneProps) {
           {isMockImg ? "Mock 模式" : "真实模型"}
         </span>
       </header>
+      )}
 
       {!project ? (
         <div className="grid flex-1 place-items-center text-xs text-zinc-500">
@@ -221,7 +304,8 @@ export function ImagePane({ project }: ImagePaneProps) {
         </div>
       ) : (
         <div className="flex flex-1 flex-col overflow-hidden">
-          {/* ── Prompt 输入 ── */}
+          {/* ── Prompt 输入（workspace）；library 只浏览 ── */}
+          {library ? null : (
           <div className="border-b border-zinc-200 p-3 dark:border-zinc-800">
             <textarea
               value={prompt}
@@ -272,6 +356,25 @@ export function ImagePane({ project }: ImagePaneProps) {
                 {loading ? "生成中" : "生成"}
               </button>
             </div>
+            {jobProgress ? (
+              <div className="mt-2 rounded-md border border-zinc-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-950">
+                <div className="flex items-center justify-between gap-2 text-[10px] text-zinc-500">
+                  <span className="truncate">
+                    {jobProgress.message || jobProgress.status}
+                  </span>
+                  <span className="shrink-0">
+                    {jobProgress.completed ?? 0}/{jobProgress.total ?? n}
+                    {jobProgress.failed ? ` - failed ${jobProgress.failed}` : ""}
+                  </span>
+                </div>
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-900">
+                  <div
+                    className="h-full rounded-full bg-zinc-900 transition-[width] dark:bg-white"
+                    style={{ width: `${Math.max(4, jobProgress.progress)}%` }}
+                  />
+                </div>
+              </div>
+            ) : null}
             {visualStyle ? (
               <p className="mt-1.5 text-[10px] text-zinc-400">
                 自动注入风格前缀：<code>{visualStyle}</code>
@@ -357,25 +460,35 @@ export function ImagePane({ project }: ImagePaneProps) {
               </div>
             ) : null}
           </div>
+          )}
 
           {/* ── 候选图列表 ── */}
-          <div className="flex-1 overflow-y-auto p-3">
+          <div className={library ? "vad-inspector-scroll" : "flex-1 overflow-y-auto p-3"}>
+            {library && assets.length > 0 ? (
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <p className="text-[12px] font-medium">拖到画布即可用</p>
+                <span className="vad-ide-status-pill font-mono">
+                  {assets.length}
+                </span>
+              </div>
+            ) : null}
             {assets.length === 0 && !loading ? (
-              <EmptyHint />
+              <EmptyHint library={library} />
             ) : (
-              <div className="grid grid-cols-2 gap-2">
-                {loading
+              <div className={library ? "vad-inspector-grid" : "grid grid-cols-2 gap-2"}>
+                {loading && !jobProgress
                   ? Array.from({ length: n }).map((_, i) => (
-                      <SkeletonTile key={`skel-${i}`} />
+                      <SkeletonTile key={`skel-${i}`} library={library} />
                     ))
                   : null}
                 {assets
                   .slice()
                   .reverse()
-                  .map((a) => (
+                  .map((a, index) => (
                     <AssetTile
-                      key={a.id}
+                      key={`${a.id}:${a.batchId ?? "no-batch"}:${a.createdAt}:${index}`}
                       asset={a}
+                      library={library}
                       onStar={() => toggleStar(a.id)}
                       onDiscard={() => discard(a.id)}
                       onApplyToSelection={
@@ -394,33 +507,46 @@ export function ImagePane({ project }: ImagePaneProps) {
   );
 }
 
-function EmptyHint() {
+function EmptyHint({ library }: { library?: boolean }) {
   return (
-    <div className="grid h-full place-items-center text-center">
+    <div className="vad-inspector-empty">
       <div>
-        <Sparkles className="mx-auto size-5 text-zinc-300" />
-        <p className="mt-2 text-xs text-zinc-500">还没生成候选图</p>
-        <p className="mt-1 text-[10px] text-zinc-400">
-          在上方输入 prompt，选择尺寸和张数，点击「生成」
+        <p className="text-[13px] font-medium tracking-[-0.02em]">还没有素材</p>
+        <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--muted)]">
+          {library
+            ? "在右侧描述画面，生成结果会出现在这里"
+            : "在上方输入 prompt，选择尺寸和张数，点击「生成」"}
         </p>
       </div>
     </div>
   );
 }
 
-function SkeletonTile() {
+function SkeletonTile({ library }: { library?: boolean }) {
   return (
-    <div className="aspect-square animate-pulse rounded-md bg-zinc-100 dark:bg-zinc-900" />
+    <div
+      className={
+        library
+          ? "vad-inspector-tile aspect-square animate-pulse"
+          : "aspect-square animate-pulse rounded-md bg-zinc-100 dark:bg-zinc-900"
+      }
+    />
   );
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function AssetTile({
   asset,
+  library,
   onStar,
   onDiscard,
   onApplyToSelection,
 }: {
   asset: ImageAsset;
+  library?: boolean;
   onStar: () => void;
   onDiscard: () => void;
   onApplyToSelection?: () => void;
@@ -443,79 +569,111 @@ function AssetTile({
   return (
     <div
       className={
-        "group relative overflow-hidden rounded-md border bg-zinc-50 dark:bg-zinc-900 " +
-        (isGenerating
-          ? "border-[var(--primary)]/30 animate-pulse"
-          : "border-zinc-200 dark:border-zinc-800")
+        library
+          ? "vad-inspector-tile group" +
+            (isGenerating ? " vad-inspector-tile--busy" : "")
+          : "group relative overflow-hidden rounded-md border bg-zinc-50 dark:bg-zinc-900 " +
+            (isGenerating
+              ? "border-[var(--primary)]/30 animate-pulse"
+              : "border-zinc-200 dark:border-zinc-800")
       }
       draggable={!isGenerating}
       onDragStart={isGenerating ? undefined : handleDragStart}
-      title={isGenerating ? "生图进行中" : "拖到画布的某一页即可使用"}
+      data-tip={isGenerating ? "生图进行中" : "拖到画布即可使用"}
     >
-      {/* 缩略：用 aspect-square 框 + object-cover */}
       <div className="relative aspect-square cursor-grab active:cursor-grabbing">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={asset.src}
-          alt={asset.prompt}
-          className="size-full object-cover"
-          loading="lazy"
-          draggable={false}
-        />
-        {isGenerating ? (
+        {isGenerating && library ? (
+          <GeneratingArtworkFace ghostSrc={asset.src?.trim() || undefined} />
+        ) : asset.src?.trim() ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={asset.src}
+            alt={asset.prompt}
+            className="size-full object-cover"
+            loading="lazy"
+            draggable={false}
+          />
+        ) : (
+          <div className="grid size-full place-items-center bg-[var(--surface-muted)] text-[10px] font-medium text-[var(--muted)]">
+            {isGenerating ? "生成中…" : "空占位"}
+          </div>
+        )}
+        {isGenerating && !library && asset.src?.trim() ? (
           <div className="absolute inset-0 grid place-items-center bg-black/20 text-[10px] font-semibold text-white">
             生成中…
           </div>
         ) : null}
-        <div className="absolute right-1 top-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+        <div
+          className={
+            library
+              ? "vad-inspector-tile-actions"
+              : "absolute right-1 top-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100"
+          }
+        >
           <button
             type="button"
             onClick={onStar}
             className={
-              "grid size-6 place-items-center rounded-md backdrop-blur " +
-              (isStarred
-                ? "bg-amber-400 text-white"
-                : "bg-white/90 text-zinc-700 hover:bg-white dark:bg-zinc-900/90 dark:text-zinc-300")
+              library
+                ? "vad-inspector-tile-btn" +
+                  (isStarred ? " vad-inspector-tile-btn--on" : "")
+                : "grid size-6 place-items-center rounded-md backdrop-blur " +
+                  (isStarred
+                    ? "bg-amber-400 text-white"
+                    : "bg-white/90 text-zinc-700 hover:bg-white dark:bg-zinc-900/90 dark:text-zinc-300")
             }
-            title={isStarred ? "取消收藏" : "收藏"}
+            aria-label={isStarred ? "取消收藏" : "收藏"}
           >
             <Star className="size-3" />
           </button>
           <button
             type="button"
             onClick={onDiscard}
-            className="grid size-6 place-items-center rounded-md bg-white/90 text-zinc-700 backdrop-blur hover:bg-white dark:bg-zinc-900/90 dark:text-zinc-300"
-            title="删除"
+            className={
+              library
+                ? "vad-inspector-tile-btn"
+                : "grid size-6 place-items-center rounded-md bg-white/90 text-zinc-700 backdrop-blur hover:bg-white dark:bg-zinc-900/90 dark:text-zinc-300"
+            }
+            aria-label="删除"
           >
             <Trash2 className="size-3" />
           </button>
         </div>
         {isStarred ? (
-          <div className="absolute left-1 top-1 grid size-5 place-items-center rounded-full bg-amber-400 text-white shadow">
-            <Star className="size-2.5" />
-          </div>
+          library ? (
+            <span className="vad-inspector-tile-star" />
+          ) : (
+            <div className="absolute left-1 top-1 grid size-5 place-items-center rounded-full bg-amber-400 text-white shadow">
+              <Star className="size-2.5" />
+            </div>
+          )
         ) : null}
         {!isGenerating && onApplyToSelection ? (
           <button
             type="button"
             onClick={onApplyToSelection}
-            className="absolute bottom-1 left-1 inline-flex h-6 items-center gap-1 rounded-md bg-zinc-950/85 px-2 text-[10px] font-medium text-white opacity-0 backdrop-blur transition-opacity hover:bg-zinc-900 group-hover:opacity-100"
-            title="应用到当前选中的图片节点"
+            className={
+              library
+                ? "vad-inspector-tile-apply"
+                : "absolute bottom-1 left-1 inline-flex h-6 items-center gap-1 rounded-md bg-zinc-950/85 px-2 text-[10px] font-medium text-white opacity-0 backdrop-blur transition-opacity hover:bg-zinc-900 group-hover:opacity-100"
+            }
           >
             <Check className="size-3" />
             应用
           </button>
         ) : null}
       </div>
-      <div className="px-1.5 py-1">
-        <p className="line-clamp-1 text-[10px] text-zinc-500" title={asset.prompt}>
-          {asset.prompt}
-        </p>
-        <p className="text-[9px] text-zinc-400" title={asset.model}>
-          {asset.model.split("::").pop()}
-          {asset.durationMs != null ? ` · ${(asset.durationMs / 1000).toFixed(1)}s` : ""}
-        </p>
-      </div>
+      {library ? null : (
+        <div className="px-1.5 py-1">
+          <p className="line-clamp-1 text-[10px] text-zinc-500" title={asset.prompt}>
+            {asset.prompt}
+          </p>
+          <p className="text-[9px] text-zinc-400" title={asset.model}>
+            {asset.model.split("::").pop()}
+            {asset.durationMs != null ? ` · ${(asset.durationMs / 1000).toFixed(1)}s` : ""}
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -532,7 +690,9 @@ function findSelectedImageNode(
 
 function isUsableReferenceImage(src: string): boolean {
   if (src.startsWith("data:image/svg+xml")) return false;
-  return src.startsWith("data:image/") || /^https?:\/\//i.test(src);
+  if (src.startsWith("data:image/")) return true;
+  if (/^https?:\/\//i.test(src)) return true;
+  return /^\/api\/assets\/[^/]+\/(assets|references)\//.test(src);
 }
 
 function buildReferenceImages({

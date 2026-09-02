@@ -18,6 +18,20 @@
  */
 
 import { z } from "zod";
+import { AssetDesignSpecSchema } from "./design-spec-schema";
+
+export const MockupApprovalSchema = z.object({
+  status: z.enum([
+    "draft",
+    "approved",
+    "materializing",
+    "materials_ready",
+  ]),
+  approvedAt: z.string().optional(),
+  layoutId: z.string().optional(),
+});
+
+export type MockupApproval = z.infer<typeof MockupApprovalSchema>;
 
 export const ImageAssetSchema = z.object({
   id: z.string(),
@@ -42,25 +56,45 @@ export const ImageAssetSchema = z.object({
    *   candidate  — 刚生成，待选
    *   starred    — 用户收藏
    *   used       — 已拖入某个 page
+   *   failed     — 生成失败，可重试
+   *   cancelled  — 用户取消或批次提前结束
    *   discarded  — 用户主动丢弃（仍保留在 assets 用于追溯）
    */
   status: z
-    .enum(["generating", "candidate", "starred", "used", "discarded"])
+    .enum([
+      "generating",
+      "candidate",
+      "starred",
+      "used",
+      "failed",
+      "cancelled",
+      "discarded",
+    ])
     .optional()
     .default("candidate"),
   /** 如果 status=used，记录被哪些 page 引用 */
   usedInPages: z.array(z.string()).optional(),
   /** 可选标签 */
   tags: z.array(z.string()).optional(),
-  /** 来源类型：生成、编辑、上传或参考图。 */
-  source: z.enum(["generated", "edited", "uploaded", "reference"]).optional(),
+  /** 来源类型：生成、编辑、上传、参考图，或从满意整图拆出的零件。 */
+  source: z
+    .enum(["generated", "edited", "uploaded", "reference", "materialized"])
+    .optional(),
   /** 派生图的父资产。 */
   parentAssetId: z.string().optional(),
   /** 同一组候选或变体共享的 id。 */
   variantGroupId: z.string().optional(),
   /** 图片在设计中的角色。 */
   role: z
-    .enum(["hero", "illustration", "product-shot", "background", "icon", "avatar"])
+    .enum([
+      "hero",
+      "illustration",
+      "product-shot",
+      "background",
+      "icon",
+      "avatar",
+      "decoration",
+    ])
     .optional(),
   /** 被哪些具体节点使用。 */
   usedInNodes: z
@@ -86,6 +120,16 @@ export const ImageAssetSchema = z.object({
   referenceAssetIds: z.array(z.string()).optional(),
   /** 生成时所使用的设计记忆版本。 */
   designContextVersion: z.number().optional(),
+  /** 失败或取消原因，供任务卡和素材卡展示。 */
+  error: z.string().optional(),
+  /** 图 → 结构化设计规格（Handoff 中间层，非 HTML）。 */
+  designSpec: AssetDesignSpecSchema.optional(),
+  /** 整图锁定 / 拆素材状态（仅 mockup 使用）。 */
+  approval: MockupApprovalSchema.optional(),
+  /** 对应 Layout IR 中的槽位 id（materialized 零件）。 */
+  materialSlotId: z.string().optional(),
+  /** 画布家族底板标题，用来标这组素材属于哪个页面。 */
+  familyTitle: z.string().optional(),
 });
 
 export type ImageAsset = z.infer<typeof ImageAssetSchema>;

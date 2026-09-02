@@ -1,8 +1,10 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# =============================================================================
+# Vibeboard — .gitignore
+# =============================================================================
 
-# dependencies
-/node_modules
-/.pnp
+# ----- dependencies -----
+node_modules/
+.pnp
 .pnp.*
 .yarn/*
 !.yarn/patches
@@ -10,46 +12,76 @@
 !.yarn/releases
 !.yarn/versions
 
-# testing
-/coverage
+# ----- Next.js / build -----
+.next/
+out/
+build/
+dist/
+dist-sidecar/
+release/
+*.tsbuildinfo
+next-env.d.ts
 
-# next.js
-/.next/
-/out/
+# ----- test / coverage -----
+coverage/
+.vitest/
+vitest.config.ts.timestamp-*
 
-# production
-/build
-
-# local project data & browser temp profiles
-.vad/projects/
-.tmp-edge-profile/
-
-# misc
-.DS_Store
+# ----- env & secrets -----
+.env
+.env.*
+!.env.example
+!.env*.example
 *.pem
 
-# debug
+# ----- logs & local debug output -----
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+.codex-dev.log
 .next-dev.log*
+.tsc-out.txt
+debug-*.log
 
-# env files (can opt-in for committing if needed)
-.env*
-!.env.example
+# ----- OS junk -----
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
 
-# IDE / local tooling
+# ----- IDE / editor -----
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ----- Cursor / local agent tooling -----
 .cursor/
 .impeccable/
+.agents/
+.claude/
 
-# local runtime data & temp screenshots
+# ----- Vibeboard local runtime data -----
 .vad/
+.vad-data/
+.tmp/
+.tmp-edge-profile/
 .tmp-*.png
+.tmp-*.jpg
+.tmp-*.webp
 
-# vercel
+# ----- nested sibling repos (have their own .git) -----
+Loomic/
+open-design/
+
+# ----- deploy / cloud -----
 .vercel
 
-# typescript
-*.tsbuildinfo
-next-env.d.ts
+# ----- misc local artifacts -----
+*.local
+*.bak
+*.orig
+.cache/

@@ -8,13 +8,15 @@
  */
 
 import { promises as fs } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { applyProjectDuplicate, isSafeProjectId } from "@/lib/studio/project-actions";
 import type { ProjectFile } from "@/lib/project/schema";
 import type { ChatMessage } from "@/lib/agents/chat-schema";
 import {
   VAD_PROJECTS_DIR,
   canvasJsonPath,
   chatHistoryPath,
+  conversationsJsonPath,
   projectDir,
   projectJsonPath,
   EDITABLE_EXTENSIONS,
@@ -22,6 +24,7 @@ import {
 } from "./paths";
 
 import type { VadFileNode } from "./types";
+import { toSafeAssetFilename } from "./asset-filename";
 export type { VadFileNode } from "./types";
 
 export async function ensureDir(path: string): Promise<void> {
@@ -29,6 +32,23 @@ export async function ensureDir(path: string): Promise<void> {
 }
 
 type AssetLike = { id: string; src: string };
+
+function parseDataImageSrc(
+  src: string
+): { subtype: string; buffer: Buffer } | null {
+  const match = src
+    .trim()
+    .match(/^data:image\/([a-zA-Z0-9.+-]+)(;[^,]*)?,([\s\S]+)$/i);
+  if (!match) return null;
+  const subtype = match[1];
+  const meta = match[2] ?? "";
+  // Generating placeholders are `data:image/svg+xml,<urlencoded svg>` with no
+  // ;base64. Treating them as base64 writes garbage .svg files and breaks <img>.
+  if (!/;base64/i.test(meta)) return null;
+  const payload = match[3].replace(/\s+/g, "");
+  if (!payload) return null;
+  return { subtype, buffer: Buffer.from(payload, "base64") };
+}
 
 /** 将 assets/references 中 base64 提炼为磁盘文件并改写 src。 */
 export async function processBase64Assets<T extends AssetLike>(
@@ -46,18 +66,20 @@ export async function processBase64Assets<T extends AssetLike>(
     }
     const { id, src } = asset;
     if (src.startsWith("data:image/")) {
-      await ensureDir(dir);
-      const matches = src.match(/^data:image\/([a-zA-Z+]+);base64,(.+)$/);
-      if (matches?.length === 3) {
-        const ext = matches[1];
-        const buffer = Buffer.from(matches[2], "base64");
-        const filename = `${id}.${ext}`;
-        await fs.writeFile(join(dir, filename), buffer);
-        processed.push({
-          ...asset,
-          src: `/api/assets/${projectId}/${subFolder}/${filename}`,
-        });
-        continue;
+      const parsed = parseDataImageSrc(src);
+      if (parsed) {
+        await ensureDir(dir);
+        const filename = toSafeAssetFilename(id, parsed.subtype);
+        try {
+          await fs.writeFile(join(dir, filename), parsed.buffer);
+          processed.push({
+            ...asset,
+            src: `/api/assets/${projectId}/${subFolder}/${filename}`,
+          });
+          continue;
+        } catch (error) {
+          console.error("[vad] persist asset failed", filename, error);
+        }
       }
     }
     processed.push(asset);
@@ -143,6 +165,47 @@ export async function listProjectsFromVad(): Promise<ProjectFile[]> {
   return projects.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
+export async function deleteProjectFromVad(projectId: string): Promise<void> {
+  if (!isSafeProjectId(projectId)) {
+    throw new Error("invalid_project_id");
+  }
+  const root = resolve(VAD_PROJECTS_DIR);
+  const abs = resolve(projectDir(projectId));
+  const rel = relative(root, abs);
+  if (!rel || rel.startsWith("..") || isAbsolute(rel)) {
+    throw new Error("invalid_project_path");
+  }
+  await fs.rm(abs, { recursive: true, force: true });
+}
+
+export async function duplicateProjectFromVad(
+  projectId: string,
+  newId: string
+): Promise<ProjectFile> {
+  if (!isSafeProjectId(projectId) || !isSafeProjectId(newId)) {
+    throw new Error("invalid_project_id");
+  }
+  const root = resolve(VAD_PROJECTS_DIR);
+  const src = resolve(projectDir(projectId));
+  const dest = resolve(projectDir(newId));
+  const srcRel = relative(root, src);
+  const destRel = relative(root, dest);
+  if (
+    !srcRel ||
+    srcRel.startsWith("..") ||
+    isAbsolute(srcRel) ||
+    !destRel ||
+    destRel.startsWith("..") ||
+    isAbsolute(destRel)
+  ) {
+    throw new Error("invalid_project_path");
+  }
+  const source = await loadProjectFromVad(projectId);
+  if (!source) throw new Error("not_found");
+  await fs.cp(src, dest, { recursive: true, errorOnExist: true });
+  return saveProjectToVad(applyProjectDuplicate(source, newId));
+}
+
 /** 追加/覆盖 chat-history.jsonl（每行一条 JSON ChatMessage）。 */
 export async function saveChatHistoryToVad(
   projectId: string,
@@ -165,6 +228,45 @@ export async function loadChatHistoryFromVad(
       .map((l) => JSON.parse(l) as ChatMessage);
   } catch {
     return [];
+  }
+}
+
+export async function saveConversationsToVad(
+  projectId: string,
+  payload: {
+    conversations: unknown[];
+    activeId?: string;
+  }
+): Promise<void> {
+  await ensureDir(projectDir(projectId));
+  await fs.writeFile(
+    conversationsJsonPath(projectId),
+    JSON.stringify(
+      {
+        version: 1,
+        conversations: payload.conversations,
+        activeId: payload.activeId,
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+}
+
+export async function loadConversationsFromVad(
+  projectId: string
+): Promise<{ conversations?: unknown[]; activeId?: string } | null> {
+  try {
+    const raw = await fs.readFile(conversationsJsonPath(projectId), "utf8");
+    const data = JSON.parse(raw) as {
+      conversations?: unknown[];
+      activeId?: string;
+    };
+    if (!Array.isArray(data.conversations)) return null;
+    return data;
+  } catch {
+    return null;
   }
 }
 

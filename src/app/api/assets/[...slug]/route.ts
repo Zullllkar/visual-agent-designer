@@ -1,8 +1,6 @@
-import { NextResponse } from "next/server";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
-
-const VAD_DIR = join(process.cwd(), ".vad", "projects");
+import { VAD_PROJECTS_DIR } from "@/lib/vad/paths";
 
 /**
  * 静态读取本地物理磁盘存储的图片资源
@@ -26,8 +24,8 @@ export async function GET(
       return new Response("Forbidden", { status: 403 });
     }
 
-    const safeFilename = filename.replace(/[^a-zA-Z0-9.-]/g, "");
-    const filePath = join(VAD_DIR, projectId, subFolder, safeFilename);
+    const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "");
+    const filePath = join(VAD_PROJECTS_DIR, projectId, subFolder, safeFilename);
 
     const buffer = await fs.readFile(filePath);
     

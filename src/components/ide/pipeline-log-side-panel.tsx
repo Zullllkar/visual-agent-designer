@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, RefreshCw, ScrollText } from "lucide-react";
+import { Loader2, RefreshCw } from "lucide-react";
 import type { PipelineLogEntry } from "@/lib/agents/pipeline-logger";
 import { PipelineLogPanel } from "@/components/pipeline-log-panel";
 
@@ -40,37 +40,48 @@ export function PipelineLogSidePanel({
   }, [load, refreshKey]);
 
   return (
-    <aside className="flex h-full min-w-0 flex-col overflow-hidden border-r border-zinc-900 bg-zinc-950">
-      <div className="flex shrink-0 items-center justify-between border-b border-zinc-900 px-4 py-3">
-        <div className="flex items-center gap-2 text-xs font-bold text-[#F4F7FA]">
-          <ScrollText className="size-4 text-[#B5A075]" />
-          执行日志
-        </div>
+    <aside className="flex h-full min-w-0 flex-col overflow-hidden">
+      <div className="vad-inspector-toolbar">
+        <span>{entries.length} 条日志</span>
         <button
           type="button"
           onClick={() => void load()}
           disabled={loading}
-          className="inline-flex items-center gap-1 text-[10px] font-bold text-[#B5A075] disabled:opacity-40"
+          className="vad-agent-icon-btn disabled:opacity-40"
+          aria-label="刷新日志"
         >
           {loading ? (
-            <Loader2 className="size-3 animate-spin" />
+            <Loader2 className="size-3.5 animate-spin" />
           ) : (
-            <RefreshCw className="size-3" />
+            <RefreshCw className="size-3.5" />
           )}
-          刷新
         </button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+      <div className="vad-inspector-scroll">
         {error ? (
-          <p className="text-xs text-red-400">{error}</p>
+          <p className="text-[12px] text-[var(--danger)]">{error}</p>
         ) : loading && entries.length === 0 ? (
-          <p className="text-xs text-zinc-500">加载中…</p>
+          <div className="grid h-28 place-items-center text-[var(--muted)]">
+            <Loader2 className="size-4 animate-spin" />
+          </div>
+        ) : entries.length === 0 ? (
+          <div className="vad-inspector-empty">
+            <div>
+              <p className="text-[13px] font-medium tracking-[-0.02em]">还没有执行日志</p>
+              <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--muted)]">
+                Agent 跑生图或导出时，步骤会记在这里。
+              </p>
+            </div>
+          </div>
         ) : (
-          <PipelineLogPanel
-            entries={entries}
-            showHeader={false}
-            maxHeight="none"
-          />
+          <div className="vad-inspector-card">
+            <PipelineLogPanel
+              entries={entries}
+              showHeader={false}
+              tone="panel"
+              maxHeight="none"
+            />
+          </div>
         )}
       </div>
     </aside>

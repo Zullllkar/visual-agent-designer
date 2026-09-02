@@ -7,6 +7,8 @@ import { useProjectStore } from "@/store/project-store";
 import { useProjectStoreHydrated } from "@/lib/use-hydrated";
 import { CanvasSvg } from "@/lib/canvas/svg-renderer";
 import { HandoffDialog } from "@/components/handoff-dialog";
+import { briefDisplayFields } from "@/lib/targets/brief";
+import { resolveTargetId } from "@/lib/targets/resolve";
 
 const AGENTS = [
   { name: "Brief Agent", state: "done" },
@@ -44,7 +46,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
           </code>
         </p>
         <Link
-          href="/projects"
+          href="/"
           className="text-sm app-subtle underline hover:text-[var(--foreground)]"
         >
           回到项目列表
@@ -77,7 +79,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <Link
-              href="/projects"
+              href="/"
               className="inline-flex items-center gap-1 text-xs app-subtle hover:text-[var(--foreground)]"
             >
               <ArrowLeft className="size-3" />
@@ -196,24 +198,13 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
           </h2>
           {project.brief ? (
             <dl className="mt-3 space-y-3 text-sm">
-              <Row k="产品名" v={project.brief.productName} />
-              <Row k="定位" v={project.brief.positioning} />
-              <Row k="目标用户" v={project.brief.targetUser} />
-              <Row k="平台" v={project.brief.platform} />
+              <Row k="标题" v={project.brief.productName} />
+              {briefDisplayFields(project.brief, resolveTargetId(project)).map(
+                (field) => (
+                  <Row key={field.id} k={field.label} v={field.value} />
+                )
+              )}
               <Row k="视觉" v={project.brief.visualStyle} />
-              <div>
-                <dt className="text-xs app-subtle">核心功能</dt>
-                <dd className="mt-1 flex flex-wrap gap-1">
-                  {project.brief.coreFeatures.map((f) => (
-                    <span
-                      key={f}
-                      className="rounded-full bg-[var(--primary-soft)] px-2 py-0.5 text-[11px] text-[var(--primary)]"
-                    >
-                      {f}
-                    </span>
-                  ))}
-                </dd>
-              </div>
             </dl>
           ) : (
             <p className="mt-3 text-sm app-subtle">无 Brief。</p>

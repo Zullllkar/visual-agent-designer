@@ -2,8 +2,8 @@ import type { ImageProvider } from "./types";
 
 export const MockImageProvider: ImageProvider = {
   name: "mock-image",
-  async generateImage({ prompt, width, height }) {
-    await new Promise((r) => setTimeout(r, 150));
+  async generateImage({ prompt, width, height, signal }) {
+    await abortableDelay(150, signal);
     const svg = renderPlaceholderSvg({ prompt, width, height });
     const dataUrl = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
     return {
@@ -14,6 +14,20 @@ export const MockImageProvider: ImageProvider = {
     };
   },
 };
+
+function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("Cancelled", "AbortError"));
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => {
+      clearTimeout(timer);
+      reject(new DOMException("Cancelled", "AbortError"));
+    }, { once: true });
+  });
+}
 
 function renderPlaceholderSvg(opts: {
   prompt: string;

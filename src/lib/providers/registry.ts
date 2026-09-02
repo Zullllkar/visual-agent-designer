@@ -9,6 +9,7 @@ import {
 import { createOpenAICompatibleImageProvider } from "./image/openai-compatible";
 import type { OpenAIImageConfig } from "./image/openai-image-types";
 import { createGeminiImageProvider, type GeminiAspectRatio } from "./image/gemini";
+import { createReplicateImageProvider } from "./image/replicate";
 import { createAnthropicProvider } from "./llm/anthropic";
 import { createGeminiProvider } from "./llm/gemini";
 /**
@@ -41,6 +42,12 @@ export interface ProviderConfig {
         model: string;
         baseURL?: string;
         aspectRatio?: string;
+      }
+    | {
+        kind: "replicate";
+        apiKey: string;
+        model: string;
+        baseURL?: string;
       };
   /**
    * 是否启用 Vision Critic：把每页 rasterize 成 PNG 喂给视觉模型。
@@ -66,6 +73,28 @@ export interface ProviderConfig {
     contentTone?: "professional" | "friendly" | "playful" | "luxury" | "technical";
     /** Content Agent 输出语言 */
     contentLocale?: "zh-CN" | "en-US" | "bilingual";
+  };
+  /** 视频 Provider 配置 */
+  video?:
+    | { kind: "mock" }
+    | { kind: "custom"; apiKey: string; model: string; baseURL?: string };
+  /** 生成偏好 */
+  generationPrefs?: {
+    /** auto: Agent 自动选择模型和参数; manual: 用户指定 */
+    mode?: "auto" | "manual";
+    /** 偏好的图像模型列表 */
+    preferredImageModels?: string[];
+    /** 偏好的视频模型列表 */
+    preferredVideoModels?: string[];
+    /** 默认图像尺寸 */
+    defaultImageSize?: { width: number; height: number };
+    /** 默认视频参数 */
+    defaultVideoParams?: {
+      duration?: number;
+      width?: number;
+      height?: number;
+      fps?: number;
+    };
   };
 }
 
@@ -149,6 +178,14 @@ function resolveImage(cfg?: ProviderConfig["image"]): ImageProvider {
       model: cfg.model,
       baseURL: cfg.baseURL,
       aspectRatio: cfg.aspectRatio as GeminiAspectRatio | undefined,
+    });
+  }
+  if (cfg.kind === "replicate") {
+    if (!cfg.apiKey || !cfg.model) return MockImageProvider;
+    return createReplicateImageProvider({
+      apiKey: cfg.apiKey,
+      model: cfg.model,
+      baseURL: cfg.baseURL,
     });
   }
   return MockImageProvider;

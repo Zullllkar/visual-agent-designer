@@ -2,7 +2,7 @@
 
 > ih
 
-**生成自 Visual Agent Designer**。本目录是给 coding agent 的开发上下文包。
+**生成自 Vibeboard**。本目录是给 coding agent 的开发上下文包。
 
 ## 项目信息
 

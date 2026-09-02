@@ -49,9 +49,9 @@ export function DaemonStatusHint() {
       <div>
         <p className="font-semibold">
           {connected
-            ? "VAD Daemon 已连接"
+            ? "Vibeboard Daemon 已连接"
             : status.enabled
-              ? "VAD Daemon 未连接（已回退内联写盘）"
+              ? "Vibeboard Daemon 未连接（已回退内联写盘）"
               : "内联落盘模式"}
         </p>
         <p className="mt-0.5 leading-relaxed opacity-90">

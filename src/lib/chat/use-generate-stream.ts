@@ -115,6 +115,15 @@ export function useGenerateStream(opts?: UseGenerateStreamOptions) {
             }
             return;
           }
+          if (ev.type === "thinking") {
+            try {
+              const data = JSON.parse(ev.data) as { text?: string };
+              if (data.text) pushLive("thinking", { text: data.text });
+            } catch {
+              /* ignore */
+            }
+            return;
+          }
           if (ev.type === "error") {
             try {
               const data = JSON.parse(ev.data) as { message?: string };

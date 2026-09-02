@@ -1,5 +1,3 @@
-"use client";
-
 import JSZip from "jszip";
 import type { HandoffArtifact } from "./types";
 

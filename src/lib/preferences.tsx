@@ -24,7 +24,7 @@ const DEFAULT_PREFERENCES: PreferencesSnapshot = {
 
 const dictionaries = {
   zh: {
-    "app.name": "Visual Agent Designer",
+    "app.name": "Vibeboard",
     "app.badge": "alpha",
     "nav.projects": "项目",
     "nav.github": "GitHub",
@@ -40,7 +40,7 @@ const dictionaries = {
     "home.titleLine1": "把产品想法，",
     "home.titleLine2": "变成可交付的视觉素材。",
     "home.description":
-      "描述你的产品，VAD 在本地无限画布上跑 Brief → 视觉方向 → 生图。输出高保真图片素材与设计上下文，交给 Cursor / Claude Code 落地——不是网页结构代码框。",
+      "描述你的产品，Vibeboard 在本地无限画布上跑 Brief → 视觉方向 → 生图。输出高保真图片素材与设计上下文，交给 Cursor / Claude Code 落地——不是网页结构代码框。",
     "home.viewProjects": "打开项目列表",
     "home.footer": "本地优先开源设计工作台",
     "home.powered": "Next.js · tldraw · Tailwind",
@@ -102,9 +102,11 @@ const dictionaries = {
     "ide.suggestions": "建议操作",
     "ide.openImages": "打开素材生成面板",
     "ide.inputPlaceholder": "描述要生成或修改的视觉内容...",
+    "canvas.family.placeholder": "页面名称",
+    "canvas.family.derived": "派生",
   },
   en: {
-    "app.name": "Visual Agent Designer",
+    "app.name": "Vibeboard",
     "app.badge": "alpha",
     "nav.projects": "Projects",
     "nav.github": "GitHub",
@@ -120,7 +122,7 @@ const dictionaries = {
     "home.titleLine1": "Turn a product idea",
     "home.titleLine2": "into deliverable visual assets.",
     "home.description":
-      "Describe your product. VAD runs Brief → design direction → image generation on a local infinite canvas. You get high-fidelity image assets and design context for Cursor / Claude Code — not webpage structure frames.",
+      "Describe your product. Vibeboard runs Brief → design direction → image generation on a local infinite canvas. You get high-fidelity image assets and design context for Cursor / Claude Code — not webpage structure frames.",
     "home.viewProjects": "Open project list",
     "home.footer": "Local-first open-source design workbench",
     "home.powered": "Next.js · tldraw · Tailwind",
@@ -182,6 +184,8 @@ const dictionaries = {
     "ide.suggestions": "Suggested actions",
     "ide.openImages": "Open image workspace",
     "ide.inputPlaceholder": "Describe the visual content to generate or edit...",
+    "canvas.family.placeholder": "Page name",
+    "canvas.family.derived": "derived",
   },
 } as const;
 
@@ -203,6 +207,12 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     initializePreferences();
+    const id = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        document.documentElement.classList.remove("vad-theme-booting");
+      });
+    });
+    return () => window.cancelAnimationFrame(id);
   }, []);
 
   useEffect(() => {
@@ -226,11 +236,17 @@ export function usePreferences() {
   return value;
 }
 
+export function resolveTheme(theme: ThemePreference): "light" | "dark" {
+  return theme === "dark" ? "dark" : "light";
+}
+
 function createPreferencesApi(snapshot: PreferencesSnapshot) {
+  const resolvedTheme = resolveTheme(snapshot.theme);
   return {
     ...snapshot,
+    resolvedTheme,
     setTheme,
-    toggleTheme: () => setTheme(snapshot.theme === "dark" ? "light" : "dark"),
+    toggleTheme: () => setTheme(resolvedTheme === "dark" ? "light" : "dark"),
     setLocale,
     t: (key: TranslationKey) =>
       dictionaries[snapshot.locale][key] ?? dictionaries.zh[key] ?? key,
@@ -246,7 +262,7 @@ function initializePreferences() {
       stored?.locale ??
       (window.navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en"),
   };
-  updatePreferences(next, false);
+  updatePreferences(next, !stored?.theme);
 }
 
 function setTheme(theme: ThemePreference) {
@@ -268,8 +284,9 @@ function updatePreferences(next: PreferencesSnapshot, persist: boolean) {
 
 function applyPreferences(snapshot: PreferencesSnapshot) {
   if (typeof document === "undefined") return;
-  document.documentElement.classList.toggle("dark", snapshot.theme === "dark");
-  document.documentElement.dataset.theme = snapshot.theme;
+  const resolved = resolveTheme(snapshot.theme);
+  document.documentElement.classList.toggle("dark", resolved === "dark");
+  document.documentElement.dataset.theme = resolved;
   document.documentElement.lang = snapshot.locale === "zh" ? "zh-CN" : "en";
 }
 

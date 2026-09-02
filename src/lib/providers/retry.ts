@@ -15,6 +15,8 @@ export interface RetryOptions {
   timeoutMs?: number;
   /** 是否应重试该错误，默认按 status / 消息判断 */
   shouldRetry?: (err: unknown, attempt: number) => boolean;
+  /** 取消请求及重试等待。 */
+  signal?: AbortSignal;
 }
 
 const DEFAULT_RETRYABLE = /429|5\d{2}|timeout|ETIMEDOUT|ECONNRESET|fetch failed|socket/i;
@@ -29,8 +31,22 @@ function isRetryableError(err: unknown): boolean {
   return false;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(abortError());
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(abortError());
+      },
+      { once: true }
+    );
+  });
 }
 
 /**
@@ -48,17 +64,10 @@ export async function withRetry<T>(
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (opts.signal?.aborted) throw abortError();
     try {
       if (timeoutMs > 0) {
-        return await Promise.race([
-          fn(),
-          new Promise<never>((_, reject) =>
-            setTimeout(
-              () => reject(new Error(`timeout after ${timeoutMs}ms`)),
-              timeoutMs
-            )
-          ),
-        ]);
+        return await withTimeout(fn(), timeoutMs, opts.signal);
       }
       return await fn();
     } catch (e) {
@@ -67,9 +76,30 @@ export async function withRetry<T>(
         throw e;
       }
       const delay = baseDelayMs * Math.pow(2, attempt - 1);
-      await sleep(delay);
+      await sleep(delay, opts.signal);
     }
   }
 
   throw lastError;
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, signal?: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`timeout after ${timeoutMs}ms`)),
+      timeoutMs
+    );
+    const onAbort = () => reject(abortError());
+    signal?.addEventListener("abort", onAbort, { once: true });
+    promise.then(resolve, reject).finally(() => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    });
+  });
+}
+
+function abortError(): Error {
+  const error = new Error("Request cancelled");
+  error.name = "AbortError";
+  return error;
 }

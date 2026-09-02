@@ -1,50 +1,152 @@
 import type { HandoffArtifact, HandoffTarget } from "./types";
 import type { ProjectFile } from "@/lib/project/schema";
+import type { AssetDesignSpec } from "@/lib/project/design-spec-schema";
 import {
   deriveDesignContext,
   summarizeDesignContext,
 } from "@/lib/project/design-context";
+import {
+  buildHeuristicSpec,
+  mergeSpecTokensIntoHandoffTokens,
+  renderAssetDesignSpecMarkdown,
+} from "@/lib/design-spec/spec-format";
 import { buildKickoffClipboardText } from "./kickoff-prompt";
+import { appendMaterializationFiles } from "./material-pack";
+import { toDtcgTokens } from "./tokens-dtcg";
+import { resolveHandoffPackKind, type HandoffPackKind } from "./pack-kind";
+import { briefDisplayFields } from "@/lib/targets/brief";
+import { getTargetRecipe } from "@/lib/targets/catalog";
+import { resolveTargetId } from "@/lib/targets/resolve";
 
-/**
- * Handoff Target 工厂
- * --------------------------------------------------------------
- * Lovart 式交付：视觉素材图 + prompt + Brief/设计上下文，供 coding agent 使用。
- * 不再以 Canvas JSON / 页面 SVG 结构稿作为主交付物。
- *
- * - markdown   : 通用 README + SPEC
- * - cursor     : 多一个 .cursorrules
- * - claude-code: 多一个 CLAUDE.md
- * - codex      : 多一个 AGENTS.md
- */
+type AssetStatus = "included" | "remote_failed" | "unsupported" | "missing";
+
+interface HandoffAssetEntry {
+  id: string;
+  index: number;
+  kind: "final" | "reference";
+  file?: string;
+  urlFile?: string;
+  status: AssetStatus;
+  width: number;
+  height: number;
+  role?: string;
+  source?: string;
+  model?: string;
+  prompt?: string;
+  originalSrc: string;
+  error?: string;
+}
+
+interface HandoffBuildState {
+  finalAssets: HandoffAssetEntry[];
+  references: HandoffAssetEntry[];
+  warnings: string[];
+}
+
+interface MaterializedImage {
+  content: string | Uint8Array;
+  ext: string;
+  mime: string;
+  sourceType: "data" | "remote";
+}
+
 export function createHandoffTarget(
   name: HandoffTarget["name"]
 ): HandoffTarget {
   return {
     name,
-    async build({ project }) {
-      return buildArtifact(project, name);
+    async build({ project, requestOrigin }) {
+      return buildArtifact(project, name, requestOrigin);
     },
   };
 }
 
-function buildArtifact(
+async function buildArtifact(
   project: ProjectFile,
-  target: HandoffTarget["name"]
-): HandoffArtifact {
+  target: HandoffTarget["name"],
+  requestOrigin?: string
+): Promise<HandoffArtifact> {
+  const pack = resolveHandoffPackKind(project);
+  if (pack !== "code-kickoff") {
+    return buildNonCodeArtifact(project, pack, requestOrigin);
+  }
+
   const files: HandoffArtifact["files"] = [];
   const designContext = deriveDesignContext(project);
+  const state: HandoffBuildState = {
+    finalAssets: [],
+    references: [],
+    warnings: [],
+  };
 
-  files.push({
-    path: "design/project.json",
-    content: JSON.stringify(project, null, 2),
-  });
-  if (designContext) {
-    files.push({
-      path: "design/design-context.json",
-      content: JSON.stringify(designContext, null, 2),
-    });
-  }
+  await appendFinalAssets(project, files, state, requestOrigin);
+  await appendReferenceAssets(project, files, state, requestOrigin);
+
+  const materialStats = await appendMaterializationFiles(
+    project,
+    files,
+    async (src) => {
+      const out = await materializeImage(src, requestOrigin).catch(() => null);
+      return out ? { content: out.content, ext: out.ext } : null;
+    },
+    state.warnings
+  );
+
+  const designSpecs = collectDesignSpecs(project);
+  appendDesignSpecFiles(files, designSpecs, state);
+
+  const baseTokens = extractTokens(project);
+  const tokens = mergeSpecTokensIntoHandoffTokens(baseTokens, designSpecs);
+  const specByAssetId = new Map(designSpecs.map((s) => [s.assetId, s]));
+  // Kickoff / project.json 带上导出时补全的规格（含 heuristic），与 design/specs 一致
+  const projectWithSpecs: ProjectFile = {
+    ...project,
+    assets: (project.assets ?? []).map((a) => {
+      const spec = specByAssetId.get(a.id);
+      return spec ? { ...a, designSpec: a.designSpec ?? spec } : a;
+    }),
+  };
+
+  files.push(
+    { path: "README.md", content: renderReadme(project, target, state, designSpecs) },
+    { path: "SPEC.md", content: renderSpec(project, state, designSpecs) },
+    { path: "IMPLEMENTATION.md", content: renderImplementation(project, state, designSpecs) },
+    { path: "ASSET_MAP.md", content: renderAssetMap(project, state, designSpecs) },
+    {
+      path: "handoff-report.json",
+      content: JSON.stringify(
+        buildReport(project, target, state, designSpecs, materialStats),
+        null,
+        2
+      ),
+    },
+    { path: "design/project.json", content: JSON.stringify(projectWithSpecs, null, 2) },
+    { path: "design/tokens.json", content: JSON.stringify(tokens, null, 2) },
+    {
+      path: "design/tokens.dtcg.json",
+      content: JSON.stringify(toDtcgTokens(tokens), null, 2),
+    },
+    {
+      path: "design/specs/index.json",
+      content: JSON.stringify(
+        {
+          count: designSpecs.length,
+          specs: designSpecs.map((s) => ({
+            assetId: s.assetId,
+            screenType: s.screenType,
+            source: s.source,
+            summary: s.summary,
+            path: `design/specs/${s.assetId}.md`,
+          })),
+        },
+        null,
+        2
+      ),
+    },
+    { path: "assets/manifest.json", content: JSON.stringify(buildAssetManifest(state), null, 2) },
+    { path: "assets/model-runs.json", content: JSON.stringify(buildModelRuns(projectWithSpecs, state), null, 2) },
+    { path: `prompts/${target}-kickoff.md`, content: renderKickoffPrompt(projectWithSpecs, target) }
+  );
 
   if (project.brief) {
     files.push({
@@ -54,521 +156,1024 @@ function buildArtifact(
   }
   if (project.designDirection) {
     files.push({
-      path: "design/design-direction.json",
+      path: "design/direction.json",
       content: JSON.stringify(project.designDirection, null, 2),
     });
   }
-
-  files.push({
-    path: "design/tokens.json",
-    content: JSON.stringify(extractTokens(project), null, 2),
-  });
-
-  files.push({
-    path: "README.md",
-    content: renderReadme(project),
-  });
-
-  files.push({
-    path: "SPEC.md",
-    content: renderSpec(project),
-  });
-
-  if (target === "cursor") {
+  if (designContext) {
     files.push({
-      path: ".cursorrules",
-      content: renderCursorRules(project),
-    });
-  } else if (target === "claude-code") {
-    files.push({
-      path: "CLAUDE.md",
-      content: renderClaudeMd(project),
-    });
-  } else if (target === "codex") {
-    files.push({
-      path: "AGENTS.md",
-      content: renderAgentsMd(project),
+      path: "design/design-context.json",
+      content: JSON.stringify(designContext, null, 2),
     });
   }
 
-  files.push({
-    path: `prompts/${target}-kickoff.md`,
-    content: renderKickoffPrompt(project, target),
-  });
-
-  // 素材清单（给人读）
-  files.push({
-    path: "design/assets/MANIFEST.md",
-    content: renderAssetsManifest(project),
-  });
-
-  appendImageAssets(project, files);
-  appendReferenceAssets(project, files);
+  if (target === "cursor") {
+    files.push({ path: ".cursorrules", content: renderCursorRules(project) });
+  } else if (target === "claude-code") {
+    files.push({ path: "CLAUDE.md", content: renderClaudeMd(project) });
+  } else if (target === "codex") {
+    files.push({ path: "AGENTS.md", content: renderAgentsMd(project) });
+  }
 
   return { files };
 }
 
-/**
- * 把 project.assets[] 和 page 内的 image node 的 generation 元数据合并：
- *   - 候选图：解码 data URL 写入 design/assets/*
- *   - 远端 URL（https://...）：写一个占位 .url.txt，避免下载阻塞
- *   - model-runs.json：完整 metadata 数组，供追溯模型/prompt/seed
- */
-function appendImageAssets(
+async function buildNonCodeArtifact(
   project: ProjectFile,
-  files: HandoffArtifact["files"]
-) {
-  const runs: Array<Record<string, unknown>> = [];
-  const assets = project.assets ?? [];
+  pack: HandoffPackKind,
+  requestOrigin?: string
+): Promise<HandoffArtifact> {
+  const files: HandoffArtifact["files"] = [];
+  const state: HandoffBuildState = {
+    finalAssets: [],
+    references: [],
+    warnings: [],
+  };
 
-  for (const a of assets) {
-    const fname = assetFileName(a.id, a.src);
-    const content = decodeAssetSrc(a.src);
-    if (content != null) {
-      files.push({ path: `design/assets/${fname}`, content });
-    } else {
-      // 不是 data URL 时直接记 url，方便用户自取
-      files.push({
-        path: `design/assets/${a.id}.url.txt`,
-        content: a.src,
-      });
-    }
-    runs.push({
-      kind: "asset",
-      id: a.id,
-      file: `design/assets/${fname}`,
-      prompt: a.prompt,
-      model: a.model,
-      seed: a.seed,
-      width: a.width,
-      height: a.height,
-      durationMs: a.durationMs,
-      costUsd: a.costUsd,
-      status: a.status,
-      batchId: a.batchId,
-      source: a.source,
-      parentAssetId: a.parentAssetId,
-      variantGroupId: a.variantGroupId,
-      role: a.role,
-      usedInNodes: a.usedInNodes,
-      editInstruction: a.editInstruction,
-      referenceAssetIds: a.referenceAssetIds,
-      designContextVersion: a.designContextVersion,
-      createdAt: a.createdAt,
-      usedInPages: a.usedInPages,
+  await appendFinalAssets(project, files, state, requestOrigin);
+  await appendReferenceAssets(project, files, state, requestOrigin);
+
+  const targetId = resolveTargetId(project);
+  const recipe = getTargetRecipe(targetId);
+  const fields = project.brief
+    ? briefDisplayFields(project.brief, targetId)
+    : [];
+  const card = recipe.directionCards.find(
+    (item) => item.id === project.directionCardId
+  );
+
+  files.push({
+    path: "README.md",
+    content: renderNonCodeReadme(project, pack, recipe.label, state),
+  });
+  files.push({
+    path: "ASSET_USAGE.md",
+    content: renderAssetUsage(project, pack, state),
+  });
+  files.push({
+    path: "handoff-report.json",
+    content: JSON.stringify(
+      {
+        ok: state.finalAssets.some((asset) => asset.status === "included"),
+        pack,
+        targetId,
+        projectId: project.id,
+        generatedAt: new Date().toISOString(),
+        codingKickoff: false,
+        assets: {
+          finalTotal: state.finalAssets.length,
+          finalIncluded: state.finalAssets.filter((asset) => asset.status === "included")
+            .length,
+          referencesTotal: state.references.length,
+        },
+        warnings: state.warnings,
+      },
+      null,
+      2
+    ),
+  });
+  files.push({
+    path: "assets/manifest.json",
+    content: JSON.stringify(buildAssetManifest(state), null, 2),
+  });
+
+  if (project.brief) {
+    files.push({
+      path: "design/brief.json",
+      content: JSON.stringify(project.brief, null, 2),
+    });
+  }
+  if (project.designDirection) {
+    files.push({
+      path: "design/direction.json",
+      content: JSON.stringify(project.designDirection, null, 2),
     });
   }
 
-  if (runs.length > 0) {
+  if (pack === "art-bible") {
     files.push({
-      path: "design/model-runs.json",
-      content: JSON.stringify({ count: runs.length, runs }, null, 2),
+      path: "ART_BIBLE.md",
+      content: renderArtBible(project, recipe.label, fields, card, state),
     });
+  } else if (pack === "media-pack") {
+    files.push({
+      path: "COPY.md",
+      content: renderCopySheet(project, targetId, fields, state),
+    });
+  } else {
+    files.push({
+      path: "STYLE_NOTES.md",
+      content: renderStyleNotes(project, fields),
+    });
+  }
+
+  return { files };
+}
+
+function renderNonCodeReadme(
+  project: ProjectFile,
+  pack: HandoffPackKind,
+  targetLabel: string,
+  state: HandoffBuildState
+): string {
+  const kindLabel =
+    pack === "art-bible"
+      ? "美术包"
+      : pack === "media-pack"
+        ? "投放素材包"
+        : "风格草稿包";
+  const draftNote =
+    pack === "none"
+      ? [
+          "",
+          "这是探索草稿，不是施工包。不要交给 Cursor / Claude Code / Codex 当 UI 实现材料。",
+          "",
+        ]
+      : [
+          "",
+          "本包不是给 AI coding 工具的施工包，不含 React kickoff、Layout IR 或 design/specs。",
+          "",
+        ];
+  return [
+    `# ${project.title}`,
+    "",
+    `${kindLabel} · ${targetLabel}`,
+    "",
+    project.rawIdea || "",
+    ...draftNote,
+    "## 阅读顺序",
+    "",
+    pack === "art-bible"
+      ? "1. `ART_BIBLE.md`  2. `ASSET_USAGE.md`  3. `assets/final/*`"
+      : pack === "media-pack"
+        ? "1. `COPY.md`  2. `ASSET_USAGE.md`  3. `assets/final/*`"
+        : "1. `STYLE_NOTES.md`  2. `assets/final/*`",
+    "",
+    `定稿 ${state.finalAssets.filter((asset) => asset.status === "included").length}/${state.finalAssets.length}，参考 ${state.references.filter((asset) => asset.status === "included").length}/${state.references.length}。`,
+    ...(state.warnings.length
+      ? ["", "警告：", ...state.warnings.map((item) => `- ${item}`)]
+      : []),
+    "",
+  ].join("\n");
+}
+
+function renderArtBible(
+  project: ProjectFile,
+  targetLabel: string,
+  fields: Array<{ label: string; value: string }>,
+  card:
+    | { id: string; label: string; tokens: string[]; forbids: string[] }
+    | undefined,
+  state: HandoffBuildState
+): string {
+  const lines = [
+    `# 美术设定 · ${project.title}`,
+    "",
+    `目标：${targetLabel}`,
+    "",
+  ];
+  if (fields.length) {
+    lines.push("## Brief", "");
+    for (const field of fields) {
+      lines.push(`- ${field.label}：${field.value}`);
+    }
+    lines.push("");
+  }
+  if (card) {
+    lines.push("## 方向卡", "");
+    lines.push(`- ${card.label} (\`${card.id}\`)`);
+    if (card.tokens.length) lines.push(`- 关键词：${card.tokens.join("、")}`);
+    if (card.forbids.length) lines.push(`- 禁止：${card.forbids.join("、")}`);
+    lines.push("");
+  } else if (project.designDirection) {
+    lines.push("## 视觉方向", "");
+    lines.push(project.designDirection.summary, "");
+  }
+  lines.push("## 资产", "");
+  for (const asset of state.finalAssets) {
+    lines.push(
+      `- ${asset.file ?? asset.id}：${asset.role || "概念图"} ${asset.width}x${asset.height}`
+    );
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+
+function renderCopySheet(
+  project: ProjectFile,
+  targetId: ReturnType<typeof resolveTargetId>,
+  fields: Array<{ label: string; value: string }>,
+  state: HandoffBuildState
+): string {
+  const lines = [`# 文案表 · ${project.title}`, ""];
+  if (fields.length) {
+    for (const field of fields) {
+      lines.push(`- ${field.label}：${field.value}`);
+    }
+    lines.push("");
+  }
+  if (targetId === "social-cover") {
+    const hook = project.brief?.slots?.hook || project.brief?.positioning;
+    if (hook) {
+      lines.push("## 标题 / 钩子", "", hook, "");
+      lines.push("## 建议标签", "", "#封面 #开箱", "");
+    }
+  }
+  if (targetId === "promo-kv") {
+    const hook = project.brief?.slots?.hook;
+    const must = project.brief?.slots?.mustType;
+    if (hook) lines.push("## 卖点", "", hook, "");
+    if (must) lines.push("## 必须上的字", "", must, "");
+  }
+  if (targetId === "product-shot") {
+    lines.push("## 电商三件套", "", "- 主图", "- 卖点图", "- 场景图", "");
+  }
+  lines.push("## 配套图", "");
+  for (const asset of state.finalAssets) {
+    lines.push(`- ${asset.file ?? asset.id}  ${asset.width}x${asset.height}`);
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+
+function renderStyleNotes(
+  project: ProjectFile,
+  fields: Array<{ label: string; value: string }>
+): string {
+  const lines = [
+    `# 风格草稿 · ${project.title}`,
+    "",
+    "draft / 探索。选定方向后再锁定到界面、原画或投放目标。",
+    "",
+  ];
+  for (const field of fields) {
+    lines.push(`- ${field.label}：${field.value}`);
+  }
+  if (project.rawIdea) {
+    lines.push("", project.rawIdea);
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+
+function renderAssetUsage(
+  project: ProjectFile,
+  pack: HandoffPackKind,
+  state: HandoffBuildState
+): string {
+  const lines = [`# 资产用途 · ${project.title}`, ""];
+  if (!state.finalAssets.length) {
+    lines.push("本包没有定稿图。", "");
+    return lines.join("\n");
+  }
+  for (const asset of state.finalAssets) {
+    lines.push(`## ${asset.index}. ${asset.file ?? asset.id}`, "");
+    lines.push(`- 尺寸：${asset.width}x${asset.height}`);
+    if (asset.role) lines.push(`- 角色：${asset.role}`);
+    lines.push(`- 用途：${usageForNonCodeAsset(pack, asset.role, project)}`);
+    if (asset.prompt) {
+      lines.push("", "Prompt:", "", "```text", asset.prompt, "```");
+    }
+    lines.push("");
+  }
+  if (state.references.length) {
+    lines.push("## 参考", "");
+    for (const ref of state.references) {
+      lines.push(`- ${ref.file ?? ref.id} ${ref.width}x${ref.height}`);
+    }
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
+function usageForNonCodeAsset(
+  pack: HandoffPackKind,
+  role: string | undefined,
+  project: ProjectFile
+): string {
+  if (pack === "art-bible") {
+    if (role === "scene") return "场景 / 镜头，保持同一世界观";
+    if (role === "prop") return "道具，剪影清楚";
+    if (role === "icon") return "图标 / 界面装饰，不要画成 SaaS 首页";
+    return "角色立绘 / 概念图，主体剪影清楚";
+  }
+  if (pack === "media-pack") {
+    const shot = project.brief?.slots?.shot;
+    if (shot === "white") return "白底主图，外形以参考为准";
+    if (shot === "lifestyle") return "生活场景图";
+    if (shot === "macro") return "材质特写";
+    const channel = project.brief?.slots?.channel;
+    if (channel === "story") return "9:16 竖版投放";
+    if (channel === "square") return "1:1 方图";
+    if (channel === "set") return "多尺寸套装中的一张";
+    if (project.brief?.slots?.platform === "xhs") return "小红书竖版封面";
+    return "投放主视觉 / 封面";
+  }
+  return "风格探索草稿，不当最终成稿";
+}
+
+async function appendFinalAssets(
+  project: ProjectFile,
+  files: HandoffArtifact["files"],
+  state: HandoffBuildState,
+  requestOrigin?: string
+) {
+  const assets = activeAssets(project);
+  for (let i = 0; i < assets.length; i++) {
+    const asset = assets[i];
+    const baseName = assetBaseName("asset", i + 1, asset.role, asset.prompt, asset.width, asset.height);
+    const materialized = await materializeImage(asset.src, requestOrigin).catch((error: Error) => {
+      state.warnings.push(`Asset ${asset.id} could not be downloaded: ${error.message}`);
+      return null;
+    });
+
+    const entry: HandoffAssetEntry = {
+      id: asset.id,
+      index: i + 1,
+      kind: "final",
+      status: "missing",
+      width: asset.width,
+      height: asset.height,
+      role: asset.role,
+      source: asset.source,
+      model: asset.model,
+      prompt: asset.prompt,
+      originalSrc: asset.src,
+      error: asset.error,
+    };
+
+    if (materialized) {
+      const file = `assets/final/${baseName}.${materialized.ext}`;
+      files.push({ path: file, content: materialized.content });
+      entry.file = file;
+      entry.status = "included";
+    } else if (isRemoteLike(asset.src)) {
+      const urlFile = `assets/final/${baseName}.url.txt`;
+      files.push({ path: urlFile, content: asset.src });
+      entry.urlFile = urlFile;
+      entry.status = "remote_failed";
+      entry.error = entry.error ?? "Image URL could not be embedded; see .url.txt";
+    } else {
+      entry.status = "unsupported";
+      entry.error = entry.error ?? "Image source is not a supported data URL or fetchable URL.";
+    }
+
+    state.finalAssets.push(entry);
   }
 }
 
-function appendReferenceAssets(
+async function appendReferenceAssets(
   project: ProjectFile,
-  files: HandoffArtifact["files"]
+  files: HandoffArtifact["files"],
+  state: HandoffBuildState,
+  requestOrigin?: string
 ) {
   const references = project.references ?? [];
-  if (references.length === 0) return;
+  for (let i = 0; i < references.length; i++) {
+    const ref = references[i];
+    const baseName = assetBaseName("reference", i + 1, undefined, ref.label, ref.width, ref.height);
+    const materialized = await materializeImage(ref.src, requestOrigin).catch((error: Error) => {
+      state.warnings.push(`Reference ${ref.id} could not be downloaded: ${error.message}`);
+      return null;
+    });
 
-  const manifest = references.map((ref) => {
-    const fname = assetFileName(ref.id, ref.src);
-    const content = decodeAssetSrc(ref.src);
-    if (content != null) {
-      files.push({ path: `design/references/${fname}`, content });
-    } else {
-      files.push({
-        path: `design/references/${ref.id}.url.txt`,
-        content: ref.src,
-      });
-    }
-    return {
+    const entry: HandoffAssetEntry = {
       id: ref.id,
-      label: ref.label,
-      file: `design/references/${fname}`,
+      index: i + 1,
+      kind: "reference",
+      status: "missing",
       width: ref.width,
       height: ref.height,
       source: ref.source,
-      tags: ref.tags,
-      notes: ref.notes,
-      createdAt: ref.createdAt,
+      prompt: ref.notes ?? ref.label,
+      originalSrc: ref.src,
     };
-  });
 
-  files.push({
-    path: "design/references.json",
-    content: JSON.stringify({ count: manifest.length, references: manifest }, null, 2),
-  });
-}
-
-/** 选择文件名：尽量保留扩展名，否则按 mime 推断。 */
-function assetFileName(id: string, src: string): string {
-  // data:image/png;base64,...  / data:image/svg+xml;utf8,...
-  const m = src.match(/^data:image\/(png|jpeg|jpg|webp|svg\+xml|gif)/i);
-  if (m) {
-    const ext = m[1].toLowerCase() === "svg+xml" ? "svg" : m[1].toLowerCase();
-    return `${id}.${ext}`;
-  }
-  return `${id}.png`;
-}
-
-/**
- * 把 data URL 解码成 JSZip 可吞下的内容：
- *   - base64 PNG/JPEG/WEBP → Uint8Array
- *   - utf8 SVG → string
- *   - 非 data URL → null（调用方写占位文件）
- */
-function decodeAssetSrc(src: string): string | Uint8Array | null {
-  const dataMatch = src.match(/^data:([^,;]+)(;base64)?(;[^,]+)?,(.+)$/);
-  if (!dataMatch) return null;
-  const isB64 = !!dataMatch[2];
-  const payload = dataMatch[4];
-  if (isB64) {
-    if (typeof atob !== "undefined") {
-      const bin = atob(payload);
-      const u8 = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
-      return u8;
+    if (materialized) {
+      const file = `assets/references/${baseName}.${materialized.ext}`;
+      files.push({ path: file, content: materialized.content });
+      entry.file = file;
+      entry.status = "included";
+    } else if (isRemoteLike(ref.src)) {
+      const urlFile = `assets/references/${baseName}.url.txt`;
+      files.push({ path: urlFile, content: ref.src });
+      entry.urlFile = urlFile;
+      entry.status = "remote_failed";
+      entry.error = "Reference URL could not be embedded; see .url.txt";
+    } else {
+      entry.status = "unsupported";
+      entry.error = "Reference source is not a supported data URL or fetchable URL.";
     }
-    // Node 环境
-    return Buffer.from(payload, "base64");
+
+    state.references.push(entry);
   }
-  return decodeURIComponent(payload);
 }
 
-/* ───────────────────────── 内容生成 ───────────────────────── */
+async function materializeImage(
+  src: string,
+  requestOrigin?: string
+): Promise<MaterializedImage | null> {
+  if (!src) return null;
+  const data = decodeDataUrl(src);
+  if (data) return data;
 
-function activeAssets(p: ProjectFile) {
-  return (p.assets ?? []).filter((a) => a.status !== "discarded");
+  const url = resolveFetchableUrl(src, requestOrigin);
+  if (!url) return null;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const mime = normalizeMime(res.headers.get("content-type")) ?? mimeFromUrl(src) ?? "image/png";
+  if (!mime.startsWith("image/")) {
+    throw new Error(`URL did not return an image (${mime})`);
+  }
+  const content = new Uint8Array(await res.arrayBuffer());
+  return {
+    content,
+    ext: extensionFromMime(mime) ?? extensionFromUrl(src) ?? "png",
+    mime,
+    sourceType: "remote",
+  };
 }
 
-function renderAssetsManifest(p: ProjectFile): string {
-  const assets = activeAssets(p);
-  const lines = [
-    `# 视觉素材清单`,
-    "",
-    `共 ${assets.length} 张可交付素材。`,
-    "",
-  ];
-  if (assets.length === 0) {
-    lines.push("_暂无素材。请先在 VAD 中用 Agent 生成图片。_");
-    return lines.join("\n");
+function resolveFetchableUrl(src: string, requestOrigin?: string): string | null {
+  if (/^https?:\/\//i.test(src)) return src;
+  if (src.startsWith("/") && requestOrigin) {
+    return new URL(src, requestOrigin).toString();
   }
-  assets.forEach((a, i) => {
-    const fname = assetFileName(a.id, a.src);
-    lines.push(`## ${i + 1}. \`${fname}\``);
-    lines.push("");
-    lines.push(`- 尺寸: ${a.width} × ${a.height}`);
-    lines.push(`- 状态: ${a.status ?? "candidate"}`);
-    if (a.role) lines.push(`- 角色: ${a.role}`);
-    if (a.model) lines.push(`- 模型: ${a.model}`);
-    lines.push(`- Prompt:`);
-    lines.push("");
-    lines.push("```");
-    lines.push(a.prompt);
-    lines.push("```");
-    lines.push("");
+  return null;
+}
+
+function decodeDataUrl(src: string): MaterializedImage | null {
+  const match = src.match(/^data:([^,;]+)((?:;[^,]+)*),(.*)$/);
+  if (!match) return null;
+  const mime = normalizeMime(match[1]) ?? "image/png";
+  const meta = match[2] ?? "";
+  const payload = match[3] ?? "";
+  const ext = extensionFromMime(mime) ?? "png";
+  if (meta.includes(";base64")) {
+    const bin =
+      typeof atob !== "undefined"
+        ? atob(payload)
+        : Buffer.from(payload, "base64").toString("binary");
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return { content: bytes, ext, mime, sourceType: "data" };
+  }
+  return {
+    content: decodeURIComponent(payload),
+    ext,
+    mime,
+    sourceType: "data",
+  };
+}
+
+function collectDesignSpecs(project: ProjectFile): AssetDesignSpec[] {
+  const assets = activeAssets(project);
+  return assets.map((asset) => {
+    if (asset.designSpec) return asset.designSpec;
+    // Handoff always ships a structural middle layer; heuristic if user skipped「生成规格」
+    return buildHeuristicSpec(asset, project);
   });
-  return lines.join("\n");
 }
 
-function renderReadme(p: ProjectFile): string {
-  const b = p.brief;
-  const assets = activeAssets(p);
-  return [
-    `# ${p.title}`,
-    "",
-    `> ${p.rawIdea}`,
-    "",
-    "**生成自 Visual Agent Designer**。本目录是给 coding agent 的**视觉素材交付包**（图片 + prompt + 设计上下文），不是网页结构代码框。",
-    "",
-    "## 项目信息",
-    "",
-    b
-      ? [
-          `- 产品名: ${b.productName}`,
-          `- 定位: ${b.positioning}`,
-          `- 目标用户: ${b.targetUser}`,
-          `- 平台: ${b.platform}`,
-          `- 视觉风格: ${b.visualStyle}`,
-          `- 核心功能: ${b.coreFeatures.join(" / ")}`,
-        ].join("\n")
-      : "- 暂无 Brief。",
-    "",
-    `## 素材概览（${assets.length} 张）`,
-    "",
-    assets.length > 0
-      ? assets
-          .slice(0, 12)
-          .map(
-            (a) =>
-              `- \`${assetFileName(a.id, a.src)}\` · ${a.width}×${a.height}${a.role ? ` · ${a.role}` : ""}`
-          )
-          .join("\n")
-      : "- 暂无素材文件。",
-    "",
-    "## 目录结构",
-    "",
-    "```",
-    "design/",
-    "  project.json          # 完整项目数据",
-    "  brief.json            # 产品 Brief",
-    "  design-direction.json # 视觉方向",
-    ...(deriveDesignContext(p)
-      ? ["  design-context.json   # 项目级设计记忆"]
-      : []),
-    "  tokens.json           # 设计 token",
-    "  assets/               # ★ 可交付视觉素材（PNG 等）",
-    "    MANIFEST.md         # 素材清单 + prompt",
-    "    model-runs.json     # 生图元数据",
-    ...(p.references?.length ? ["  references/           # 用户参考图"] : []),
-    "prompts/                # coding agent 启动 prompt",
-    "SPEC.md                 # 产品与实现规范",
-    "```",
-    "",
-    "## 推荐使用方式",
-    "",
-    "1. 在 Cursor / Claude Code / Codex 里打开本目录",
-    "2. 阅读 `SPEC.md` 与 `design/assets/MANIFEST.md`",
-    "3. 把 `design/assets/*` 图片当作 UI 参考 / 插图资源嵌入实现",
-    "4. 按 `prompts/<agent>-kickoff.md` 启动开发",
-    "",
-  ].join("\n");
-}
-
-function renderSpec(p: ProjectFile): string {
-  const b = p.brief;
-  const designContext = deriveDesignContext(p);
-  const assets = activeAssets(p);
-  const lines: string[] = [];
-  lines.push(`# ${p.title} · 产品规范`);
-  lines.push("");
-  lines.push("## 1. 产品概述");
-  lines.push("");
-  lines.push(`**原始想法**: ${p.rawIdea}`);
-  lines.push("");
-  if (b) {
-    lines.push(`**定位**: ${b.positioning}`);
-    lines.push(`**目标用户**: ${b.targetUser}`);
-    lines.push(`**平台**: ${b.platform}`);
-    lines.push(`**视觉风格**: ${b.visualStyle}`);
-    lines.push("");
-    lines.push("### 核心功能");
-    lines.push("");
-    b.coreFeatures.forEach((f) => lines.push(`- ${f}`));
-    lines.push("");
-    lines.push("### 关键场景");
-    lines.push("");
-    b.scenarios.forEach((s) => lines.push(`- ${s}`));
-    lines.push("");
-  }
-
-  if (p.designDirection) {
-    lines.push("## 2. 视觉方向");
-    lines.push("");
-    lines.push(p.designDirection.summary);
-    if (p.designDirection.moodKeywords.length > 0) {
-      lines.push("");
-      lines.push(`**气质关键词**: ${p.designDirection.moodKeywords.join(" · ")}`);
-    }
-    lines.push("");
-  }
-
-  const sectionDesign = p.designDirection ? 3 : 2;
-  if (designContext) {
-    lines.push(`## ${sectionDesign}. 设计记忆`);
-    lines.push("");
-    lines.push(
-      "编码实现必须保持以下品牌、视觉、文案和组件一致性。完整 JSON 见 `design/design-context.json`。"
-    );
-    lines.push("");
-    lines.push("```");
-    lines.push(summarizeDesignContext(designContext));
-    lines.push("```");
-    lines.push("");
-    lines.push("### 色板");
-    lines.push("");
-    designContext.colorTokens.forEach((token) => {
-      lines.push(`- ${token.name}: \`${token.value}\` — ${token.usage}`);
+function appendDesignSpecFiles(
+  files: HandoffArtifact["files"],
+  specs: AssetDesignSpec[],
+  state: HandoffBuildState
+) {
+  const byId = new Map(state.finalAssets.map((e) => [e.id, e]));
+  for (const spec of specs) {
+    const entry = byId.get(spec.assetId);
+    files.push({
+      path: `design/specs/${spec.assetId}.md`,
+      content: renderAssetDesignSpecMarkdown(spec, {
+        file: entry?.file ?? entry?.urlFile,
+        prompt: entry?.prompt,
+      }),
     });
+    files.push({
+      path: `design/specs/${spec.assetId}.json`,
+      content: JSON.stringify(spec, null, 2),
+    });
+  }
+}
+
+function renderReadme(
+  project: ProjectFile,
+  target: HandoffTarget["name"],
+  state: HandoffBuildState,
+  designSpecs: AssetDesignSpec[]
+): string {
+  const b = project.brief;
+  return [
+    `# ${project.title}`,
+    "",
+    "This is a structured Vibeboard handoff package for implementation in Cursor, Claude Code, Codex, or another coding agent.",
+    "",
+    "## Read Order",
+    "",
+    "1. `SPEC.md` - product and feature requirements.",
+    "2. `ASSET_MAP.md` - exact image assets and how to use them.",
+    "3. `IMPLEMENTATION.md` - implementation plan, constraints, and acceptance checks.",
+    "4. `design/specs/*` - per-asset structure, tokens, components (middle layer; not HTML).",
+    "5. `design/tokens.json` / `design/tokens.dtcg.json` and `design/design-context.json` - visual system data.",
+    "6. `assets/final/*` - final generated visual references.",
+    "",
+    "## Project Summary",
+    "",
+    `- Product: ${b?.productName ?? project.title}`,
+    `- Positioning: ${b?.positioning ?? project.rawIdea}`,
+    `- Target users: ${b?.targetUser ?? "Not specified"}`,
+    `- Platform: ${b?.platform ?? "Not specified"}`,
+    `- Visual style: ${b?.visualStyle ?? "Not specified"}`,
+    `- Export target: ${target}`,
+    `- Design specs: ${designSpecs.length} (vision=${designSpecs.filter((s) => s.source === "vision").length}, heuristic=${designSpecs.filter((s) => s.source === "heuristic").length})`,
+    "",
+    "## Package Structure",
+    "",
+    "```text",
+    "README.md",
+    "SPEC.md",
+    "IMPLEMENTATION.md",
+    "ASSET_MAP.md",
+    "handoff-report.json",
+    "design/",
+    "  brief.json",
+    "  direction.json",
+    "  design-context.json",
+    "  tokens.json",
+    "  specs/",
+    "    index.json",
+    "    <assetId>.md",
+    "    <assetId>.json",
+    "assets/",
+    "  final/          # generated images to use as primary visual references",
+    "  references/     # user supplied references",
+    "  manifest.json   # machine-readable asset manifest",
+    "  model-runs.json # prompt/model/run metadata",
+    "prompts/",
+    "```",
+    "",
+    "## Asset Health",
+    "",
+    `- Final assets in package: ${state.finalAssets.filter((a) => a.status === "included").length}/${state.finalAssets.length}`,
+    `- Reference assets in package: ${state.references.filter((a) => a.status === "included").length}/${state.references.length}`,
+    `- Design specs: ${designSpecs.length}`,
+    ...(state.warnings.length ? ["", "Warnings:", ...state.warnings.map((w) => `- ${w}`)] : []),
+    "",
+  ].join("\n");
+}
+
+function renderSpec(
+  project: ProjectFile,
+  state: HandoffBuildState,
+  designSpecs: AssetDesignSpec[]
+): string {
+  const b = project.brief;
+  const designContext = deriveDesignContext(project);
+  const lines: string[] = [];
+  lines.push(`# ${project.title} - Product Specification`, "");
+  lines.push("## 1. Product", "");
+  lines.push(`Original idea: ${project.rawIdea || project.title}`, "");
+  if (b) {
+    lines.push(`- Product name: ${b.productName}`);
+    lines.push(`- Positioning: ${b.positioning}`);
+    lines.push(`- Target users: ${b.targetUser}`);
+    lines.push(`- Platform: ${b.platform}`);
+    lines.push(`- Visual style: ${b.visualStyle}`);
     lines.push("");
-    lines.push("### 执行准则");
-    lines.push("");
-    designContext.doList.forEach((item) => lines.push(`- ${item}`));
-    lines.push("");
-    lines.push("### 避免事项");
-    lines.push("");
-    designContext.avoidList.forEach((item) => lines.push(`- ${item}`));
+    lines.push("### Core Features", "");
+    b.coreFeatures.forEach((feature) => lines.push(`- ${feature}`));
+    lines.push("", "### Key Scenarios", "");
+    b.scenarios.forEach((scenario) => lines.push(`- ${scenario}`));
     lines.push("");
   }
 
-  const sectionAssets =
-    (p.designDirection ? 1 : 0) + (designContext ? 1 : 0) + 2;
-  lines.push(`## ${sectionAssets}. 视觉素材（主交付）`);
-  lines.push("");
+  if (project.designDirection) {
+    lines.push("## 2. Visual Direction", "");
+    lines.push(project.designDirection.summary, "");
+    if (project.designDirection.moodKeywords.length) {
+      lines.push(`Mood keywords: ${project.designDirection.moodKeywords.join(", ")}`, "");
+    }
+  }
+
+  if (designContext) {
+    lines.push("## 3. Design Memory", "");
+    lines.push("Use `design/design-context.json` as the source of truth for visual consistency.", "");
+    lines.push("```text");
+    lines.push(summarizeDesignContext(designContext));
+    lines.push("```", "");
+  }
+
+  lines.push("## 4. Delivery Scope", "");
   lines.push(
-    `共 ${assets.length} 张。详见 \`design/assets/MANIFEST.md\`。实现时以这些图片为视觉参考，不要自行发明另一套 UI 气质。`
+    `This handoff package includes **${state.finalAssets.length}** selected final visual(s) and **${state.references.length}** reference(s).`
+  );
+  lines.push(
+    "The product brief may describe additional screens or features that are **out of scope** for this package. Implement only what is backed by `assets/final/*` and `design/specs/*` unless the user expands scope."
   );
   lines.push("");
-  assets.forEach((a, i) => {
-    lines.push(`### ${sectionAssets}.${i + 1} ${assetFileName(a.id, a.src)}`);
-    lines.push("");
-    lines.push(`- 尺寸: ${a.width} × ${a.height}`);
-    if (a.role) lines.push(`- 角色: ${a.role}`);
-    lines.push(`- Prompt: ${truncate(a.prompt, 120)}`);
-    lines.push("");
-  });
 
-  lines.push(`## ${sectionAssets + 1}. 实现要求`);
+  lines.push("## 5. Visual Assets", "");
+  lines.push(
+    `${state.finalAssets.length} final asset(s) are listed in ASSET_MAP.md. Use them as the primary source for layout, color, visual hierarchy, illustration style, and UI direction.`
+  );
   lines.push("");
-  if (designContext) {
+  state.finalAssets.forEach((asset) => {
+    lines.push(`- ${asset.file ?? asset.urlFile ?? asset.id}: ${asset.width}x${asset.height}${asset.role ? `, ${asset.role}` : ""}`);
+  });
+  lines.push("");
+
+  lines.push("## 6. Design Specs (structure middle layer)", "");
+  lines.push(
+    "Per-asset specs live in `design/specs/`. They describe layout, regions, tokens, and components — not HTML source. Prefer vision-extracted specs from Vibeboard「生成规格」."
+  );
+  lines.push("");
+  for (const spec of designSpecs) {
     lines.push(
-      "- 开始编码前先读取 `design/design-context.json`，保持品牌语气、色板、排版与组件原则一致"
+      `- \`${spec.assetId}\` (${spec.source}/${spec.screenType}): ${spec.summary} — see \`design/specs/${spec.assetId}.md\``
     );
   }
-  lines.push("- **以 `design/assets/*` 视觉素材为主要参考**，还原气质、配色、层级与关键插图");
-  lines.push("- 文案与产品定位以 `SPEC.md` / `design/brief.json` 为准");
-  lines.push("- 颜色 / 字号 / 间距优先引用 `design/tokens.json`");
-  lines.push("- 不要把本包当成「网页结构 JSON 1:1 还原」任务；这是视觉参考 + 产品上下文");
-  lines.push(
-    `- 平台为 \`${b?.platform ?? "web"}\` 时选择合适技术栈（如 Next.js / RN / Flutter）`
-  );
+  lines.push("");
+
+  lines.push("## 7. Implementation Requirements", "");
+  lines.push("- Do not treat this package as a canvas JSON reconstruction task.");
+  lines.push("- Implement the product experience described here, using `assets/final/*` as visual references.");
+  lines.push("- Follow `design/specs/*` for IA, component inventory, and token hints before inventing structure.");
+  lines.push("- Preserve the visual direction, color logic, density, and component hierarchy from the generated images.");
+  lines.push("- Use real UI text and accessible components in code; do not bake dynamic UI text into images unless the image itself is the reference.");
+  lines.push("- Stay inside Delivery Scope: do not invent screens that have no matching final asset.");
+  lines.push("- If assets are missing, read `handoff-report.json` before proceeding.");
   return lines.join("\n");
 }
 
-function renderCursorRules(p: ProjectFile): string {
+function renderImplementation(
+  project: ProjectFile,
+  state: HandoffBuildState,
+  designSpecs: AssetDesignSpec[]
+): string {
+  const b = project.brief;
   return [
-    `# ${p.title} - Cursor Rules`,
+    `# Implementation Plan - ${project.title}`,
     "",
-    "你正在为这个产品写代码。请遵循以下原则：",
+    "## Goal",
     "",
-    "- 始终先读取 `SPEC.md` 与 `design/assets/MANIFEST.md`",
-    "- 打开 `design/assets/*` 图片作为 UI / 插图视觉参考",
-    ...(deriveDesignContext(p)
-      ? [
-          "- 先读取 `design/design-context.json`，保持设计记忆中的品牌语气、色板和组件原则",
-        ]
-      : []),
-    "- 颜色 / 字号 / 间距引用 `design/tokens.json`",
-    `- 视觉风格: ${p.brief?.visualStyle ?? "现代简洁"}`,
-    `- 平台: ${p.brief?.platform ?? "未指定"}`,
-    "- 本包是视觉素材交付，不是 Canvas JSON 结构稿；按参考图气质实现，勿臆造另一套风格",
+    `Build the ${b?.platform ?? "target"} experience for ${b?.productName ?? project.title}.`,
+    "",
+    "## Required Inputs",
+    "",
+    "- `SPEC.md` for product requirements.",
+    "- `ASSET_MAP.md` for asset usage.",
+    "- `design/specs/*` for per-asset layout / regions / components / tokens.",
+    "- `assets/final/*` for generated UI/visual references.",
+    "- `design/tokens.json` for reusable visual tokens (merged from brief + specs).",
+    "- `design/design-context.json` if present.",
+    "",
+    "## Execution Steps",
+    "",
+    "1. Inspect every image in `assets/final/` before writing UI code.",
+    "2. Open the matching `design/specs/<assetId>.md` and lock IA + component inventory.",
+    "3. Identify the primary screen or visual state from `ASSET_MAP.md`.",
+    "4. Build the real UI with code-rendered text, controls, navigation, and layout.",
+    "5. Use generated images as references or embedded visual assets only where appropriate.",
+    "6. Match spacing, hierarchy, palette, and density from specs + images; do not invent a new visual system.",
+    "7. Verify desktop/mobile or target-platform dimensions before finalizing.",
+    "",
+    "## Spec coverage",
+    "",
+    `- Specs in package: ${designSpecs.length}`,
+    `- Vision-extracted: ${designSpecs.filter((s) => s.source === "vision").length}`,
+    `- Heuristic fallback: ${designSpecs.filter((s) => s.source === "heuristic").length}`,
+    "",
+    "## Acceptance Checks",
+    "",
+    `- All final assets are accounted for: ${state.finalAssets.filter((a) => a.status === "included").length}/${state.finalAssets.length}.`,
+    "- The implementation references the correct assets from `ASSET_MAP.md`.",
+    "- Regions/components from `design/specs/*` are reflected (or consciously deferred with a note).",
+    "- The UI does not become a marketing poster unless the asset is explicitly a poster.",
+    "- The first screen communicates the product category and core workflow.",
+    "- Text is real, readable UI copy in the implementation.",
     "",
   ].join("\n");
 }
 
-function renderClaudeMd(p: ProjectFile): string {
+function renderAssetMap(
+  project: ProjectFile,
+  state: HandoffBuildState,
+  designSpecs: AssetDesignSpec[]
+): string {
+  void project;
+  const specById = new Map(designSpecs.map((s) => [s.assetId, s]));
+  const lines: string[] = [];
+  lines.push(`# Asset Map - ${project.title}`, "");
+  lines.push("Use this file to decide how each generated image should influence implementation.", "");
+
+  if (!state.finalAssets.length) {
+    lines.push("No final generated assets are available in this handoff.");
+  }
+
+  for (const asset of state.finalAssets) {
+    const spec = specById.get(asset.id);
+    lines.push(`## ${asset.index}. ${asset.file ?? asset.urlFile ?? asset.id}`, "");
+    lines.push(`- Status: ${asset.status}`);
+    lines.push(`- Size: ${asset.width}x${asset.height}`);
+    if (asset.role) lines.push(`- Role: ${asset.role}`);
+    if (asset.model) lines.push(`- Model: ${asset.model}`);
+    lines.push(`- Use for: ${usageForAsset(asset)}`);
+    if (spec) {
+      lines.push(`- Design spec: \`design/specs/${asset.id}.md\` (${spec.source}, ${spec.screenType})`);
+      lines.push(`- Layout: ${spec.layout}`);
+      if (spec.regions.length) {
+        lines.push(
+          `- Regions: ${spec.regions.map((r) => `${r.name}/${r.role}`).join(", ")}`
+        );
+      }
+    }
+    lines.push("- Do not: replace the visual direction with a generic template or unrelated marketing layout.");
+    if (asset.error) lines.push(`- Warning: ${asset.error}`);
+    if (asset.prompt) {
+      lines.push("", "Prompt:", "", "```text", asset.prompt, "```");
+    }
+    lines.push("");
+  }
+
+  if (state.references.length) {
+    lines.push("# References", "");
+    for (const ref of state.references) {
+      lines.push(`- ${ref.file ?? ref.urlFile ?? ref.id}: ${ref.width}x${ref.height}, status ${ref.status}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+function renderCursorRules(project: ProjectFile): string {
   return [
-    `# CLAUDE.md`,
+    `# ${project.title} - Cursor Rules`,
     "",
-    `这是 ${p.title} 项目。Claude Code 会自动读取此文件。`,
-    "",
-    "## 上下文文件",
-    "",
-    "- `SPEC.md`：产品规范（必读）",
-    "- `design/assets/MANIFEST.md` + `design/assets/*`：可交付视觉素材与 prompt",
-    ...(deriveDesignContext(p)
-      ? [
-          "- `design/design-context.json`：项目级设计记忆，约束品牌语气、色彩、排版和组件原则",
-        ]
-      : []),
-    "- `design/tokens.json`：颜色 / 字号 / 间距",
-    "- `design/brief.json`：产品 Brief",
-    "",
-    "## 工作流程",
-    "",
-    "1. 阅读 `SPEC.md` 与素材清单",
-    "2. 浏览 `design/assets/*` 图片，确认视觉气质",
-    "3. 与用户确认先实现的界面 / 模块",
-    "4. 按素材气质与 Brief 实现；不要当作网页结构 JSON 1:1 还原",
+    "Read `SPEC.md`, `ASSET_MAP.md`, `IMPLEMENTATION.md`, and `design/specs/*` before editing code.",
+    "Inspect `assets/final/*` and preserve the visual direction shown there.",
+    "Use `design/tokens.json` and `design/design-context.json` when present.",
+    "Treat design specs as structure/tokens guidance — not as HTML to paste.",
+    "Do not treat this as a raw project data dump. Build the actual user-facing product UI.",
     "",
   ].join("\n");
 }
 
-function renderAgentsMd(p: ProjectFile): string {
+function renderClaudeMd(project: ProjectFile): string {
   return [
-    `# AGENTS.md`,
+    "# CLAUDE.md",
     "",
-    `这是 ${p.title} 项目，由 Visual Agent Designer 生成。`,
+    `You are implementing ${project.title} from a Vibeboard handoff package.`,
     "",
-    "Codex / OpenAI Agent 会自动读取本文件作为系统上下文。",
+    "Read order:",
+    "1. SPEC.md",
+    "2. ASSET_MAP.md",
+    "3. IMPLEMENTATION.md",
+    "4. design/specs/*",
+    "5. assets/final/*",
+    "6. design/tokens.json and design/design-context.json",
     "",
-    "## 必读文件",
+  ].join("\n");
+}
+
+function renderAgentsMd(project: ProjectFile): string {
+  return [
+    "# AGENTS.md",
     "",
-    "- `SPEC.md`",
-    "- `design/assets/MANIFEST.md`",
-    "- `design/assets/*`（视觉素材）",
-    ...(deriveDesignContext(p) ? ["- `design/design-context.json`"] : []),
-    "- `design/tokens.json`",
+    `This repository/package describes ${project.title}.`,
     "",
-    "## 实现纪律",
+    "Required reading before implementation:",
+    "- SPEC.md",
+    "- ASSET_MAP.md",
+    "- IMPLEMENTATION.md",
+    "- design/specs/*",
+    "- assets/final/*",
+    "- design/tokens.json",
     "",
-    "- 以视觉素材图为主要参考，保持气质与配色一致",
-    ...(deriveDesignContext(p)
-      ? ["- 保持 design-context.json 中的品牌语气、色板、排版和组件原则"]
-      : []),
-    "- 颜色 / 字号 / 间距引用 tokens.json",
-    "- 不要假设设计意图；遇到歧义先看素材图与 MANIFEST 中的 prompt",
+    "Keep the generated image assets as the primary visual reference. Use design specs for structure. Do not invent a different UI style.",
     "",
   ].join("\n");
 }
 
 function renderKickoffPrompt(
-  p: ProjectFile,
+  project: ProjectFile,
   target: HandoffTarget["name"]
 ): string {
-  const target_label =
+  const label =
     target === "cursor"
       ? "Cursor"
       : target === "claude-code"
         ? "Claude Code"
         : target === "codex"
           ? "Codex"
-          : "AI 编码助手";
+          : "Coding Agent";
 
   return [
-    `# ${target_label} 启动 Prompt`,
+    `# ${label} Kickoff Prompt`,
     "",
-    "复制下面的内容粘贴到对话框：",
-    "",
-    "---",
-    "",
-    buildKickoffClipboardText(p, target),
+    buildKickoffClipboardText(project, target),
     "",
   ].join("\n");
 }
 
-/* ───────────────────────── 工具 ───────────────────────── */
+function buildReport(
+  project: ProjectFile,
+  target: HandoffTarget["name"],
+  state: HandoffBuildState,
+  designSpecs: AssetDesignSpec[],
+  materialStats?: {
+    materialCount: number;
+    layoutCount: number;
+    readyMockups: string[];
+  }
+) {
+  const includedFinal = state.finalAssets.filter((a) => a.status === "included").length;
+  const includedReferences = state.references.filter((a) => a.status === "included").length;
+  return {
+    ok: state.finalAssets.length === 0 ? false : includedFinal === state.finalAssets.length,
+    projectId: project.id,
+    target,
+    generatedAt: new Date().toISOString(),
+    assets: {
+      finalTotal: state.finalAssets.length,
+      finalIncluded: includedFinal,
+      referencesTotal: state.references.length,
+      referencesIncluded: includedReferences,
+      missing: [...state.finalAssets, ...state.references].filter((a) => a.status !== "included"),
+    },
+    materialization: {
+      layoutCount: materialStats?.layoutCount ?? 0,
+      materialCount: materialStats?.materialCount ?? 0,
+      readyMockups: materialStats?.readyMockups ?? [],
+    },
+    designSpecs: {
+      total: designSpecs.length,
+      vision: designSpecs.filter((s) => s.source === "vision").length,
+      heuristic: designSpecs.filter((s) => s.source === "heuristic").length,
+    },
+    warnings: state.warnings,
+    readOrder: [
+      "DESIGN.md",
+      "LAYOUT.md",
+      "design/layouts/*",
+      "MATERIAL_MAP.md",
+      "skills/design-to-code/SKILL.md",
+      "assets/materials/*",
+      "assets/final/*",
+      "SPEC.md",
+      "design/tokens.json",
+      "design/tokens.dtcg.json",
+    ],
+  };
+}
 
-function extractTokens(p: ProjectFile) {
+function buildAssetManifest(state: HandoffBuildState) {
+  return {
+    final: state.finalAssets,
+    references: state.references,
+  };
+}
+
+function buildModelRuns(project: ProjectFile, state: HandoffBuildState) {
+  const byId = new Map(state.finalAssets.map((entry) => [entry.id, entry]));
+  const runs = activeAssets(project).map((asset) => {
+    const entry = byId.get(asset.id);
+    return {
+      id: asset.id,
+      file: entry?.file,
+      status: entry?.status,
+      prompt: asset.prompt,
+      model: asset.model,
+      seed: asset.seed,
+      width: asset.width,
+      height: asset.height,
+      durationMs: asset.durationMs,
+      costUsd: asset.costUsd,
+      batchId: asset.batchId,
+      source: asset.source,
+      role: asset.role,
+      parentAssetId: asset.parentAssetId,
+      variantGroupId: asset.variantGroupId,
+      usedInPages: asset.usedInPages,
+      usedInNodes: asset.usedInNodes,
+      editInstruction: asset.editInstruction,
+      editRegion: asset.editRegion,
+      referenceAssetIds: asset.referenceAssetIds,
+      hasDesignSpec: !!asset.designSpec,
+      designSpecSource: asset.designSpec?.source,
+      createdAt: asset.createdAt,
+      error: asset.error,
+    };
+  });
+  return { count: runs.length, runs };
+}
+
+function extractTokens(project: ProjectFile) {
   const colors = new Set<string>();
   const fontSizes = new Set<number>();
   const radii = new Set<number>();
-  for (const token of deriveDesignContext(p)?.colorTokens ?? []) {
-    colors.add(token.value);
-  }
-  // 兼容旧项目：若仍有 pages，从中扫 token
-  for (const page of p.pages ?? []) {
+  const designContext = deriveDesignContext(project);
+  for (const token of designContext?.colorTokens ?? []) colors.add(token.value);
+  for (const page of project.pages ?? []) {
     if (page.background) colors.add(page.background);
-    for (const n of page.nodes) {
-      if ("fill" in n && n.fill) colors.add(n.fill);
-      if ("color" in n && n.color) colors.add(n.color);
-      if ("fontSize" in n && n.fontSize) fontSizes.add(n.fontSize);
-      if ("radius" in n && n.radius) radii.add(n.radius);
+    for (const node of page.nodes) {
+      if ("fill" in node && node.fill) colors.add(node.fill);
+      if ("color" in node && node.color) colors.add(node.color);
+      if ("fontSize" in node && node.fontSize) fontSizes.add(node.fontSize);
+      if ("radius" in node && node.radius) radii.add(node.radius);
     }
   }
   return {
     color: [...colors],
     fontSize: [...fontSizes].sort((a, b) => a - b),
     radius: [...radii].sort((a, b) => a - b),
-    moodKeywords: p.designDirection?.moodKeywords ?? [],
-    visualStyle: p.brief?.visualStyle ?? null,
+    moodKeywords: project.designDirection?.moodKeywords ?? [],
+    visualStyle: project.brief?.visualStyle ?? null,
   };
 }
 
-function truncate(s: string, n: number) {
-  return s.length > n ? s.slice(0, n - 1) + "…" : s;
+function activeAssets(project: ProjectFile) {
+  return (project.assets ?? []).filter(
+    (asset) =>
+      asset.status !== "discarded" &&
+      asset.status !== "failed" &&
+      asset.status !== "cancelled" &&
+      asset.status !== "generating" &&
+      asset.source !== "materialized"
+  );
+}
+
+function assetBaseName(
+  prefix: "asset" | "reference",
+  index: number,
+  role: string | undefined,
+  label: string | undefined,
+  width: number,
+  height: number
+): string {
+  const slug = slugify(role || label || "visual");
+  return `${prefix}-${String(index).padStart(2, "0")}-${slug}-${Math.round(width)}x${Math.round(height)}`;
+}
+
+function slugify(value: string): string {
+  const ascii = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 36);
+  return ascii || "visual";
+}
+
+function usageForAsset(asset: HandoffAssetEntry): string {
+  const prompt = asset.prompt ?? "";
+  if (/home|首页|主页|首屏/i.test(prompt)) return "Primary home screen layout and visual direction.";
+  if (/detail|详情/i.test(prompt)) return "Detail page layout, hierarchy, and interaction density.";
+  if (/app|ui|screen|界面|页面/i.test(prompt)) return "Mobile/product UI reference.";
+  if (asset.role === "background") return "Background treatment, palette, and atmosphere.";
+  if (asset.role === "illustration") return "Illustration style and visual motifs.";
+  return "Primary visual style, composition, color, and UI mood.";
+}
+
+function isRemoteLike(src: string): boolean {
+  return /^https?:\/\//i.test(src) || src.startsWith("/");
+}
+
+function normalizeMime(value: string | null): string | null {
+  if (!value) return null;
+  return value.split(";")[0].trim().toLowerCase() || null;
+}
+
+function extensionFromMime(mime: string): string | null {
+  const normalized = normalizeMime(mime);
+  if (!normalized) return null;
+  if (normalized === "image/jpeg") return "jpg";
+  if (normalized === "image/svg+xml") return "svg";
+  const match = normalized.match(/^image\/([a-z0-9.+-]+)$/);
+  return match?.[1]?.replace("+xml", "") ?? null;
+}
+
+function mimeFromUrl(url: string): string | null {
+  const ext = extensionFromUrl(url);
+  if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
+  if (ext === "png") return "image/png";
+  if (ext === "webp") return "image/webp";
+  if (ext === "gif") return "image/gif";
+  if (ext === "svg") return "image/svg+xml";
+  return null;
+}
+
+function extensionFromUrl(url: string): string | null {
+  try {
+    const pathname = new URL(url).pathname;
+    const ext = pathname.split(".").pop()?.toLowerCase();
+    if (ext && /^(png|jpg|jpeg|webp|gif|svg)$/.test(ext)) {
+      return ext === "jpeg" ? "jpg" : ext;
+    }
+  } catch {
+    const ext = url.split("?")[0].split(".").pop()?.toLowerCase();
+    if (ext && /^(png|jpg|jpeg|webp|gif|svg)$/.test(ext)) {
+      return ext === "jpeg" ? "jpg" : ext;
+    }
+  }
+  return null;
 }

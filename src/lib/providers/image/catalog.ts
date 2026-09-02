@@ -11,7 +11,8 @@ export type ImagePresetId =
   | "openai-dalle"
   | "openai-gpt-image"
   | "siliconflow"
-  | "gemini-image";
+  | "gemini-image"
+  | "replicate";
 
 export interface ImageModelOption {
   id: string;
@@ -23,7 +24,10 @@ export interface ImageModelOption {
 export interface ImageProviderPreset {
   id: ImagePresetId;
   label: string;
-  kind: "openai-compatible" | "siliconflow" | "gemini-image";
+  company: string;
+  description: string;
+  badge: string;
+  kind: "openai-compatible" | "siliconflow" | "gemini-image" | "replicate";
   /** 默认接口地址（可被用户覆盖） */
   defaultBaseURL: string;
   baseURLPlaceholder: string;
@@ -40,6 +44,9 @@ export const IMAGE_PROVIDER_CATALOG: ImageProviderPreset[] = [
   {
     id: "openai-dalle",
     label: "OpenAI DALL-E",
+    company: "OpenAI",
+    description: "经典文本生图，兼容 OpenAI 图像接口。",
+    badge: "经典",
     kind: "openai-compatible",
     defaultBaseURL: "https://api.openai.com/v1",
     baseURLPlaceholder: "https://api.openai.com/v1",
@@ -54,6 +61,9 @@ export const IMAGE_PROVIDER_CATALOG: ImageProviderPreset[] = [
   {
     id: "openai-gpt-image",
     label: "OpenAI GPT Image",
+    company: "OpenAI",
+    description: "高质量生成与编辑，支持质量、格式和背景控制。",
+    badge: "推荐",
     kind: "openai-compatible",
     defaultBaseURL: "https://api.openai.com/v1",
     baseURLPlaceholder: "https://api.openai.com/v1",
@@ -86,6 +96,9 @@ export const IMAGE_PROVIDER_CATALOG: ImageProviderPreset[] = [
   {
     id: "siliconflow",
     label: "SiliconFlow FLUX",
+    company: "SiliconFlow",
+    description: "国内友好的 FLUX 与 Stable Diffusion 模型聚合服务。",
+    badge: "国内",
     kind: "siliconflow",
     defaultBaseURL: "https://api.siliconflow.cn/v1",
     baseURLPlaceholder: "https://api.siliconflow.cn/v1",
@@ -122,18 +135,25 @@ export const IMAGE_PROVIDER_CATALOG: ImageProviderPreset[] = [
   },
   {
     id: "gemini-image",
-    label: "Gemini Image (Nano Banana)",
+    label: "Gemini Image",
+    company: "Google",
+    description: "Nano Banana 系列，多模态生成与图像编辑。",
+    badge: "多模态",
     kind: "gemini-image",
     defaultBaseURL: "https://generativelanguage.googleapis.com",
     baseURLPlaceholder: "https://generativelanguage.googleapis.com",
-    baseURLHint:
-      "Google AI Studio 官方；Vertex AI 等代理需填对应 generateContent 根地址",
+    baseURLHint: "Google AI Studio 官方；Vertex AI 等代理需填对应 generateContent 根地址",
     defaultModel: "gemini-3.1-flash-image",
     models: [
       {
         id: "gemini-3.1-flash-image",
         label: "gemini-3.1-flash-image",
         note: "Nano Banana 2 · GA · 推荐",
+      },
+      {
+        id: "gemini-3.1-flash-lite-image",
+        label: "gemini-3.1-flash-lite-image",
+        note: "Nano Banana 2 Lite · 更快",
       },
       {
         id: "gemini-3-pro-image",
@@ -147,6 +167,41 @@ export const IMAGE_PROVIDER_CATALOG: ImageProviderPreset[] = [
       },
     ],
     modelHint: "gemini-3.1-flash-image / gemini-3-pro-image",
+  },
+  {
+    id: "replicate",
+    label: "Replicate",
+    company: "Replicate",
+    description: "托管 Flux、SDXL 等开源模型，按调用计费。",
+    badge: "模型库",
+    kind: "replicate",
+    defaultBaseURL: "https://api.replicate.com/v1",
+    baseURLPlaceholder: "https://api.replicate.com/v1",
+    baseURLHint: "Replicate 官方 API；需要 REPLICATE_API_TOKEN",
+    defaultModel: "black-forest-labs/flux-1.1-pro",
+    models: [
+      {
+        id: "black-forest-labs/flux-1.1-pro",
+        label: "Flux 1.1 Pro",
+        note: "高质量 · 推荐",
+      },
+      {
+        id: "black-forest-labs/flux-1.1-pro-ultra",
+        label: "Flux 1.1 Pro Ultra",
+        note: "最高细节",
+      },
+      {
+        id: "black-forest-labs/flux-schnell",
+        label: "Flux Schnell",
+        note: "最快 · 低成本",
+      },
+      {
+        id: "stability-ai/sdxl",
+        label: "SDXL",
+        note: "Stable Diffusion XL",
+      },
+    ],
+    modelHint: "black-forest-labs/flux-1.1-pro / flux-schnell",
   },
 ];
 

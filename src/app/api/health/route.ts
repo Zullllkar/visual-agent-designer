@@ -5,7 +5,7 @@
 export async function GET() {
   return Response.json({
     ok: true,
-    name: "visual-agent-designer",
+    name: "vibeboard",
     stage: "skeleton",
     timestamp: new Date().toISOString(),
   });
