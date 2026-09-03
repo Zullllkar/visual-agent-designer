@@ -25,6 +25,8 @@ export interface VadDesktopBridge {
   popupMenu: (payload: { id: VadDesktopMenuId; x: number; y: number }) => void;
   openPath: (which: VadDesktopPathId) => void;
   openProjectDir: (projectId: string) => void;
+  /** 打开外部 http(s) 链接或 coding agent 深链（cursor://…）。 */
+  openExternal: (url: string) => void;
   setTitleBarTheme: (theme: "light" | "dark") => void;
   setRecents: (items: Array<{ id: string; title: string }>) => void;
   onCommand: (handler: (detail: StudioCommandDetail) => void) => () => void;
@@ -41,6 +43,7 @@ export interface VadDesktopBridge {
     data?: string;
     path?: string;
   }>;
+  pickDirectory: () => Promise<{ ok: boolean; canceled?: boolean; path?: string }>;
 }
 
 declare global {

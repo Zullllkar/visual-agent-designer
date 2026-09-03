@@ -141,6 +141,21 @@ export const ProjectFileSchema = z.object({
   materializations: z.record(z.string(), MaterializationRecordSchema).optional(),
   canvasSnapshot: CanvasSnapshotSchema.optional(),
   brandKit: BrandKitSchema.optional(),
+  /**
+   * 关联的代码仓库：保存 / 导出时把 handoff 包同步到该目录，
+   * 并写入受管片段（AGENTS.md / CLAUDE.md / .cursor/rules）与项目级 MCP 配置。
+   */
+  linkedRepo: z
+    .object({
+      path: z.string().min(1),
+      mountDir: z.string().min(1).default("design/vibeboard"),
+      writeAgentFiles: z.boolean().default(true),
+      writeMcpConfig: z.boolean().default(true),
+      git: z.boolean().optional(),
+      lastSyncedAt: z.string().optional(),
+      lastError: z.string().optional(),
+    })
+    .optional(),
 });
 
 export type ProductBrief = z.infer<typeof ProductBriefSchema>;
@@ -151,3 +166,4 @@ export type PrototypeFlow = z.infer<typeof PrototypeFlowSchema>;
 export type CanvasSnapshot = z.infer<typeof CanvasSnapshotSchema>;
 export type ProjectFile = z.infer<typeof ProjectFileSchema>;
 export type BrandKit = z.infer<typeof BrandKitSchema>;
+export type LinkedRepo = NonNullable<ProjectFile["linkedRepo"]>;

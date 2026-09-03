@@ -18,7 +18,7 @@ const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
 const { createLogger } = require("./log.cjs");
-const { isHttpUrl, isLocalAppUrl } = require("./origin.cjs");
+const { isAgentDeeplink, isHttpUrl, isLocalAppUrl } = require("./origin.cjs");
 const { parseHealthResponse } = require("./health.cjs");
 const { resolveDevSidecarSpawn } = require("./sidecar.cjs");
 const {
@@ -289,6 +289,10 @@ function failAndQuit(title, message) {
 }
 
 function openExternalSafe(url) {
+  if (isAgentDeeplink(url)) {
+    void shell.openExternal(url);
+    return;
+  }
   if (!isHttpUrl(url) || isLocalAppUrl(url, PORT)) return;
   void shell.openExternal(url);
 }
@@ -559,6 +563,11 @@ function registerIpc() {
     openDir(path.join(desktopPaths.vadRoot, "projects", projectId));
   });
 
+  // 渲染进程请求打开外部地址：只放行 http(s) 外链与 coding agent 深链
+  ipcMain.on("desktop:open-external", (_event, url) => {
+    openExternalSafe(String(url ?? ""));
+  });
+
   ipcMain.on("desktop:set-recents", (_event, items) => {
     recentProjects = Array.isArray(items) ? items.slice(0, 8) : [];
   });
@@ -632,6 +641,16 @@ function registerIpc() {
     if (canceled || !filePath) return { ok: false, canceled: true };
     await fs.promises.writeFile(filePath, payload.data, "utf8");
     return { ok: true, path: filePath };
+  });
+
+  ipcMain.handle("desktop:pick-directory", async (event) => {
+    const win = windowFromEvent(event);
+    if (!win) return { ok: false };
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+      properties: ["openDirectory"],
+    });
+    if (canceled || !filePaths?.[0]) return { ok: false, canceled: true };
+    return { ok: true, path: filePaths[0] };
   });
 
   ipcMain.handle("desktop:open-file", async (event, payload) => {

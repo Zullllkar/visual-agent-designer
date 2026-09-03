@@ -46,6 +46,7 @@ export function applyProjectDuplicate(
     title: `${project.title} 副本`,
     createdAt: now,
     updatedAt: now,
+    linkedRepo: undefined,
   };
 }
 

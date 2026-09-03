@@ -28,4 +28,12 @@ function isHttpUrl(href) {
   return /^https?:\/\//i.test(href);
 }
 
-module.exports = { isLocalAppUrl, isHttpUrl };
+/**
+ * coding agent 的一键接入深链（目前只放行 Cursor 的 MCP 安装 / prompt 深链）。
+ * @param {string} href
+ */
+function isAgentDeeplink(href) {
+  return /^cursor:\/\/anysphere\.cursor-deeplink\/(mcp\/install|prompt)(\?|$)/i.test(String(href || ""));
+}
+
+module.exports = { isLocalAppUrl, isHttpUrl, isAgentDeeplink };

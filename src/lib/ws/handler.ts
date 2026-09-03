@@ -43,6 +43,7 @@ import {
   rewriteMissingToolApproval,
 } from "@/lib/ws/missing-run-fallback";
 import { loadConversationsFromVad } from "@/lib/vad/persist";
+import { activeContext } from "@/lib/bridge/active-context";
 
 let jobForwarderAttached = false;
 let runRecoveryStarted = false;
@@ -112,7 +113,11 @@ export function attachWebSocketHandler(server: Server): void {
 
     wsLogger.connection("connect");
 
-    ws.on("pong", () => { lastPong = Date.now(); });
+    ws.on("pong", () => {
+      lastPong = Date.now();
+      // IDE 页面存活即视为用户仍在看这个项目（供 Bridge get_active_context 使用）
+      activeContext.touch(subscribedProjectId, lastPong);
+    });
 
     const pingInterval = setInterval(() => {
       if (Date.now() - lastPong > 60_000) {
@@ -166,6 +171,7 @@ export function attachWebSocketHandler(server: Server): void {
         });
         return;
       }
+      activeContext.touch(cmd.projectId);
 
       if (
         (cmd.action === "agent.approve" ||

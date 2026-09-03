@@ -204,6 +204,9 @@
 }
 
 .vad-settings-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   height: 34px;
   padding: 0 12px;
   border: 1px solid var(--border);
@@ -217,6 +220,11 @@
 
 .vad-settings-btn:hover {
   background: var(--surface-muted);
+}
+
+.vad-settings-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .vad-settings-kbd {

@@ -69,9 +69,7 @@ ehthumbs.db
 .vad-data/
 .tmp/
 .tmp-edge-profile/
-.tmp-*.png
-.tmp-*.jpg
-.tmp-*.webp
+.tmp-*
 
 # ----- nested sibling repos (have their own .git) -----
 Loomic/

@@ -174,6 +174,28 @@ export function buildSingleAssetPrompt(
     .join("\n");
 }
 
+/** 关联仓库后的短 kickoff，给 Cursor 深链用（控制在 1800 字以内）。 */
+export function buildRepoKickoffText(
+  project: ProjectFile,
+  mountDir = "design/vibeboard"
+): string {
+  const dir = mountDir.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  const assets = activeAssets(project);
+  return [
+    `Please implement **${project.title}** from the Vibeboard design package already in this repo.`,
+    "",
+    `Read \`${dir}/README.md\` first, then DESIGN.md / LAYOUT.md / assets/final/*.`,
+    `A \`vibeboard\` MCP server is also configured — call get_handoff / get_asset_image for live context.`,
+    "",
+    `Positioning: ${project.brief?.positioning ?? project.rawIdea}`,
+    `Platform: ${project.brief?.platform ?? "not specified"}`,
+    `Visual style: ${project.brief?.visualStyle ?? "not specified"}`,
+    `Final mockups in this package: ${assets.length}. Do not invent screens without a matching asset.`,
+    "",
+    "Treat Layout IR as authoritative geometry. Rebuild text/controls in real UI; place materials for media regions.",
+  ].join("\n");
+}
+
 function buildNonCodeClipboardText(
   project: ProjectFile,
   pack: ReturnType<typeof resolveHandoffPackKind>

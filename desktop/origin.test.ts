@@ -2,9 +2,10 @@ import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { isLocalAppUrl, isHttpUrl } = require("./origin.cjs") as {
+const { isLocalAppUrl, isHttpUrl, isAgentDeeplink } = require("./origin.cjs") as {
   isLocalAppUrl: (href: string, port: number) => boolean;
   isHttpUrl: (href: string) => boolean;
+  isAgentDeeplink: (href: string) => boolean;
 };
 
 describe("isLocalAppUrl", () => {
@@ -27,5 +28,18 @@ describe("isHttpUrl", () => {
   it("detects http(s)", () => {
     expect(isHttpUrl("https://example.com/a")).toBe(true);
     expect(isHttpUrl("mailto:a@b.com")).toBe(false);
+  });
+});
+
+describe("isAgentDeeplink", () => {
+  it("allows Cursor MCP install and prompt deeplinks", () => {
+    expect(isAgentDeeplink("cursor://anysphere.cursor-deeplink/mcp/install?name=vibeboard&config=e30=")).toBe(true);
+    expect(isAgentDeeplink("cursor://anysphere.cursor-deeplink/prompt?text=hi")).toBe(true);
+  });
+
+  it("rejects other schemes and other cursor paths", () => {
+    expect(isAgentDeeplink("cursor://anysphere.cursor-deeplink/settings")).toBe(false);
+    expect(isAgentDeeplink("vscode://file/etc/passwd")).toBe(false);
+    expect(isAgentDeeplink("https://cursor.com/link/prompt?text=hi")).toBe(false);
   });
 });

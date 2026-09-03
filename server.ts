@@ -8,10 +8,12 @@
 
 import { createServer } from "node:http";
 import next from "next";
+import { createBridge } from "./src/lib/bridge";
 import { attachWebSocketHandler } from "./src/lib/ws/server";
 
 const dev = process.env.NODE_ENV !== "production";
-const hostname = process.env.HOSTNAME ?? "0.0.0.0";
+// 本地优先：默认只监听回环地址。需要局域网访问时显式设置 HOSTNAME=0.0.0.0。
+const hostname = process.env.HOSTNAME ?? "127.0.0.1";
 const port = Number(process.env.PORT ?? 3000);
 
 const nextDir = process.env.VAD_NEXT_DIR?.trim() || process.cwd();
@@ -34,8 +36,12 @@ function isHealthPath(url: string): boolean {
 
 let requestHandler: ReturnType<typeof app.getRequestHandler> | null = null;
 
+// coding agent 通过 /mcp 读取设计上下文（Streamable HTTP MCP）
+const bridge = createBridge({ port, hostname });
+
 const server = createServer((req, res) => {
   const url = req.url ?? "/";
+  if (bridge.tryHandle(req, res)) return;
   if (isHealthPath(url)) {
     res.writeHead(200, {
       "content-type": "application/json; charset=utf-8",
@@ -68,7 +74,7 @@ app
   .then(() => {
     requestHandler = handler;
     console.log(
-      `> Ready on http://${hostname}:${port} (WebSocket at /ws)` +
+      `> Ready on http://${hostname}:${port} (WebSocket at /ws, MCP at /mcp)` +
         (dev ? " [webpack]" : "")
     );
   })

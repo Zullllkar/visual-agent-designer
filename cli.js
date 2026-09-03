@@ -1,368 +1,266 @@
 #!/usr/bin/env node
 
 /**
- * Vibeboard - Local MCP Server & CLI Tool
+ * Vibeboard CLI — stdio MCP 转发器
  * --------------------------------------------------------------
- * 参考 Open Design 架构，作为一个标准 Model Context Protocol (MCP) 服务运行。
- * 支持 Stdio 双向通信，可一键注入 Claude Code、Cursor、Claude Desktop。
- * 
- * 主要职责：
- *   1. 作为一个本地 stdio 进程，暴露 Vibeboard 画布中的最新设计上下文。
- *   2. 允许终端中的 claude、codex 或 Cursor 中的 AI 助理跨目录直接读取当前画布的 
- *      产品规范 (SPEC.md)、设计 tokens.json 和高保真 SVG 视觉稿，完成 1:1 精确写码。
- * 
- * 运行命令: node cli.js mcp
+ * `node cli.js mcp` 以 stdio 方式暴露 MCP，把每条 JSON-RPC 消息原样转发到
+ * 正在运行的 Vibeboard 服务器的 Streamable HTTP 端点（/mcp），再把响应
+ * （JSON 或 SSE）写回 stdout。进程本身无状态、不碰项目文件。
+ *
+ * 用于只支持 stdio 的 MCP 宿主，或端口会变的开发模式。首选仍是让宿主直接
+ * 连接 HTTP 端点（见 Settings → 连接 coding agent）。
+ *
+ * 端点发现顺序：
+ *   1. --url / --token 参数，或 VAD_BRIDGE_URL / VAD_BRIDGE_TOKEN 环境变量
+ *   2. <root>/bridge/bridge.json，root 来自 --root、VAD_ROOT，否则 <cwd>/.vad
+ *
+ * 其他命令：
+ *   node cli.js list       列出本机项目
+ *   node cli.js status     打印当前 Bridge 端点与连通性
  */
 
-const fs = require("node:fs").promises;
+const fs = require("node:fs");
+const fsp = require("node:fs/promises");
 const path = require("node:path");
+const readline = require("node:readline");
 
-const VAD_DIR = path.join(process.cwd(), ".vad", "projects");
+const args = process.argv.slice(2);
+const command = args[0] || "help";
 
-/**
- * 扫描本地的所有项目，按更新时间倒序排序
- */
-async function getSortedProjects() {
+function flag(name) {
+  const idx = args.indexOf(name);
+  if (idx === -1) return undefined;
+  return args[idx + 1];
+}
+
+function resolveVadRoot() {
+  return flag("--root") || (process.env.VAD_ROOT && process.env.VAD_ROOT.trim()) || path.join(process.cwd(), ".vad");
+}
+
+function readDiscovery() {
+  const file = path.join(resolveVadRoot(), "bridge", "bridge.json");
   try {
-    const dirs = await fs.readdir(VAD_DIR);
-    const projects = [];
-    for (const dir of dirs) {
-      const projectJsonPath = path.join(VAD_DIR, dir, "project.json");
-      try {
-        const raw = await fs.readFile(projectJsonPath, "utf8");
-        projects.push(JSON.parse(raw));
-      } catch {}
-    }
-    return projects.sort((a, b) => {
-      const timeA = a.updatedAt || "";
-      const timeB = b.updatedAt || "";
-      return timeB.localeCompare(timeA);
-    });
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (parsed && parsed.version === 1 && typeof parsed.url === "string") return parsed;
+  } catch {
+    // 未启动或路径不对
+  }
+  return null;
+}
+
+function resolveEndpoint() {
+  const url = flag("--url") || (process.env.VAD_BRIDGE_URL && process.env.VAD_BRIDGE_URL.trim());
+  const token = flag("--token") || (process.env.VAD_BRIDGE_TOKEN && process.env.VAD_BRIDGE_TOKEN.trim()) || null;
+  if (url) return { url, token, source: "args/env" };
+  const disc = readDiscovery();
+  if (disc) return { url: disc.url, token: disc.token || null, source: path.join(resolveVadRoot(), "bridge", "bridge.json") };
+  return null;
+}
+
+// ─────────────────────────── mcp (stdio → http) ───────────────────────────
+
+const NOT_RUNNING_MESSAGE =
+  "Vibeboard is not running (or bridge.json was not found). Open the Vibeboard app, then retry. " +
+  `Looked in: ${path.join(resolveVadRoot(), "bridge", "bridge.json")}`;
+
+function writeOut(message) {
+  process.stdout.write(`${JSON.stringify(message)}\n`);
+}
+
+function rpcError(id, code, message) {
+  return { jsonrpc: "2.0", id, error: { code, message } };
+}
+
+async function forward(payload) {
+  const endpoint = resolveEndpoint();
+  const messages = Array.isArray(payload) ? payload : [payload];
+  const requestIds = messages.filter((m) => m && m.id !== undefined && m.method).map((m) => m.id);
+
+  if (!endpoint) {
+    for (const id of requestIds) writeOut(rpcError(id, -32000, NOT_RUNNING_MESSAGE));
+    return;
+  }
+
+  const headers = {
+    "content-type": "application/json",
+    accept: "application/json, text/event-stream",
+  };
+  if (endpoint.token) headers.authorization = `Bearer ${endpoint.token}`;
+
+  let res;
+  try {
+    res = await fetch(endpoint.url, { method: "POST", headers, body: JSON.stringify(payload) });
   } catch (err) {
-    return [];
-  }
-}
-
-/**
- * 读取项目 Handoff 中的特定文件
- */
-async function readProjectHandoffFile(projectId, relPath) {
-  const filePath = path.join(VAD_DIR, projectId, "handoff", relPath);
-  try {
-    return await fs.readFile(filePath, "utf8");
-  } catch {
-    return null;
-  }
-}
-
-/**
- * 列出 Handoff 下的所有文件列表
- */
-async function listProjectHandoffFiles(projectId, subDir = "") {
-  const dirPath = path.join(VAD_DIR, projectId, "handoff", subDir);
-  try {
-    const items = await fs.readdir(dirPath, { withFileTypes: true });
-    let files = [];
-    for (const item of items) {
-      const rel = path.join(subDir, item.name);
-      if (item.isDirectory()) {
-        const subFiles = await listProjectHandoffFiles(projectId, rel);
-        files = files.concat(subFiles);
-      } else {
-        files.push(rel.replace(/\\/g, "/"));
-      }
+    for (const id of requestIds) {
+      writeOut(rpcError(id, -32000, `${NOT_RUNNING_MESSAGE} (${err && err.message ? err.message : err})`));
     }
-    return files;
+    return;
+  }
+
+  if (res.status === 202 || res.status === 204) return;
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    const detail = text ? text.slice(0, 300) : res.statusText;
+    for (const id of requestIds) {
+      writeOut(rpcError(id, -32000, `Vibeboard bridge returned HTTP ${res.status}: ${detail}`));
+    }
+    return;
+  }
+
+  const contentType = (res.headers.get("content-type") || "").toLowerCase();
+  if (contentType.includes("text/event-stream")) {
+    await pumpSse(res.body);
+    return;
+  }
+  const text = await res.text();
+  if (!text.trim()) return;
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) parsed.forEach(writeOut);
+    else writeOut(parsed);
   } catch {
-    return [];
+    for (const id of requestIds) writeOut(rpcError(id, -32700, "Bridge returned non-JSON body"));
   }
 }
 
-// ==========================================
-// MCP Standard Handler (Stdio JSON-RPC 2.0)
-// ==========================================
-
-async function handleMcpMode() {
-  // 禁止 stdout 输出除 JSON-RPC 响应外的任何内容
-  const originalConsoleLog = console.log;
-  console.log = console.error; // 重定向 console.log 到 stderr
-
+async function pumpSse(body) {
+  if (!body) return;
+  const decoder = new TextDecoder();
   let buffer = "";
-
-  process.stdin.on("data", async (chunk) => {
-    buffer += chunk.toString();
-    
-    let lineEndIndex;
-    while ((lineEndIndex = buffer.indexOf("\n")) !== -1) {
-      const line = buffer.slice(0, lineEndIndex).trim();
-      buffer = buffer.slice(lineEndIndex + 1);
-      
-      if (!line) continue;
-      
-      try {
-        const request = JSON.parse(line);
-        await processMcpRequest(request);
-      } catch (err) {
-        sendMcpError(null, -32700, "Parse error: " + err.message);
+  let dataLines = [];
+  const flush = () => {
+    if (dataLines.length === 0) return;
+    const data = dataLines.join("\n");
+    dataLines = [];
+    try {
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) parsed.forEach(writeOut);
+      else writeOut(parsed);
+    } catch {
+      // 非 JSON 的 SSE 事件（如 keep-alive）忽略
+    }
+  };
+  for await (const chunk of body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    let idx;
+    while ((idx = buffer.indexOf("\n")) !== -1) {
+      const line = buffer.slice(0, idx).replace(/\r$/, "");
+      buffer = buffer.slice(idx + 1);
+      if (line === "") {
+        flush();
+        continue;
       }
+      if (line.startsWith("data:")) dataLines.push(line.slice(5).replace(/^ /, ""));
+      // event:/id:/retry:/注释行忽略
     }
-  });
+  }
+  flush();
 }
 
-function sendMcpResponse(id, result) {
-  const payload = JSON.stringify({
-    jsonrpc: "2.0",
-    id,
-    result,
-  });
-  process.stdout.write(payload + "\n");
-}
-
-function sendMcpNotification(method, params) {
-  const payload = JSON.stringify({
-    jsonrpc: "2.0",
-    method,
-    params,
-  });
-  process.stdout.write(payload + "\n");
-}
-
-function sendMcpError(id, code, message) {
-  const payload = JSON.stringify({
-    jsonrpc: "2.0",
-    id,
-    error: { code, message },
-  });
-  process.stdout.write(payload + "\n");
-}
-
-async function processMcpRequest(req) {
-  const { id, method, params } = req;
-  
-  if (method === "initialize") {
-    return sendMcpResponse(id, {
-      protocolVersion: "2024-11-05",
-      capabilities: {
-        resources: {},
-        tools: {},
-      },
-      serverInfo: {
-        name: "vibeboard-mcp",
-        version: "1.0.0",
-      },
-    });
-  }
-  
-  if (method === "notifications/initialized") {
-    return; // 无需回应
-  }
-
-  // ==========================================
-  // Resources (MCP 静态资源列表与读取)
-  // ==========================================
-  if (method === "resources/list") {
-    const projects = await getSortedProjects();
-    const resources = [];
-
-    if (projects.length > 0) {
-      const latest = projects[0];
-      resources.push({
-        uri: "vad://projects/latest/spec",
-        name: `Latest Project Spec (${latest.title})`,
-        mimeType: "text/markdown",
-        description: "The product requirements document (SPEC.md) of the most recently updated design.",
-      });
-      resources.push({
-        uri: "vad://projects/latest/tokens",
-        name: "Latest Project Design Tokens",
-        mimeType: "application/json",
-        description: "Standard design system tokens (colors, font sizes, corners) of the active canvas.",
-      });
-    }
-
-    return sendMcpResponse(id, { resources });
-  }
-
-  if (method === "resources/read") {
-    const uri = params?.uri;
-    const projects = await getSortedProjects();
-    if (projects.length === 0) {
-      return sendMcpError(id, -32602, "No projects found on local disk.");
-    }
-    const latest = projects[0];
-
-    if (uri === "vad://projects/latest/spec") {
-      const spec = await readProjectHandoffFile(latest.id, "SPEC.md");
-      if (!spec) return sendMcpError(id, 404, "SPEC.md not found for latest project.");
-      return sendMcpResponse(id, {
-        contents: [{ uri, mimeType: "text/markdown", text: spec }],
-      });
-    }
-
-    if (uri === "vad://projects/latest/tokens") {
-      const tokens = await readProjectHandoffFile(latest.id, "design/tokens.json");
-      if (!tokens) return sendMcpError(id, 404, "design/tokens.json not found for latest project.");
-      return sendMcpResponse(id, {
-        contents: [{ uri, mimeType: "application/json", text: tokens }],
-      });
-    }
-
-    return sendMcpError(id, 404, `Resource uri ${uri} not found.`);
-  }
-
-  // ==========================================
-  // Tools (MCP 主动函数调用)
-  // ==========================================
-  if (method === "tools/list") {
-    return sendMcpResponse(id, {
-      tools: [
-        {
-          name: "get_latest_project",
-          description: "Retrieve the active designed project's SPEC.md, design tokens, and lists of page SVGs and layouts on the visual canvas.",
-          inputSchema: {
-            type: "object",
-            properties: {},
-          },
-        },
-        {
-          name: "get_page_assets",
-          description: "Get the high-fidelity SVG graphic string and layout layers JSON of a specific canvas page. Perfect for UI 1:1 replica development.",
-          inputSchema: {
-            type: "object",
-            properties: {
-              pageSlug: {
-                type: "string",
-                description: "The name slug of the page, e.g. 'home-page' or 'onboarding'. Can be scanned from get_latest_project output.",
-              },
-            },
-            required: ["pageSlug"],
-          },
-        },
-      ],
-    });
-  }
-
-  if (method === "tools/call") {
-    const toolName = params?.name;
-    const toolArgs = params?.arguments || {};
-    const projects = await getSortedProjects();
-    if (projects.length === 0) {
-      return sendMcpResponse(id, {
-        content: [{ type: "text", text: "No visual designer projects found. Please create a design first in the web UI." }],
-        isError: true,
-      });
-    }
-    const latest = projects[0];
-
-    if (toolName === "get_latest_project") {
-      const spec = (await readProjectHandoffFile(latest.id, "SPEC.md")) || "No SPEC.md generated.";
-      const readme = (await readProjectHandoffFile(latest.id, "README.md")) || "No README.md.";
-      const tokens = (await readProjectHandoffFile(latest.id, "design/tokens.json")) || "{}";
-      const files = await listProjectHandoffFiles(latest.id);
-      
-      const responseText = [
-        `# Active Project: ${latest.title}`,
-        `**Raw User Idea**: ${latest.rawIdea}`,
-        `**Last Updated**: ${latest.updatedAt}`,
-        "",
-        "## Product Specification (SPEC.md)",
-        "```markdown",
-        spec,
-        "```",
-        "",
-        "## Design Tokens (tokens.json)",
-        "```json",
-        tokens,
-        "```",
-        "",
-        "## Available Page Asset Files",
-        files.filter(f => f.startsWith("design/pages/")).map(f => `- \`${f}\``).join("\n"),
-        "",
-        "Use \`get_page_assets\` with the page name to read the high-fidelity SVG or layers layout JSON."
-      ].join("\n");
-
-      return sendMcpResponse(id, {
-        content: [{ type: "text", text: responseText }],
-      });
-    }
-
-    if (toolName === "get_page_assets") {
-      const pageSlug = toolArgs.pageSlug;
-      const cleanSlug = pageSlug.replace(/\.(svg|canvas\.json)$/, "").replace(/^design\/pages\//, "");
-      
-      const svgRelPath = `design/pages/${cleanSlug}.svg`;
-      const jsonRelPath = `design/pages/${cleanSlug}.canvas.json`;
-
-      const svgContent = await readProjectHandoffFile(latest.id, svgRelPath);
-      const jsonContent = await readProjectHandoffFile(latest.id, jsonRelPath);
-
-      if (!svgContent) {
-        return sendMcpResponse(id, {
-          content: [{ type: "text", text: `Page asset matching "${pageSlug}" was not found.` }],
-          isError: true,
-        });
-      }
-
-      const results = [
-        `### Page: ${cleanSlug}`,
-        "",
-        `#### 1. High-fidelity Vector Visual SVG (\`${svgRelPath}\`)`,
-        "This SVG represents the exact pixel-perfect design layout. Use it for styling, positioning, and visual reference:",
-        "```xml",
-        svgContent,
-        "```",
-      ];
-
-      if (jsonContent) {
-        results.push(
-          "",
-          `#### 2. Layout Structure Layers JSON (\`${jsonRelPath}\`)`,
-          "This contains structural layers, text blocks content, and configurations:",
-          "```json",
-          jsonContent,
-          "```"
-        );
-      }
-
-      return sendMcpResponse(id, {
-        content: [{ type: "text", text: results.join("\n") }],
-      });
-    }
-
-    return sendMcpError(id, -32601, `Tool method ${toolName} not supported.`);
-  }
-
-  return sendMcpError(id, -32601, `Method ${method} not found.`);
-}
-
-// ==========================================
-// CLI Routing Entry
-// ==========================================
-
-async function main() {
-  const args = process.argv.slice(2);
-  const command = args[0] || "help";
-
-  if (command === "mcp") {
-    await handleMcpMode();
-  } else if (command === "list") {
-    const projects = await getSortedProjects();
-    if (projects.length === 0) {
-      console.log("No projects found under .vad/projects/");
+async function runMcpForwarder() {
+  // stdout 只能出 JSON-RPC；把 console.log 挪到 stderr
+  console.log = console.error;
+  const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+  let inflight = Promise.resolve();
+  rl.on("line", (line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    let payload;
+    try {
+      payload = JSON.parse(trimmed);
+    } catch {
+      writeOut(rpcError(null, -32700, "Parse error"));
       return;
     }
-    console.log("=== Active Vibeboard Projects ===");
-    projects.forEach((p, i) => {
-      console.log(`${i + 1}. [${p.id}] ${p.title} (${p.updatedAt})`);
-      console.log(`   Idea: ${p.rawIdea}`);
+    // 串行转发，保证响应顺序与请求一致
+    inflight = inflight.then(() => forward(payload)).catch((err) => {
+      console.error("[vibeboard-mcp] forward failed:", err && err.message ? err.message : err);
     });
-  } else {
-    console.log("=== Vibeboard Local CLI Tool ===");
-    console.log("Usage:");
-    console.log("  node cli.js list    - List all active designer projects on local disk");
-    console.log("  node cli.js mcp     - Run stdio Model Context Protocol (MCP) server");
-    console.log("                        (Injects visual design contexts into Claude Code / Cursor)");
+  });
+  rl.on("close", () => {
+    inflight.finally(() => process.exit(0));
+  });
+}
+
+// ─────────────────────────── list / status ───────────────────────────
+
+async function listProjects() {
+  const dir = path.join(resolveVadRoot(), "projects");
+  let entries = [];
+  try {
+    entries = await fsp.readdir(dir);
+  } catch {
+    console.log(`No projects found under ${dir}`);
+    return;
   }
+  const projects = [];
+  for (const id of entries) {
+    try {
+      const raw = await fsp.readFile(path.join(dir, id, "project.json"), "utf8");
+      projects.push(JSON.parse(raw));
+    } catch {
+      // 跳过非项目目录
+    }
+  }
+  projects.sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+  if (projects.length === 0) {
+    console.log(`No projects found under ${dir}`);
+    return;
+  }
+  console.log(`=== Vibeboard projects (${dir}) ===`);
+  projects.forEach((p, i) => {
+    console.log(`${i + 1}. [${p.id}] ${p.title} (${p.updatedAt})`);
+    if (p.rawIdea) console.log(`   ${p.rawIdea}`);
+  });
+}
+
+async function printStatus() {
+  const endpoint = resolveEndpoint();
+  if (!endpoint) {
+    console.log("Bridge endpoint: not found");
+    console.log(NOT_RUNNING_MESSAGE);
+    process.exitCode = 1;
+    return;
+  }
+  console.log(`Bridge endpoint: ${endpoint.url}`);
+  console.log(`Token:           ${endpoint.token ? "present" : "none"}`);
+  console.log(`Source:          ${endpoint.source}`);
+  try {
+    const headers = { "content-type": "application/json", accept: "application/json, text/event-stream" };
+    if (endpoint.token) headers.authorization = `Bearer ${endpoint.token}`;
+    const res = await fetch(endpoint.url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "vibeboard-cli", version: "0.1.0" } },
+      }),
+    });
+    console.log(`Reachable:       ${res.ok ? "yes" : `HTTP ${res.status}`}`);
+    if (!res.ok) process.exitCode = 1;
+  } catch (err) {
+    console.log(`Reachable:       no (${err && err.message ? err.message : err})`);
+    process.exitCode = 1;
+  }
+}
+
+function printHelp() {
+  console.log("=== Vibeboard CLI ===");
+  console.log("Usage:");
+  console.log("  node cli.js mcp [--root <vadRoot>] [--url <mcpUrl> --token <token>]");
+  console.log("        stdio MCP server that forwards to the running Vibeboard (/mcp)");
+  console.log("  node cli.js status [--root <vadRoot>]   show bridge endpoint and reachability");
+  console.log("  node cli.js list   [--root <vadRoot>]   list local projects");
+}
+
+async function main() {
+  if (command === "mcp") return runMcpForwarder();
+  if (command === "list") return listProjects();
+  if (command === "status") return printStatus();
+  printHelp();
 }
 
 main().catch((err) => {

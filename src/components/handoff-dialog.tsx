@@ -43,6 +43,7 @@ import {
   type HandoffSelection,
 } from "@/lib/handoff/select-assets";
 import { McpQuickCopy } from "@/components/mcp-quick-copy";
+import { HandoffRepoLink } from "@/components/handoff-repo-link";
 import {
   ImageLightbox,
   PreviewableThumb,
@@ -795,9 +796,13 @@ export function HandoffDialog({
               </div>
             </section>
 
+            {codingPack ? (
+              <HandoffRepoLink project={project} onProjectUpdate={onProjectUpdate} />
+            ) : null}
+
             <section className="rounded-xl border border-[var(--border)] p-3">
               <p className="mb-2 text-xs font-semibold">
-                {codingPack ? "导出到" : "导出包"}
+                {codingPack ? "或导出 zip" : "导出包"}
               </p>
               <ul className="space-y-2">
                 {orderedTargets.map((t) => (

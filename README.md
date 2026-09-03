@@ -78,6 +78,22 @@ pnpm dev:desktop
 
 If `pnpm dev` is already running, this only opens a window and will not spawn a second server.
 
+### Connect Cursor / Claude Code / Codex (no zip)
+
+With the app running, open **Settings → 连接**.
+
+- **Cursor**: click “在 Cursor 中安装” (deeplink) or “写入配置”.
+- **Claude Code**: one-click `claude mcp add --transport http`.
+- **Codex**: one-click `codex mcp add --url` plus `~/.codex/config.toml` headers.
+
+Coding agents then call `get_handoff` / `get_asset_image` against `http://127.0.0.1:<port>/mcp` (Bearer token, loopback only). From a Handoff dialog you can also **link a code repo** so the package is written to `design/vibeboard/` with `AGENTS.md` / `CLAUDE.md` snippets — no download/unzip.
+
+Fallback for stdio-only hosts:
+
+```bash
+node cli.js mcp
+```
+
 ### Optional: Enable the Daemon (recommended for development)
 
 ```bash

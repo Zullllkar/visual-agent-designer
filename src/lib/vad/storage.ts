@@ -9,6 +9,7 @@
 import type { ProjectFile } from "@/lib/project/schema";
 import type { ChatMessage } from "@/lib/agents/chat-schema";
 import { mergeAssetsPreferDiscarded } from "@/lib/project/asset-visibility";
+import { scheduleLinkedRepoSync } from "@/lib/bridge/repo-sync";
 import type { VadFileNode } from "./types";
 import {
   applyFileEditToProject,
@@ -46,21 +47,26 @@ export async function saveProjectToVad(
   let toSave = project;
   try {
     const existing = await loadProjectFromVad(project.id);
-    if (existing?.assets?.length) {
+    if (existing) {
       toSave = {
         ...project,
-        assets: mergeAssetsPreferDiscarded(existing.assets, project.assets),
+        assets: existing.assets?.length
+          ? mergeAssetsPreferDiscarded(existing.assets, project.assets)
+          : project.assets,
+        linkedRepo: project.linkedRepo ?? existing.linkedRepo,
       };
     }
   } catch {
     /* 首次保存或读盘失败：按入参写入 */
   }
 
-  return withFallback(
+  const saved = await withFallback(
     () => daemon.daemonSaveProject(toSave),
     () => local.saveProjectToVad(toSave),
     "saveProject"
   );
+  scheduleLinkedRepoSync(saved);
+  return saved;
 }
 
 export async function loadProjectFromVad(

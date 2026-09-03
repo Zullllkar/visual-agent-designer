@@ -5,12 +5,14 @@ import {
   HardDrive,
   Info,
   Keyboard,
+  Plug,
   SlidersHorizontal,
   X,
 } from "lucide-react";
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { DaemonStatusHint } from "@/components/daemon-status-hint";
 import { ProviderSettingsDialog } from "@/components/provider-settings-dialog";
+import { BridgePane } from "@/components/settings/bridge-pane";
 import { useDesktopRuntime } from "@/lib/desktop/use-desktop-runtime";
 import {
   type LocalePreference,
@@ -32,6 +34,7 @@ import "./settings-dialog.css";
 export type SettingsSection =
   | "general"
   | "models"
+  | "bridge"
   | "storage"
   | "shortcuts"
   | "about";
@@ -43,6 +46,7 @@ const NAV: Array<{
 }> = [
   { id: "general", label: "通用", icon: SlidersHorizontal },
   { id: "models", label: "模型", icon: Cpu },
+  { id: "bridge", label: "连接", icon: Plug },
   { id: "storage", label: "存储", icon: HardDrive },
   { id: "shortcuts", label: "快捷键", icon: Keyboard },
   { id: "about", label: "关于", icon: Info },
@@ -51,6 +55,7 @@ const NAV: Array<{
 const TITLES: Record<SettingsSection, string> = {
   general: "通用",
   models: "模型",
+  bridge: "连接 coding agent",
   storage: "存储",
   shortcuts: "快捷键",
   about: "关于",
@@ -126,6 +131,7 @@ export function SettingsDialog({
                 <ProviderSettingsDialog variant="panel" />
               </div>
             ) : null}
+            {section === "bridge" ? <BridgePane /> : null}
             {section === "storage" ? <StoragePane /> : null}
             {section === "shortcuts" ? <ShortcutsPane /> : null}
             {section === "about" ? <AboutPane /> : null}
