@@ -14,10 +14,15 @@ import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mc
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
+import { buildDirectPendingAssets } from "@/lib/agents/direct-image-generation";
+import { registerAllJobHandlers } from "@/lib/agents/job/job-handlers";
+import { jobScheduler } from "@/lib/agents/job/job-scheduler";
 import { buildKickoffClipboardText } from "@/lib/handoff/kickoff-prompt";
+import { MATERIAL_SLOT_COST_USD } from "@/lib/handoff/materialize-cost";
 import { resolveAssetImageDataUrl } from "@/lib/handoff/resolve-asset-src";
 import { compressImageDataUrlForVision } from "@/lib/handoff/vision-image";
 import type { ProjectFile } from "@/lib/project/schema";
+import { resolveProviders } from "@/lib/providers/registry";
 import { listProjectsFromVad } from "@/lib/vad/storage";
 
 import { activeContext } from "./active-context";
@@ -27,6 +32,14 @@ import {
   getBuiltHandoff,
   type BuiltHandoff,
 } from "./handoff-cache";
+import { reviewImplementation } from "./implementation-review";
+import {
+  bridgeRequests,
+  isAutoApproveAssets,
+  type BridgeRequest,
+} from "./pending-requests";
+import { getCachedProviderConfig, providerCacheStatus } from "./provider-cache";
+import { readScreenshotInput } from "./screenshot-input";
 import { resolveProject, summarizeProject } from "./resolve-project";
 
 export const BRIDGE_SERVER_VERSION = "0.1.0";
@@ -36,9 +49,15 @@ const SERVER_INSTRUCTIONS = [
   "Start with get_active_context (or pass `project` explicitly), then call get_handoff once — it bundles README/DESIGN/SPEC/LAYOUT/tokens in one response. Prefer it over many read_handoff_file calls.",
   "Use get_asset_image to look at a final mockup as an image; use get_layout_ir for authoritative regions, copy and which regions must be rebuilt in code.",
   "Never invent a different visual system. Follow tokens, style lock and the don'ts in DESIGN.md.",
+  "After you implement a screen, call report_implementation with a screenshot — Vibeboard compares it to the approved design and returns a concrete deviation list to fix.",
+  "Missing an image? Call request_asset instead of drawing it in CSS/SVG. Unsure about a design decision? Call ask_designer rather than guessing.",
 ].join("\n");
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
+const WRITE = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } as const;
+
+/** 工具内等待用户处理的上限，留在 Codex 默认 60s 工具超时之内。 */
+const USER_WAIT_MS = 40_000;
 
 const PROJECT_ARG = z
   .string()
@@ -58,6 +77,7 @@ export function createBridgeMcpServer(): McpServer {
 
   registerContextTools(server);
   registerPullTools(server);
+  registerWriteBackTools(server);
   registerResources(server);
   return server;
 }
@@ -435,6 +455,334 @@ function registerPullTools(server: McpServer): void {
       };
     }
   );
+}
+
+// ───────────────────────── write-back ─────────────────────────
+
+function registerWriteBackTools(server: McpServer): void {
+  server.registerTool(
+    "request_asset",
+    {
+      title: "Ask Vibeboard for a new asset",
+      description:
+        "Commission a missing image (icon, illustration, hero, avatar, background) from Vibeboard instead of hand-drawing it in CSS/SVG. The designer approves it in the app (it costs money), then Vibeboard generates it and the file lands in the project + linked repo. Returns a requestId immediately; poll get_job once approved.",
+      inputSchema: {
+        project: PROJECT_ARG,
+        description: z
+          .string()
+          .min(4)
+          .describe("What the image should show, in English. Subject only — no UI chrome or text labels."),
+        role: z
+          .enum(["hero", "illustration", "product-shot", "background", "icon", "avatar", "decoration"])
+          .optional()
+          .describe("How the image is used in the design."),
+        width: z.number().int().min(64).max(4096).optional().describe("Pixel width (default 1280)."),
+        height: z.number().int().min(64).max(4096).optional().describe("Pixel height (default 720)."),
+        count: z.number().int().min(1).max(4).optional().describe("How many variants to generate (default 1)."),
+        referenceAssetId: z
+          .string()
+          .optional()
+          .describe("Existing asset id to use as a style reference so the new image matches."),
+      },
+      annotations: WRITE,
+    },
+    async ({ project, description, role, width, height, count, referenceAssetId }) => {
+      const r = await resolveProject(project);
+      if (!r.ok) return fail(r.error, r.candidates);
+      const p = r.project;
+
+      const providerConfig = getCachedProviderConfig(p.id);
+      if (!providerConfig?.image || providerConfig.image.kind === "mock") {
+        return fail(
+          "Vibeboard has no image provider credentials in memory. Ask the user to open Vibeboard (and configure an image model in Settings → 模型); keys live in the browser and are only cached while the app is in use.",
+          undefined,
+          { providerCache: providerCacheStatus(p.id) }
+        );
+      }
+
+      const requested = {
+        description: description.trim(),
+        role,
+        width: width ?? 1280,
+        height: height ?? 720,
+        count: count ?? 1,
+        referenceAssetId,
+        estimatedUsd: Math.round((count ?? 1) * MATERIAL_SLOT_COST_USD * 1000) / 1000,
+      };
+      const request = bridgeRequests.create({
+        kind: "asset",
+        projectId: p.id,
+        asset: requested,
+      });
+
+      let settled: BridgeRequest = request;
+      if (isAutoApproveAssets()) {
+        settled = bridgeRequests.resolve(request.id, { action: "approve" }) ?? request;
+      } else {
+        settled = await bridgeRequests.wait(request.id, USER_WAIT_MS);
+      }
+
+      if (settled.status === "rejected") {
+        return json({
+          requestId: request.id,
+          status: "rejected",
+          reason: settled.reason,
+          hint: "The designer declined. Ask what to use instead, or call ask_designer.",
+        });
+      }
+      if (settled.status !== "approved") {
+        return json({
+          requestId: request.id,
+          status: "pending",
+          hint: "Waiting for the designer to approve in Vibeboard. Continue with other work and call get_job later, or get_request to check status.",
+          request: requested,
+        });
+      }
+
+      const job = await startAssetJob(p, requested, providerConfig);
+      bridgeRequests.attachJob(request.id, job.jobId);
+      return json({
+        requestId: request.id,
+        status: "approved",
+        jobId: job.jobId,
+        assetIds: job.assetIds,
+        hint: "Generation started. Poll get_job(jobId) until status is completed, then get_asset_image(assetId).",
+      });
+    }
+  );
+
+  server.registerTool(
+    "get_request",
+    {
+      title: "Check a Vibeboard request",
+      description:
+        "Status of a request_asset / ask_designer request: pending, approved (with jobId), rejected (with reason) or answered (with the designer's answer).",
+      inputSchema: {
+        requestId: z.string().min(1),
+        waitMs: z
+          .number()
+          .int()
+          .min(0)
+          .max(40_000)
+          .optional()
+          .describe("Block up to this many ms waiting for the designer (default 0 = return immediately)."),
+      },
+      annotations: READ_ONLY,
+    },
+    async ({ requestId, waitMs }) => {
+      const existing = bridgeRequests.get(requestId);
+      if (!existing) return fail(`Unknown or expired requestId: ${requestId}`);
+      const settled =
+        waitMs && existing.status === "pending"
+          ? await bridgeRequests.wait(requestId, waitMs)
+          : existing;
+      return json(publicRequest(settled));
+    }
+  );
+
+  server.registerTool(
+    "get_job",
+    {
+      title: "Check a generation job",
+      description:
+        "Poll a job started by request_asset. Returns status (pending|running|completed|failed|cancelled), progress 0-100 and, when completed, the generated asset ids — pass those to get_asset_image.",
+      inputSchema: { jobId: z.string().min(1) },
+      annotations: READ_ONLY,
+    },
+    async ({ jobId }) => {
+      registerAllJobHandlers();
+      const job = jobScheduler.getJob(jobId);
+      if (!job) return fail(`Unknown jobId: ${jobId}. It may have been created by an earlier app session.`);
+      const result = job.result as
+        | { assets?: Array<{ id: string; src?: string; prompt?: string; status?: string }> }
+        | undefined;
+      return json({
+        jobId: job.id,
+        type: job.type,
+        status: job.status,
+        progress: job.progress ?? 0,
+        message: job.progressDetail?.message,
+        error: job.error,
+        assets: (result?.assets ?? []).map((a) => ({
+          id: a.id,
+          status: a.status,
+          promptPreview: a.prompt?.slice(0, 120),
+        })),
+        hint:
+          job.status === "completed"
+            ? "Call get_asset_image(assetId) to see the result. Files also sync into the linked repo."
+            : job.status === "failed"
+              ? "Generation failed. Report the error to the user; do not hand-draw the asset."
+              : "Still working. Poll again in a few seconds.",
+      });
+    }
+  );
+
+  server.registerTool(
+    "ask_designer",
+    {
+      title: "Ask the designer a question",
+      description:
+        "Ask the human designer a blocking design question (e.g. which of two layouts, what an ambiguous region should do). Shows up in Vibeboard; blocks up to 40s then returns a questionId you can poll with get_request. Use this instead of guessing and building the wrong thing.",
+      inputSchema: {
+        project: PROJECT_ARG,
+        question: z.string().min(4).describe("One concrete question. Be specific about the screen and element."),
+        options: z
+          .array(z.string().min(1))
+          .max(6)
+          .optional()
+          .describe("Optional choices so the designer can answer with one click."),
+        context: z.string().optional().describe("Short context: what you are building and why you are blocked."),
+      },
+      annotations: WRITE,
+    },
+    async ({ project, question, options, context }) => {
+      const r = await resolveProject(project);
+      if (!r.ok) return fail(r.error, r.candidates);
+      const request = bridgeRequests.create({
+        kind: "question",
+        projectId: r.project.id,
+        question: { question: question.trim(), options, context },
+      });
+      const settled = await bridgeRequests.wait(request.id, USER_WAIT_MS);
+      if (settled.status === "answered") {
+        return json({ questionId: request.id, status: "answered", answer: settled.answer });
+      }
+      if (settled.status === "rejected") {
+        return json({
+          questionId: request.id,
+          status: "dismissed",
+          reason: settled.reason,
+          hint: "The designer dismissed the question. Use your best judgement and note the assumption in your summary.",
+        });
+      }
+      return json({
+        questionId: request.id,
+        status: "pending",
+        hint: "No answer yet. Work on something else and call get_request({requestId, waitMs}) later, or proceed and state your assumption.",
+      });
+    }
+  );
+
+  server.registerTool(
+    "report_implementation",
+    {
+      title: "Report an implemented screen for review",
+      description:
+        "Send a screenshot of what you built. Vibeboard compares it against the approved mockup and Layout IR and returns a structured deviation list (slot, kind, expected, actual, fixHint) plus a 0-10 score. Fix the high-severity items and report again. This is the acceptance loop — call it after each screen.",
+      inputSchema: {
+        project: PROJECT_ARG,
+        assetId: z
+          .string()
+          .optional()
+          .describe("Which approved mockup this screen implements. Defaults to the project's primary mockup."),
+        summary: z.string().min(4).describe("One or two sentences: what you implemented and anything you deliberately changed."),
+        screenshotBase64: z
+          .string()
+          .optional()
+          .describe("PNG/JPEG as base64 (or a data: URL). Preferred — no filesystem access needed."),
+        screenshotPath: z
+          .string()
+          .optional()
+          .describe("Absolute path to a screenshot inside the linked repo or the system temp dir."),
+        url: z.string().optional().describe("Where the screen runs, e.g. http://localhost:5173/dashboard."),
+      },
+      annotations: WRITE,
+    },
+    async ({ project, assetId, summary, screenshotBase64, screenshotPath, url }) => {
+      const r = await resolveProject(project);
+      if (!r.ok) return fail(r.error, r.candidates);
+      const p = r.project;
+
+      const shot = await readScreenshotInput(p, { screenshotBase64, screenshotPath });
+      if (!shot.ok) return fail(shot.error);
+
+      const providerConfig = getCachedProviderConfig(p.id);
+      const llm = providerConfig ? resolveProviders(providerConfig).llm : undefined;
+      const report = await reviewImplementation({
+        project: p,
+        assetId,
+        reportedSummary: summary.trim(),
+        screenshotDataUrl: shot.dataUrl,
+        url,
+        llm,
+      });
+
+      return json({
+        reportId: report.id,
+        reviewedAgainst: report.assetId,
+        source: report.source,
+        score: report.score,
+        verdict: report.verdict,
+        summary: report.summary,
+        matched: report.matched,
+        deviations: report.deviations,
+        warnings: report.warnings,
+        hint:
+          report.deviations.length === 0
+            ? "No deviations found. Tell the user the screen matches the design."
+            : "Fix the high-severity deviations using each fixHint, then call report_implementation again with a fresh screenshot.",
+      });
+    }
+  );
+}
+
+async function startAssetJob(
+  project: ProjectFile,
+  request: {
+    description: string;
+    role?: string;
+    width: number;
+    height: number;
+    count: number;
+    referenceAssetId?: string;
+  },
+  providerConfig: NonNullable<ReturnType<typeof getCachedProviderConfig>>
+): Promise<{ jobId: string; assetIds: string[] }> {
+  registerAllJobHandlers();
+  const referenceAsset = request.referenceAssetId
+    ? (project.assets ?? []).find((a) => a.id === request.referenceAssetId)
+    : undefined;
+
+  const generationRequest = {
+    prompt: request.description,
+    count: request.count,
+    width: request.width,
+    height: request.height,
+    visualStyle: project.brief?.visualStyle,
+    role: request.role as "hero" | "illustration" | "product-shot" | "background" | "icon" | "avatar" | "decoration" | undefined,
+    referenceImages: referenceAsset?.src ? [referenceAsset.src] : undefined,
+  };
+  const batchId = `bridge-${Date.now().toString(36)}`;
+  const pendingAssets = buildDirectPendingAssets(generationRequest, batchId);
+  const job = jobScheduler.submit({
+    type: "direct_image_generation",
+    projectId: project.id,
+    batchId,
+    payload: {
+      project,
+      providerConfig,
+      request: generationRequest,
+      pendingAssets,
+      requestedVia: "bridge",
+    },
+  });
+  return { jobId: job.id, assetIds: pendingAssets.map((a) => a.id) };
+}
+
+export function publicRequest(request: BridgeRequest) {
+  return {
+    requestId: request.id,
+    kind: request.kind,
+    status: request.status,
+    createdAt: request.createdAt,
+    resolvedAt: request.resolvedAt,
+    jobId: request.jobId,
+    answer: request.answer,
+    reason: request.reason,
+    asset: request.asset,
+    question: request.question,
+  };
 }
 
 // ───────────────────────── resources ─────────────────────────

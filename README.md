@@ -88,6 +88,8 @@ With the app running, open **Settings → 连接**.
 
 Coding agents then call `get_handoff` / `get_asset_image` against `http://127.0.0.1:<port>/mcp` (Bearer token, loopback only). From a Handoff dialog you can also **link a code repo** so the package is written to `design/vibeboard/` with `AGENTS.md` / `CLAUDE.md` snippets — no download/unzip.
 
+After implementing a screen, the coding agent should call `report_implementation` with a screenshot. Missing images: `request_asset` (shows an approval card in the canvas). Design questions: `ask_designer`.
+
 Fallback for stdio-only hosts:
 
 ```bash

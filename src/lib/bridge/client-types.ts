@@ -30,6 +30,15 @@ export interface BridgeStatusResponse {
   }>;
   cursorDeeplink: string;
   commands: Record<BridgeAgentSlug, string>;
+  autoApproveAssets: boolean;
+  providerCache: {
+    available: boolean;
+    scope: "project" | "latest" | "none";
+    seenAt?: number;
+    imageKind?: string;
+    llmKind?: string;
+  };
+  pendingRequests: number;
 }
 
 export interface BridgeAgentInfo {

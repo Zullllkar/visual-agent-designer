@@ -44,9 +44,12 @@ import {
 } from "@/lib/ws/missing-run-fallback";
 import { loadConversationsFromVad } from "@/lib/vad/persist";
 import { activeContext } from "@/lib/bridge/active-context";
+import { bridgeRequests } from "@/lib/bridge/pending-requests";
+import { rememberProviderConfig } from "@/lib/bridge/provider-cache";
 
 let jobForwarderAttached = false;
 let runRecoveryStarted = false;
+let bridgeRequestForwarderAttached = false;
 
 async function threadIdFromProjectChat(projectId: string): Promise<string | undefined> {
   const data = await loadConversationsFromVad(projectId);
@@ -92,6 +95,21 @@ export function attachWebSocketHandler(server: Server): void {
       connectionManager.pushToCanvas(event.data.projectId, {
         type: "project.update",
         data: { project, jobId: event.data.jobId },
+      });
+    });
+  }
+
+  if (!bridgeRequestForwarderAttached) {
+    bridgeRequestForwarderAttached = true;
+    bridgeRequests.onChange((request) => {
+      connectionManager.pushToCanvas(request.projectId, {
+        type: "bridge.request",
+        data: {
+          projectId: request.projectId,
+          requestId: request.id,
+          kind: request.kind,
+          status: request.status,
+        },
       });
     });
   }
@@ -172,6 +190,8 @@ export function attachWebSocketHandler(server: Server): void {
         return;
       }
       activeContext.touch(cmd.projectId);
+      // Bridge 的 request_asset 没有浏览器会话，借用这里看到的凭证（仅内存）
+      rememberProviderConfig(cmd.projectId, cmd.providerConfig as ProviderConfig | undefined);
 
       if (
         (cmd.action === "agent.approve" ||

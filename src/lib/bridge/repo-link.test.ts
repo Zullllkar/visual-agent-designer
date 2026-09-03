@@ -42,7 +42,8 @@ describe("repo path", () => {
   });
 
   it("normalizes mountDir and rejects traversal", () => {
-    expect(normalizeMountDir(undefined).ok && normalizeMountDir(undefined).mountDir).toBe(DEFAULT_MOUNT_DIR);
+    const fallback = normalizeMountDir(undefined);
+    expect(fallback.ok && fallback.mountDir).toBe(DEFAULT_MOUNT_DIR);
     expect(normalizeMountDir("../etc").ok).toBe(false);
     expect(normalizeMountDir("/abs").ok).toBe(false);
     expect(normalizeMountDir("design/vibeboard").ok).toBe(true);

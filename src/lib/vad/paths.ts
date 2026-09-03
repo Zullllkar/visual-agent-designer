@@ -101,3 +101,12 @@ export function jobJsonPath(projectId: string, jobId: string): string {
 export function eventLogPath(projectId: string): string {
   return join(projectDir(projectId), "event-log.jsonl");
 }
+
+/** coding agent 回报的实现截图与验收报告目录 */
+export function implementationDir(projectId: string): string {
+  return join(projectDir(projectId), "implementation");
+}
+
+export function implementationReportPath(projectId: string, reportId: string): string {
+  return join(implementationDir(projectId), `${reportId}.json`);
+}

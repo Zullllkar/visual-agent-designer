@@ -97,6 +97,7 @@ export const WsEventSchema = z.object({
     "discovery.questions",
     "direction.confirm",
     "image_generation.confirm",
+    "bridge.request",
   ]),
   data: z.unknown(),
   seq: z.number().int().optional(),

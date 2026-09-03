@@ -60,6 +60,21 @@ export function BridgePane() {
     setBusy(null);
   };
 
+  const toggleAutoApprove = async () => {
+    if (!status) return;
+    setBusy("auto-approve");
+    try {
+      await fetch("/mcp/auto-approve", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled: !status.autoApproveAssets }),
+      });
+      await refreshStatus();
+    } finally {
+      setBusy(null);
+    }
+  };
+
   if (loading && !status) {
     return (
       <p className="flex items-center gap-2 text-xs app-subtle">
@@ -105,6 +120,25 @@ export function BridgePane() {
         </button>
       </div>
       <p className="vad-settings-path">{status.url}</p>
+
+      <div className="vad-settings-row">
+        <div className="vad-settings-copy">
+          <strong>自动批准素材请求</strong>
+          <p>
+            关闭时，coding agent 调用 request_asset 会在画布左下角弹卡片等你批准（生图要花钱）。
+            打开则直接生成，适合你在旁边盯着的时候。重启应用后恢复为关闭。
+          </p>
+        </div>
+        <button
+          type="button"
+          className="vad-settings-btn"
+          onClick={() => void toggleAutoApprove()}
+          disabled={busy === "auto-approve"}
+        >
+          {busy === "auto-approve" ? <Loader2 className="size-3.5 animate-spin" /> : null}
+          {status.autoApproveAssets ? "已开启" : "已关闭"}
+        </button>
+      </div>
 
       <div className="vad-settings-row">
         <div className="vad-settings-copy">

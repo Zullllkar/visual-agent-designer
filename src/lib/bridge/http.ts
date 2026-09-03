@@ -18,6 +18,7 @@ import { activeContext } from "./active-context";
 import { bridgeClients, classifyClientName } from "./clients";
 import { BRIDGE_MCP_PATH, BRIDGE_SERVER_NAME } from "./config";
 import { detectAllAgentClis } from "./detect";
+import { listImplementationReports } from "./implementation-review";
 import { installAgent, registrationStatus, uninstallAgent } from "./install-exec";
 import {
   BRIDGE_AGENT_SLUGS,
@@ -26,7 +27,13 @@ import {
   isBridgeAgentSlug,
   type BridgeEndpoint,
 } from "./install-planner";
-import { createBridgeMcpServer, BRIDGE_SERVER_VERSION } from "./mcp-server";
+import { createBridgeMcpServer, BRIDGE_SERVER_VERSION, publicRequest } from "./mcp-server";
+import {
+  bridgeRequests,
+  isAutoApproveAssets,
+  setAutoApproveAssets,
+} from "./pending-requests";
+import { providerCacheStatus } from "./provider-cache";
 
 export interface BridgeRuntime {
   url: string;
@@ -80,7 +87,69 @@ export function createBridgeHttpHandler(runtime: BridgeRuntime) {
         clients: bridgeClients.list().map((c) => ({ ...c, slug: classifyClientName(c.name) })),
         cursorDeeplink: cursorInstallDeeplink(endpoint),
         commands: Object.fromEntries(BRIDGE_AGENT_SLUGS.map((slug) => [slug, describeInstallCommand(slug, endpoint)])),
+        autoApproveAssets: isAutoApproveAssets(),
+        providerCache: providerCacheStatus(activeContext.snapshot().projectId),
+        pendingRequests: bridgeRequests.list({ status: "pending" }).length,
       });
+    }
+
+    if (pathname === `${BRIDGE_MCP_PATH}/requests` && req.method === "GET") {
+      const projectId = url.searchParams.get("projectId") ?? undefined;
+      const includeResolved = url.searchParams.get("all") === "1";
+      const all = bridgeRequests.list(projectId ? { projectId } : undefined);
+      return sendJson(res, 200, {
+        ok: true,
+        autoApproveAssets: isAutoApproveAssets(),
+        requests: (includeResolved ? all : all.filter((r) => r.status === "pending")).map(publicRequest),
+      });
+    }
+
+    if (pathname === `${BRIDGE_MCP_PATH}/requests` && req.method === "POST") {
+      let body: { requestId?: unknown; action?: unknown; answer?: unknown; reason?: unknown };
+      try {
+        body = JSON.parse(await readBody(req, 64 * 1024));
+      } catch {
+        return sendJson(res, 400, { error: "invalid_json" });
+      }
+      const requestId = typeof body.requestId === "string" ? body.requestId : "";
+      const action = body.action;
+      if (!requestId || (action !== "approve" && action !== "reject" && action !== "answer")) {
+        return sendJson(res, 400, { error: "invalid_input", message: "Need requestId and action approve|reject|answer." });
+      }
+      const resolution =
+        action === "approve"
+          ? ({ action: "approve" } as const)
+          : action === "reject"
+            ? ({ action: "reject", reason: typeof body.reason === "string" ? body.reason : undefined } as const)
+            : ({ action: "answer", answer: typeof body.answer === "string" ? body.answer : "" } as const);
+      if (resolution.action === "answer" && !resolution.answer.trim()) {
+        return sendJson(res, 400, { error: "empty_answer", message: "answer must be a non-empty string." });
+      }
+      const updated = bridgeRequests.resolve(requestId, resolution);
+      if (!updated) {
+        return sendJson(res, 409, { error: "not_pending", message: "Request not found or already handled." });
+      }
+      return sendJson(res, 200, { ok: true, request: publicRequest(updated) });
+    }
+
+    if (pathname === `${BRIDGE_MCP_PATH}/auto-approve` && req.method === "POST") {
+      let body: { enabled?: unknown };
+      try {
+        body = JSON.parse(await readBody(req, 4096));
+      } catch {
+        return sendJson(res, 400, { error: "invalid_json" });
+      }
+      setAutoApproveAssets(body.enabled === true);
+      return sendJson(res, 200, { ok: true, autoApproveAssets: isAutoApproveAssets() });
+    }
+
+    if (pathname === `${BRIDGE_MCP_PATH}/reports` && req.method === "GET") {
+      const projectId = url.searchParams.get("projectId") ?? activeContext.snapshot().projectId;
+      if (!projectId) {
+        return sendJson(res, 400, { error: "missing_project", message: "Pass ?projectId=..." });
+      }
+      const reports = await listImplementationReports(projectId, 20);
+      return sendJson(res, 200, { ok: true, projectId, reports });
     }
 
     if (pathname === `${BRIDGE_MCP_PATH}/agents` && req.method === "GET") {

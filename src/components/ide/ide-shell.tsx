@@ -70,6 +70,7 @@ import { planHomeJobOnCanvas, useHomeGenerateStore } from "@/store/home-generate
 import { useProjectStore } from "@/store/project-store";
 import { useProviderStore } from "@/store/provider-store";
 import { ArtifactTreePanel } from "./artifact-tree-panel";
+import { BridgeRequestDock } from "./bridge-request-dock";
 import { CanvasPane } from "./canvas-pane";
 import { ChatStreamView } from "./chat-stream-view";
 import { ImagePane } from "./image-pane";
@@ -759,6 +760,7 @@ export function IdeShell({ projectId }: IdeShellProps) {
               onOpenHandoff={() => setShowHandoff(true)}
             />
           </div>
+          <BridgeRequestDock projectId={project.id} />
         </main>
 
         <div className="vad-agent-column relative min-h-0 min-w-0">
