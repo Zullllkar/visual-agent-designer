@@ -1,4 +1,5 @@
 "use client";
+import { createShapeId, type RecordProps, type TLBaseShape } from "@/lib/tldraw-compat";
 
 /**
  * 已废弃的画布 shape 兼容层
@@ -8,7 +9,6 @@
  * 本地同步会在校验阶段抛 ValidationError 并白屏。
  *
  * 这里只做「能加载 + 零 UI」，真正删除由 syncProjectToEditor 完成。
- *
  * @author：wangjunhua
  */
 
@@ -17,8 +17,6 @@ import {
   Rectangle2d,
   ShapeUtil,
   T,
-  type RecordProps,
-  type TLBaseShape,
 } from "tldraw";
 
 type DeprecatedCardShape = TLBaseShape<
@@ -37,17 +35,16 @@ const deprecatedProps: RecordProps<DeprecatedCardShape> = {
 };
 
 function makeDeprecatedUtil(type: "spec-card" | "handoff-card") {
-  // @ts-expect-error TLShape union does not include custom shapes by design
   return class DeprecatedCardShapeUtil extends ShapeUtil<DeprecatedCardShape> {
-    static override type = type;
+    static type = type;
 
-    static override props = deprecatedProps;
+    static props = deprecatedProps;
 
-    override getDefaultProps(): DeprecatedCardShape["props"] {
+    getDefaultProps(): DeprecatedCardShape["props"] {
       return { w: 1, h: 1, projectId: "" };
     }
 
-    override getGeometry(shape: DeprecatedCardShape): Rectangle2d {
+    getGeometry(shape: DeprecatedCardShape): Rectangle2d {
       return new Rectangle2d({
         width: Math.max(1, shape.props.w),
         height: Math.max(1, shape.props.h),
@@ -55,20 +52,20 @@ function makeDeprecatedUtil(type: "spec-card" | "handoff-card") {
       });
     }
 
-    override canResize = () => false;
-    override canEditInReadonly = () => false;
-    override hideRotateHandle = () => true;
-    override canBind = () => false;
-    override hideSelectionBoundsBg = () => true;
-    override hideSelectionBoundsFg = () => true;
+    canResize = () => false;
+    canEditInReadonly = () => false;
+    hideRotateHandle = () => true;
+    canBind = () => false;
+    hideSelectionBoundsBg = () => true;
+    hideSelectionBoundsFg = () => true;
 
-    override component() {
+    component() {
       return (
         <HTMLContainer style={{ width: 0, height: 0, overflow: "hidden" }} />
       );
     }
 
-    override getIndicatorPath(): Path2D | undefined {
+    getIndicatorPath(): Path2D | undefined {
       return undefined;
     }
   };

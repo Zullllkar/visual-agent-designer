@@ -82,3 +82,49 @@ export const BRIDGE_AGENT_LABELS: Record<BridgeAgentSlug, string> = {
   claude: "Claude Code",
   codex: "Codex",
 };
+
+export type BuildRunStatus = "running" | "completed" | "failed" | "cancelled";
+export type BuildLogKind = "status" | "text" | "thinking" | "tool" | "error" | "stderr";
+
+export interface BuildLogEvent {
+  ts: number;
+  kind: BuildLogKind;
+  text: string;
+  name?: string;
+  seq?: number;
+}
+
+export interface BuildPreviewResponse {
+  ok: true;
+  slug: BridgeAgentSlug;
+  bin: string;
+  binPath: string;
+  version: string | null;
+  argv: string[];
+  command: string;
+  cwd: string;
+  fingerprint: string;
+  prompt: string;
+  promptChars: number;
+  envKeys: string[];
+  warnings: string[];
+  installUrl: string;
+}
+
+export interface BuildRunPublic {
+  id: string;
+  projectId: string;
+  slug: BridgeAgentSlug;
+  status: BuildRunStatus;
+  cwd: string;
+  bin: string;
+  command: string;
+  fingerprint: string;
+  startedAt: number;
+  endedAt?: number;
+  exitCode?: number | null;
+  error?: string;
+  events: BuildLogEvent[];
+  promptChars: number;
+  eventCount: number;
+}

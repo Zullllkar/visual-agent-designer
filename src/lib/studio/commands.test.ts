@@ -5,6 +5,7 @@ describe("FILE_MENU_COMMANDS", () => {
   it("starts with product actions before folders", () => {
     expect(FILE_MENU_COMMANDS.map((item) => item.id)).toEqual([
       "new-brief",
+      "import-project",
       "open-settings",
       "open-gallery",
       "open-vad-root",

@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, Search } from "lucide-react";
+import { Check, ChevronDown, Puzzle, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SKILL_KIND_LABELS } from "@/lib/skills/kinds";
 import type { SkillCatalogItem } from "@/lib/skills/schema";
@@ -23,17 +23,19 @@ export function SkillPicker({
   onChange: (skill: SkillCatalogItem | undefined) => void;
   disabled?: boolean;
   inline?: boolean;
-  variant?: "default" | "composer";
+  variant?: "default" | "composer" | "chip";
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const selected = skills.find((skill) => skill.name === value);
-  const selectedTitle = selected ? skillCardTitle(selected) : "先不绑 Skill";
+  const chip = variant === "chip";
+  const selectedTitle = selected ? skillCardTitle(selected) : chip ? "Skill" : "先不绑 Skill";
   const pickerClass = [
     "vad-skill-picker",
     inline ? "vad-skill-picker--inline" : "",
     variant === "composer" ? "vad-skill-picker--composer" : "",
+    chip ? "vad-skill-picker--chip" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -78,10 +80,19 @@ export function SkillPicker({
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
       >
-        <span className="vad-skill-trigger-copy">
-          <small>Skill（可选）</small>
-          <strong className={selected ? undefined : "is-idle"}>{selectedTitle}</strong>
-        </span>
+        {chip ? (
+          <>
+            <Puzzle className="size-3.5 vad-skill-chip-icon" aria-hidden />
+            <strong className={`vad-skill-chip-label${selected ? " is-set" : ""}`}>
+              {selectedTitle}
+            </strong>
+          </>
+        ) : (
+          <span className="vad-skill-trigger-copy">
+            <small>Skill（可选）</small>
+            <strong className={selected ? undefined : "is-idle"}>{selectedTitle}</strong>
+          </span>
+        )}
         <ChevronDown
           className={`size-3.5 vad-skill-chevron${open ? " is-open" : ""}`}
           aria-hidden

@@ -17,6 +17,9 @@ import type {
   SubmitJobInput,
 } from "./job-types";
 import { saveJobSnapshot } from "./job-persist";
+import { listJobSnapshots, loadJobSnapshot, markJobSnapshotCancelled } from "./job-persist";
+import { loadMergedProjectFromVad } from "@/lib/vad/storage";
+import { bindGenerationProject } from "@/lib/generation/ledger-context";
 
 type JobListener = (event: JobEvent) => void;
 
@@ -28,6 +31,52 @@ class JobScheduler {
   private concurrency = 3;
   private runningCount = 0;
   private queue: string[] = [];
+
+  /** Requeue recoverable jobs after a process restart. Safe to call repeatedly. */
+  async recoverProjectJobs(projectId: string): Promise<number> {
+    const snapshots = await listJobSnapshots({ projectId });
+    let recovered = 0;
+    for (const snapshot of snapshots) {
+      if (snapshot.status !== "pending" && snapshot.status !== "running") continue;
+      if (this.jobs.has(snapshot.id)) continue;
+      const full = await loadJobSnapshot(projectId, snapshot.id);
+      if (!full?.recoverablePayload) {
+        await markJobSnapshotCancelled(projectId, snapshot.id);
+        continue;
+      }
+      const project = await loadMergedProjectFromVad(projectId).catch(() => null);
+      if (!project) continue;
+      const recoverable = full.recoverablePayload;
+      const pendingAssetIds = new Set(
+        Array.isArray(recoverable.pendingAssetIds)
+          ? recoverable.pendingAssetIds.filter((id): id is string => typeof id === "string")
+          : [],
+      );
+      const pendingAssets = (project.assets ?? []).filter((asset) =>
+        asset.status === "generating" && (pendingAssetIds.size === 0 || pendingAssetIds.has(asset.id)),
+      );
+      const job: Job = {
+        ...snapshot,
+        status: "pending",
+        payload: {
+          project,
+          providerConfig: recoverable.providerConfig,
+          request: recoverable.request,
+          pendingAssets,
+        },
+        startedAt: undefined,
+        completedAt: undefined,
+        error: undefined,
+      };
+      this.jobs.set(job.id, job);
+      this.queue.push(job.id);
+      this.persist(job);
+      this.emit({ type: "job.queued", data: { ...this.eventBase(job), progress: job.progress ?? 0, detail: { ...(job.progressDetail ?? { stage: "queued", completed: 0, failed: 0, total: pendingAssets.length }), message: "应用重启后已恢复" } } });
+      recovered++;
+    }
+    this.tryRunNext();
+    return recovered;
+  }
 
   /** 注册 Job 处理器 */
   registerHandler(type: JobType, handler: JobHandler): void {
@@ -49,6 +98,7 @@ class JobScheduler {
       payload: input.payload,
       createdAt: Date.now(),
       runId: input.runId,
+      turnId: input.turnId ?? (typeof input.payload.turnId === "string" ? input.payload.turnId : undefined),
       batchId:
         input.batchId ??
         (typeof input.payload.batchId === "string" ? input.payload.batchId : undefined) ??
@@ -105,9 +155,10 @@ class JobScheduler {
   }
 
   /** 获取所有 Job */
-  listJobs(filter?: { runId?: string; projectId?: string; status?: JobStatus }): Job[] {
+  listJobs(filter?: { runId?: string; turnId?: string; projectId?: string; status?: JobStatus }): Job[] {
     let result = Array.from(this.jobs.values());
     if (filter?.runId) result = result.filter((j) => j.runId === filter.runId);
+    if (filter?.turnId) result = result.filter((j) => j.turnId === filter.turnId);
     if (filter?.projectId) result = result.filter((j) => j.projectId === filter.projectId);
     if (filter?.status) result = result.filter((j) => j.status === filter.status);
     return result.sort((a, b) => a.createdAt - b.createdAt);
@@ -151,6 +202,7 @@ class JobScheduler {
     });
 
     try {
+      bindGenerationProject(job.projectId);
       const result = await handler(job, {
         signal: abortController.signal,
         reportProgress: (detail) => this.reportProgress(job, detail),
@@ -228,6 +280,7 @@ class JobScheduler {
       batchId: job.batchId ?? (typeof batchId === "string" ? batchId : undefined),
       projectId: job.projectId,
       runId: job.runId,
+      turnId: job.turnId,
       threadId: job.threadId,
       toolCallId: job.toolCallId,
       assetId,

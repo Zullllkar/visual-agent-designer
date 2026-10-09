@@ -63,7 +63,9 @@ export function StudioFrame({
       .then(async (response) => {
         const type = response.headers.get("content-type") ?? "";
         if (!response.ok || !type.includes("application/json")) return [];
-        return response.json();
+        const text = await response.text();
+        if (!text.trim()) return [];
+        return JSON.parse(text) as unknown;
       })
       .then((data) => {
         if (Array.isArray(data)) importProjectsQuietly(data);
@@ -186,7 +188,7 @@ export function StudioFrame({
       </aside>
 
       <main className={`studio-main studio-main--${active}`}>
-        {active === "home" ? <div className="studio-grid" aria-hidden /> : null}
+        <div className="studio-stage-dots" aria-hidden />
         <div className="studio-mobile-bar">
           <button
             type="button"

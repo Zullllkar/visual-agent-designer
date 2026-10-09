@@ -20,12 +20,10 @@ const { resolveDesktopPaths, sidecarRoot } = require("./paths.cjs") as {
 
 describe("resolveDesktopPaths", () => {
   it("puts project data under userData", () => {
-    const app = { getPath: () => "C:/Users/me/AppData/Roaming/VAD" };
-    const paths = resolveDesktopPaths(app, {});
+    const app = { getPath: (_name: string) => "C:/Users/me/AppData/Roaming/VAD" };
+    const paths = resolveDesktopPaths(app);
     expect(paths.vadRoot).toBe(path.join(app.getPath("userData"), "vad"));
-    expect(paths.checkpoints).toBe(
-      path.join(app.getPath("userData"), "vad-data")
-    );
+    expect(paths.checkpoints).toBe(path.join(app.getPath("userData"), "vad-data"));
     expect(paths.logsDir).toBe(path.join(app.getPath("userData"), "logs"));
   });
 });

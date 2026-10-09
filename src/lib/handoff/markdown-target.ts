@@ -3,6 +3,7 @@ import type { ProjectFile } from "@/lib/project/schema";
 import type { AssetDesignSpec } from "@/lib/project/design-spec-schema";
 import {
   deriveDesignContext,
+  isPlaceholderColorTokens,
   summarizeDesignContext,
 } from "@/lib/project/design-context";
 import {
@@ -13,7 +14,9 @@ import {
 import { buildKickoffClipboardText } from "./kickoff-prompt";
 import { appendMaterializationFiles } from "./material-pack";
 import { toDtcgTokens } from "./tokens-dtcg";
+import { renderTailwindTokens, renderTokensCss } from "./tokens-export";
 import { resolveHandoffPackKind, type HandoffPackKind } from "./pack-kind";
+import { pickPrimaryMockup } from "./select-assets";
 import { briefDisplayFields } from "@/lib/targets/brief";
 import { getTargetRecipe } from "@/lib/targets/catalog";
 import { resolveTargetId } from "@/lib/targets/resolve";
@@ -35,6 +38,7 @@ interface HandoffAssetEntry {
   prompt?: string;
   originalSrc: string;
   error?: string;
+  starred?: boolean;
 }
 
 interface HandoffBuildState {
@@ -96,7 +100,11 @@ async function buildArtifact(
   appendDesignSpecFiles(files, designSpecs, state);
 
   const baseTokens = extractTokens(project);
-  const tokens = mergeSpecTokensIntoHandoffTokens(baseTokens, designSpecs);
+  const tokens = mergeSpecTokensIntoHandoffTokens(
+    baseTokens,
+    designSpecs,
+    pickPrimaryMockup(project)?.id
+  );
   const specByAssetId = new Map(designSpecs.map((s) => [s.assetId, s]));
   // Kickoff / project.json 带上导出时补全的规格（含 heuristic），与 design/specs 一致
   const projectWithSpecs: ProjectFile = {
@@ -126,6 +134,8 @@ async function buildArtifact(
       path: "design/tokens.dtcg.json",
       content: JSON.stringify(toDtcgTokens(tokens), null, 2),
     },
+    { path: "design/tokens.css", content: renderTokensCss(tokens) },
+    { path: "design/tailwind.tokens.cjs", content: renderTailwindTokens(tokens) },
     {
       path: "design/specs/index.json",
       content: JSON.stringify(
@@ -192,6 +202,13 @@ async function buildNonCodeArtifact(
 
   await appendFinalAssets(project, files, state, requestOrigin);
   await appendReferenceAssets(project, files, state, requestOrigin);
+  if (
+    pack !== "none" &&
+    state.finalAssets.length > 0 &&
+    !state.finalAssets.some((asset) => asset.starred)
+  ) {
+    state.warnings.push("没有收藏定稿，包内图片均为探索候选，请勿当生产图。");
+  }
 
   const targetId = resolveTargetId(project);
   const recipe = getTargetRecipe(targetId);
@@ -350,12 +367,31 @@ function renderArtBible(
     lines.push(project.designDirection.summary, "");
   }
   lines.push("## 资产", "");
-  for (const asset of state.finalAssets) {
-    lines.push(
-      `- ${asset.file ?? asset.id}：${asset.role || "概念图"} ${asset.width}x${asset.height}`
-    );
+  const starred = state.finalAssets.filter((asset) => asset.starred);
+  const exploring = state.finalAssets.filter((asset) => !asset.starred);
+  if (starred.length) {
+    lines.push("### 定稿（已收藏）", "");
+    for (const asset of starred) {
+      const kind = inferArtKind(asset.role, asset.prompt);
+      lines.push(
+        `- ${asset.file ?? asset.id}：${kind} ${asset.width}x${asset.height}`
+      );
+    }
+    lines.push("");
   }
-  lines.push("");
+  if (exploring.length) {
+    lines.push("### 探索（未收藏，不当生产图）", "");
+    for (const asset of exploring) {
+      const kind = inferArtKind(asset.role, asset.prompt);
+      lines.push(
+        `- ${asset.file ?? asset.id}：${kind} ${asset.width}x${asset.height}`
+      );
+    }
+    lines.push("");
+  }
+  if (!state.finalAssets.length) {
+    lines.push("本包没有图。", "");
+  }
   return lines.join("\n");
 }
 
@@ -430,7 +466,8 @@ function renderAssetUsage(
     lines.push(`## ${asset.index}. ${asset.file ?? asset.id}`, "");
     lines.push(`- 尺寸：${asset.width}x${asset.height}`);
     if (asset.role) lines.push(`- 角色：${asset.role}`);
-    lines.push(`- 用途：${usageForNonCodeAsset(pack, asset.role, project)}`);
+    lines.push(`- 状态：${asset.starred ? "已收藏定稿" : "探索候选，不当生产图"}`);
+    lines.push(`- 用途：${usageForNonCodeAsset(pack, asset.role, asset.prompt, project)}`);
     if (asset.prompt) {
       lines.push("", "Prompt:", "", "```text", asset.prompt, "```");
     }
@@ -446,15 +483,32 @@ function renderAssetUsage(
   return lines.join("\n");
 }
 
+function inferArtKind(role: string | undefined, prompt: string | undefined): string {
+  const p = `${role ?? ""} ${prompt ?? ""}`.toLowerCase();
+  if (role === "scene" || /office|interior|street|city|environment|skyline|场景|街景|办公室/.test(p)) {
+    return "场景";
+  }
+  if (role === "prop" || /prop sheet|道具|whiteboard|laptop with/.test(p)) return "道具";
+  if (role === "icon") return "图标";
+  if (/gameplay|hud|popup|playable|经营模拟/.test(p)) return "玩法关键帧";
+  if (/character|founder|立绘|full body|portrait/.test(p) || role === "portrait") return "角色立绘";
+  if (/meeting|pitch|investor|路演/.test(p)) return "剧情镜头";
+  return "概念图";
+}
+
 function usageForNonCodeAsset(
   pack: HandoffPackKind,
   role: string | undefined,
+  prompt: string | undefined,
   project: ProjectFile
 ): string {
   if (pack === "art-bible") {
-    if (role === "scene") return "场景 / 镜头，保持同一世界观";
-    if (role === "prop") return "道具，剪影清楚";
-    if (role === "icon") return "图标 / 界面装饰，不要画成 SaaS 首页";
+    const kind = inferArtKind(role, prompt);
+    if (kind === "场景") return "场景 / 镜头，保持同一世界观与光色";
+    if (kind === "道具") return "道具表，剪影清楚，可单独切片";
+    if (kind === "图标") return "图标 / 界面装饰，不要画成 SaaS 首页";
+    if (kind === "玩法关键帧") return "玩法气氛图，不是可实现的 UI 线框";
+    if (kind === "剧情镜头") return "叙事镜头，服务世界观而非界面";
     return "角色立绘 / 概念图，主体剪影清楚";
   }
   if (pack === "media-pack") {
@@ -500,6 +554,7 @@ async function appendFinalAssets(
       prompt: asset.prompt,
       originalSrc: asset.src,
       error: asset.error,
+      starred: asset.status === "starred",
     };
 
     if (materialized) {
@@ -1073,7 +1128,10 @@ function extractTokens(project: ProjectFile) {
   const fontSizes = new Set<number>();
   const radii = new Set<number>();
   const designContext = deriveDesignContext(project);
-  for (const token of designContext?.colorTokens ?? []) colors.add(token.value);
+  // 占位默认色不进 tokens.json —— 交给 coding agent 的必须是有来源的颜色
+  if (!isPlaceholderColorTokens(designContext?.colorTokens)) {
+    for (const token of designContext?.colorTokens ?? []) colors.add(token.value);
+  }
   for (const page of project.pages ?? []) {
     if (page.background) colors.add(page.background);
     for (const node of page.nodes) {

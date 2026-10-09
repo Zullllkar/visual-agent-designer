@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import type { ImageAsset } from "@/lib/project/assets-schema";
 import type { ProjectFile } from "@/lib/project/schema";
+import { displayAssetTitle } from "@/lib/project/asset-title";
 import type { HandoffTarget } from "@/lib/handoff/types";
 import {
   countMediaSlots,
@@ -362,6 +363,11 @@ export function HandoffDialog({
                     {starredCount > 0 ? ` · 收藏 ${starredCount}` : ""}
                     {" · 写入 assets/final/"}
                   </p>
+                  {starredCount === 0 && selectableAssets.length > 0 ? (
+                    <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-300">
+                      还没有收藏。请勾选定稿再导出，不要把探索图整包交出去。
+                    </p>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap gap-1">
                   <button
@@ -400,7 +406,7 @@ export function HandoffDialog({
                     const checked = selection.assetIds.includes(asset.id);
                     const map = materialMaps.find((m) => m.mockupId === asset.id);
                     const hasVision = asset.designSpec?.source === "vision";
-                    const missingSpec = !asset.designSpec;
+                    const missingSpec = codingPack && !asset.designSpec;
                     return (
                       <li key={asset.id}>
                         <label
@@ -425,7 +431,7 @@ export function HandoffDialog({
                           <PreviewableThumb
                             src={asset.src}
                             className="size-14"
-                            title={`定稿 ${asset.id.slice(0, 10)}`}
+                            title={`定稿 ${displayAssetTitle(asset)}`}
                             subtitle={`${asset.width}×${asset.height}`}
                             onPreview={setPreview}
                           />
@@ -434,8 +440,8 @@ export function HandoffDialog({
                               {asset.status === "starred" ? (
                                 <Star className="size-3 fill-amber-400 text-amber-500" />
                               ) : null}
-                              <span className="truncate font-mono text-[10px]">
-                                {asset.id.slice(0, 8)}
+                              <span className="truncate text-[10px]">
+                                {displayAssetTitle(asset)}
                               </span>
                               <span className="tabular-nums app-subtle">
                                 {asset.width}×{asset.height}
@@ -767,6 +773,16 @@ export function HandoffDialog({
                     </span>
                   </li>
                 ))}
+                {preflight.repairSuggestions.length > 0 ? (
+                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-[11px] text-amber-950">
+                    <p className="font-semibold">质量门禁建议</p>
+                    <ul className="mt-1 space-y-1">
+                      {preflight.repairSuggestions.slice(0, 5).map((suggestion) => (
+                        <li key={suggestion.id}>· {suggestion.title}（{suggestion.pageId}）</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </ul>
             </section>
 
@@ -869,7 +885,12 @@ export function HandoffDialog({
             <p className="text-[11px] leading-relaxed app-subtle">
               {handoffZipFootnote(packKind)}
             </p>
-            <McpQuickCopy />
+            {codingPack ? <McpQuickCopy /> : (
+              <p className="text-[11px] leading-relaxed app-subtle">
+                这是{packKind === "art-bible" ? "美术包" : packKind === "media-pack" ? "投放包" : "风格草稿包"}
+                ，不接到 Cursor / Claude Code。把 zip 交给原画或投放使用即可。
+              </p>
+            )}
           </div>
         </div>
       </div>

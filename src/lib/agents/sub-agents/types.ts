@@ -14,9 +14,14 @@ export interface SubAgentInput {
   project: ProjectFile | null;
   agentCtx: AgentContext;
   providerConfig: ProviderConfig;
+  abortSignal?: AbortSignal;
 }
 
 export interface SubAgentOutput {
+  contractVersion?: 1;
+  status?: "completed" | "failed";
+  workflowType?: string;
+  durationMs?: number;
   summary: string;
   updatedProject?: ProjectFile | null;
   data?: unknown;

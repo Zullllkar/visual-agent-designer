@@ -18,6 +18,7 @@ import { resolveRunDesignContext } from "@/lib/agents/tools/utils";
 import { processBase64Assets } from "@/lib/vad/persist";
 import { loadMergedProjectFromVad, saveProjectToVad } from "@/lib/vad/storage";
 import { parseProjectFileLight } from "@/lib/project/parse-project";
+import { ensureProjectBrief } from "@/lib/project/ensure-brief";
 import { nanoid } from "nanoid";
 import { buildPendingAssets } from "@/lib/agents/pending-assets";
 import type { ImageAsset } from "@/lib/project/assets-schema";
@@ -31,6 +32,8 @@ import {
 import { resolveReferenceImagesForModel } from "@/lib/agents/resolve-reference-images";
 import { collectProjectReferenceImages } from "@/lib/agents/reference-images";
 import { generateMaterialsForLayout } from "@/lib/handoff/generate-materials";
+import { alignPendingGeneratingAssets, mergePendingGeneratingAssets } from "@/lib/canvas/stage-generating-assets";
+import { buildDeterministicProjectReview } from "@/lib/agents/tools/review-project";
 
 let registered = false;
 
@@ -57,15 +60,19 @@ const imageGenerationHandler: JobHandler<{
   };
 
   const { project: submittedProject, agentCtx, providerConfig, count } = payload;
-  const project = await loadMergedProjectFromVad(submittedProject.id).catch(() => submittedProject);
+  const loaded =
+    (await loadMergedProjectFromVad(submittedProject.id).catch(() => submittedProject)) ??
+    submittedProject;
+  const project = ensureProjectBrief(loaded, {
+    prompt: payload.prompt,
+    userMessage: Array.isArray(payload.prompts) ? payload.prompts[0] : undefined,
+  });
+  const brief = project.brief;
+  if (!brief) throw new Error("project_brief_missing");
   const prompts = (payload.prompts ?? [])
     .map((p) => p.trim())
     .filter(Boolean);
   const planTotal = prompts.length > 1 ? prompts.length : count;
-
-  if (!project?.brief) {
-    throw new Error("缺少 brief，无法生图");
-  }
 
   const batchId = payload.batchId ?? nanoid(8);
   const provisionalPending = buildDirectPendingAssets(
@@ -73,7 +80,7 @@ const imageGenerationHandler: JobHandler<{
       prompt:
         payload.prompt ??
         prompts[0] ??
-        project.brief.productName ??
+        brief.productName ??
         "image",
       prompts: prompts.length > 0 ? prompts : undefined,
       count: planTotal,
@@ -104,7 +111,7 @@ const imageGenerationHandler: JobHandler<{
   });
   const plan = await ImagePlannerAgent.run(
     {
-      brief: project.brief,
+      brief,
       pages: [],
       designDirection: project.designDirection,
       standaloneCount: count,
@@ -204,7 +211,7 @@ const imageGenerationHandler: JobHandler<{
   try {
     executed = await ImageExecutorAgent.run(
       {
-        brief: project.brief,
+        brief,
         pages: [],
         plan,
         providerConfig,
@@ -246,6 +253,26 @@ const imageGenerationHandler: JobHandler<{
     };
   }
 
+  // Every completed generation gets a deterministic review snapshot. This is
+  // cheap, local, and gives the next Agent turn actionable refinement context.
+  const critique = buildDeterministicProjectReview(updated);
+  updated = parseProjectFileLight({
+    ...markPlannedAssetsGenerated(updated, executed.succeeded),
+    critique,
+    critiqueHistory: [
+      ...(updated.critiqueHistory ?? []),
+      {
+        round: latestProject.critiqueHistory?.length ?? 0,
+        overallScore: critique.overallScore,
+        perPage: critique.reports.map((report) => ({ pageId: report.pageId, score: report.score })),
+        accepted: true,
+        generatedAt: critique.generatedAt,
+      },
+    ],
+    updatedAt: critique.generatedAt,
+  });
+  await saveProjectToVad(updated);
+
   return {
     batchId,
     assets: (updated.assets ?? executed.assets).map((a) => ({
@@ -279,8 +306,12 @@ const directImageGenerationHandler: JobHandler<{
   );
   const project = loadedProject ?? submittedProject;
   const { image } = resolveProviders(providerConfig);
+  const alignedPending = alignPendingGeneratingAssets(
+    project.assets ?? [],
+    pendingAssets
+  );
 
-  let liveAssets = ensureAssets(project.assets ?? [], pendingAssets);
+  let liveAssets = ensureAssets(project.assets ?? [], alignedPending);
   let latestProject = await persistAssetsRespectingDiscarded(
     project,
     liveAssets,
@@ -313,8 +344,8 @@ const directImageGenerationHandler: JobHandler<{
     completed: 0,
     failed: 0,
     cancelled: 0,
-    total: pendingAssets.length,
-    message: "Starting image generation",
+    total: alignedPending.length,
+    message: "正在生成封面…",
   });
 
   const resolvedRefs = await resolveReferenceImagesForModel(
@@ -328,10 +359,11 @@ const directImageGenerationHandler: JobHandler<{
       referenceImages: resolvedRefs,
     },
     initialAssets: liveAssets,
-    pendingAssets,
+    pendingAssets: alignedPending,
     signal,
     concurrency: 2,
     onAssetsReady: persistAssets,
+    ledgerProjectId: project.id,
     onProgress: (progress) =>
       reportProgress({
         stage: "generating",
@@ -361,6 +393,24 @@ const directImageGenerationHandler: JobHandler<{
       updatedAt: new Date().toISOString(),
     };
   }
+
+  const critique = buildDeterministicProjectReview(latestProject);
+  latestProject = parseProjectFileLight({
+    ...markPlannedAssetsGenerated(latestProject, result.succeeded),
+    critique,
+    critiqueHistory: [
+      ...(latestProject.critiqueHistory ?? []),
+      {
+        round: latestProject.critiqueHistory?.length ?? 0,
+        overallScore: critique.overallScore,
+        perPage: critique.reports.map((report) => ({ pageId: report.pageId, score: report.score })),
+        accepted: true,
+        generatedAt: critique.generatedAt,
+      },
+    ],
+    updatedAt: critique.generatedAt,
+  });
+  await saveProjectToVad(latestProject);
 
   return {
     assets: (latestProject.assets ?? result.assets)
@@ -464,6 +514,23 @@ async function persistAssetsRespectingDiscarded(
   return next;
 }
 
+function markPlannedAssetsGenerated(project: ProjectFile, generatedCount: number): ProjectFile {
+  if (!project.assetPlan) return project;
+  let remaining = Math.max(0, generatedCount);
+  return {
+    ...project,
+    assetPlan: {
+      ...project.assetPlan,
+      items: project.assetPlan.items.map((item) => {
+        if (item.status !== "planned" || remaining <= 0) return item;
+        remaining -= 1;
+        return { ...item, status: "generated" as const };
+      }),
+      updatedAt: new Date().toISOString(),
+    },
+  };
+}
+
 function buildUpdatedProject(
   project: ProjectFile,
   assets: ImageAsset[],
@@ -488,11 +555,7 @@ function buildProjectWithAssets(project: ProjectFile, assets: ImageAsset[]): Pro
 }
 
 function ensureAssets(assets: ImageAsset[], pendingAssets: ImageAsset[]): ImageAsset[] {
-  const existing = new Set(assets.map((asset) => asset.id));
-  return [
-    ...assets,
-    ...pendingAssets.filter((asset) => !existing.has(asset.id)),
-  ];
+  return mergePendingGeneratingAssets(assets, pendingAssets);
 }
 
 function abortError(): Error {

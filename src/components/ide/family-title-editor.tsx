@@ -61,14 +61,14 @@ export function FamilyTitleEditor({
       editor.updateShapes([
         {
           id: boardShapeId as never,
-          type: "family-board",
+          type: "family-board" as any,
           props: { label: next },
         },
       ]);
     }
   };
 
-  const blockCanvas = (event: ReactPointerEvent<HTMLElement>) => {
+  const blockCanvas = (event: React.SyntheticEvent<HTMLElement>) => {
     event.stopPropagation();
   };
 

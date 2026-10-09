@@ -4,8 +4,8 @@
  * 作品板空态 — 引导去 Composer 描述画面
  */
 
-import { useValue, useEditor } from "tldraw";
 import { Sparkles } from "lucide-react";
+import { useEditor, useValue } from "tldraw";
 import { useCanvasUiStore } from "@/store/canvas-ui-store";
 
 export function CanvasEmptyState({
@@ -24,26 +24,29 @@ export function CanvasEmptyState({
       editor
         .getCurrentPageShapes()
         .some((s) =>
-          ["image-asset", "reference-card"].includes(s.type as string)
+          ["image-asset", "reference-card", "text-note"].includes(
+            s.type as string
+          )
         ),
-    [editor]
+    [editor],
   );
 
   if (hasArtwork) return null;
 
   return (
     <div className="pointer-events-none absolute inset-0 z-[5] grid place-items-center px-6">
-      <div className="pointer-events-auto flex max-w-xs flex-col items-center text-center">
-        <p className="text-[22px] font-semibold tracking-[-0.03em] text-[var(--foreground)]">
-          {title}
-        </p>
-        <p className="mt-2 text-[13px] leading-relaxed text-[var(--muted)]">
-          {hint}
-        </p>
+      <div className="vad-canvas-empty pointer-events-auto">
+        <div className="vad-canvas-empty-frame" aria-hidden>
+          <span className="vad-canvas-empty-tile is-a" />
+          <span className="vad-canvas-empty-tile is-b" />
+          <span className="vad-canvas-empty-tile is-c" />
+        </div>
+        <p className="vad-canvas-empty-title">{title}</p>
+        <p className="vad-canvas-empty-hint">{hint}</p>
         <button
           type="button"
           onClick={() => requestComposerFocus()}
-          className="vad-canvas-empty-cta mt-5 inline-flex items-center gap-2 px-3.5 py-2 text-[12px] font-semibold tracking-[-0.01em] transition-[filter]"
+          className="vad-canvas-empty-cta"
         >
           <Sparkles className="size-3.5" aria-hidden />
           开始描述

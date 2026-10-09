@@ -15,7 +15,7 @@ function mockCtx(userMessage: string): ToolContext {
 describe("askDiscoveryTool", () => {
   it("can run after direction is set so adjust questions are not rejected", () => {
     expect(askDiscoveryTool.inputPhase).toEqual([
-      "INIT",
+      "DISCOVERY",
       "DISCOVERY",
       "BRIEF",
       "DIRECTION",

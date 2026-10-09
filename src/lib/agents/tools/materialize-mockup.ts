@@ -18,7 +18,7 @@ export const materializeMockupTool: AgentTool = {
   name: "materialize_mockup",
   description:
     "用户对某张整屏 UI 图满意后：默认只锁定整图并拆解 Layout IR（媒体/代码槽 + prompt），展示给用户确认；仅当 generateMaterials=true 或 skipGeneration=false 时才启动生图 Job",
-  inputPhase: ["GENERATION", "REVIEW", "EXPORT"],
+  inputPhase: ["GENERATION", "REVIEW", "HANDOFF"],
   outputPhase: "REVIEW",
   riskLevel: "moderate",
   requiresConfirmation: true,
@@ -175,6 +175,7 @@ export const materializeMockupTool: AgentTool = {
         forceRegen: Boolean(slotIds?.length),
       },
       runId: ctx.runId,
+            turnId: typeof ctx.agentCtx.scratch.turnId === "string" ? ctx.agentCtx.scratch.turnId : undefined,
       toolCallId: ctx.toolCallId,
       projectId: ctx.agentCtx.projectId,
       threadId: ctx.agentCtx.threadId,

@@ -1,6 +1,11 @@
 import type { IncomingMessage } from "node:http";
 import { describe, expect, it } from "vitest";
-import { isBridgePath, isLoopbackHostHeader, isLoopbackOrigin, isSameOriginOrNonBrowser } from "./http";
+import {
+  isBridgePath,
+  isLoopbackHostHeader,
+  isLoopbackOrigin,
+  isSameOriginOrNonBrowser,
+} from "./http";
 
 function req(headers: Record<string, string>): IncomingMessage {
   return { headers } as unknown as IncomingMessage;
@@ -10,6 +15,8 @@ describe("bridge http guards", () => {
   it("recognises bridge paths", () => {
     expect(isBridgePath("/mcp")).toBe(true);
     expect(isBridgePath("/mcp/status")).toBe(true);
+    expect(isBridgePath("/mcp/build")).toBe(true);
+    expect(isBridgePath("/mcp/build/preview")).toBe(true);
     expect(isBridgePath("/mcpx")).toBe(false);
     expect(isBridgePath("/api/mcp")).toBe(false);
   });
@@ -32,8 +39,14 @@ describe("bridge http guards", () => {
 
   it("management endpoints require same-origin for browsers, allow non-browsers", () => {
     expect(isSameOriginOrNonBrowser(req({ host: "127.0.0.1:3000" }))).toBe(true);
-    expect(isSameOriginOrNonBrowser(req({ host: "127.0.0.1:3000", origin: "http://127.0.0.1:3000" }))).toBe(true);
-    expect(isSameOriginOrNonBrowser(req({ host: "127.0.0.1:3000", origin: "http://localhost:5173" }))).toBe(false);
-    expect(isSameOriginOrNonBrowser(req({ host: "127.0.0.1:3000", origin: "http://127.0.0.1:3001" }))).toBe(false);
+    expect(
+      isSameOriginOrNonBrowser(req({ host: "127.0.0.1:3000", origin: "http://127.0.0.1:3000" })),
+    ).toBe(true);
+    expect(
+      isSameOriginOrNonBrowser(req({ host: "127.0.0.1:3000", origin: "http://localhost:5173" })),
+    ).toBe(false);
+    expect(
+      isSameOriginOrNonBrowser(req({ host: "127.0.0.1:3000", origin: "http://127.0.0.1:3001" })),
+    ).toBe(false);
   });
 });

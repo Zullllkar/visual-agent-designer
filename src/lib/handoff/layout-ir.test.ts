@@ -88,7 +88,7 @@ describe("layout-ir", () => {
     expect(styleLock.palette).toContain("#39FF14");
     // 短 summary 可进 mood；整页叙述不得塞进 mood
     expect(styleLock.mood).toBe("Dark landing with hero art");
-    expect(styleLock.dna.accent).toBe("#39FF14");
+    expect(styleLock.dna?.accent).toBe("#39FF14");
   });
 
   it("does not put page-length summary into styleLock.mood", () => {
@@ -101,8 +101,8 @@ describe("layout-ir", () => {
     expect(styleLock.mood).toBe("");
     expect(styleLock.summary).toContain("login page");
     // 页面叙述仍可启发式抽出材质 DNA
-    expect(styleLock.dna.finish).toBe("brushed steel");
-    expect(styleLock.dna.lighting).toBe("neon rim light");
+    expect(styleLock.dna?.finish).toBe("brushed steel");
+    expect(styleLock.dna?.lighting).toBe("neon rim light");
   });
 
   it("prefers vision artStyle for Style DNA", () => {

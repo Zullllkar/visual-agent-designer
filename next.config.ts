@@ -11,6 +11,14 @@ const nextConfig: NextConfig = {
   ],
   // WebSocket 通过 custom server 挂载，不需要 Next.js 额外配置
   // server.ts 使用 tsx 运行，会自动加载 next.config.ts
+  async rewrites() {
+    return [
+      {
+        source: "/favicon.ico",
+        destination: "/brand/vibeboard-mark.svg",
+      },
+    ];
+  },
 };
 
 export default nextConfig;

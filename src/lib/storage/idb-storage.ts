@@ -34,6 +34,38 @@ const DB_VERSION = 1;
 let dbPromise: Promise<IDBDatabase> | null = null;
 const memoryFallback = new Map<string, string>();
 
+/** zustand persist 会对返回值 JSON.parse；空串会变成 Unexpected end of JSON input */
+export function normalizePersistedJson(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+type BrowserStorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+export function createBrowserJsonStorage(
+  backing?: BrowserStorageLike | null,
+): StateStorage {
+  const store =
+    backing ?? (typeof localStorage === "undefined" ? null : localStorage);
+  return {
+    getItem: (key) => {
+      if (!store) return null;
+      try {
+        return normalizePersistedJson(store.getItem(key));
+      } catch {
+        return null;
+      }
+    },
+    setItem: (key, value) => {
+      store?.setItem(key, value);
+    },
+    removeItem: (key) => {
+      store?.removeItem(key);
+    },
+  };
+}
+
 function openDb(): Promise<IDBDatabase> {
   if (typeof indexedDB === "undefined") {
     return Promise.reject(new Error("indexedDB not available"));
@@ -130,7 +162,7 @@ export function createIdbStorage(): StateStorage {
   const hasIdb = typeof indexedDB !== "undefined";
   if (!hasIdb) {
     return {
-      getItem: (k) => memoryFallback.get(k) ?? null,
+      getItem: (k) => normalizePersistedJson(memoryFallback.get(k) ?? null),
       setItem: (k, v) => {
         memoryFallback.set(k, v);
       },
@@ -143,16 +175,16 @@ export function createIdbStorage(): StateStorage {
     async getItem(key) {
       try {
         const v = await idbGet(key);
-        if (v != null) return v;
+        if (v != null) return normalizePersistedJson(v);
         // IDB 没有 → 尝试从 localStorage 迁移
-        return await migrateFromLocalStorage(key);
+        return normalizePersistedJson(await migrateFromLocalStorage(key));
       } catch (e) {
         if (typeof console !== "undefined") {
           console.warn(`[idb-storage] getItem("${key}") failed:`, e);
         }
         // IDB 故障兜底：回退读 localStorage（不删，避免雪上加霜）
         if (typeof localStorage !== "undefined") {
-          return localStorage.getItem(key);
+          return normalizePersistedJson(localStorage.getItem(key));
         }
         return null;
       }

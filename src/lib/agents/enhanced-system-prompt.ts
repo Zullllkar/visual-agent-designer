@@ -19,6 +19,7 @@ import type { ProjectFile } from "@/lib/project/schema";
 import { formatSkillRuntime } from "@/lib/skills/runtime";
 import { getTargetRecipe } from "@/lib/targets/catalog";
 import { buildGoalPromptSection, resolveTargetId } from "@/lib/targets/resolve";
+import { contextSourcesForPrompt } from "@/lib/project/context-sources";
 
 /**
  * 构建增强版系统提示词，赋予 ReAct Agent 完全自主的决策能力
@@ -46,10 +47,21 @@ export function buildEnhancedSystemPrompt(
     buildDesignSystemSection(agentCtx),
     buildDesignContextSection(project, agentCtx),
     buildBrandKitSection(project),
+    project ? buildContextSourcesSection(project) : "",
     rulesPrompt ? `## Workspace Rules\n${rulesPrompt}` : "",
   ];
 
   return sections.filter(Boolean).join("\n\n---\n\n");
+}
+
+function buildContextSourcesSection(project: ProjectFile): string {
+  const sources = contextSourcesForPrompt(project);
+  return [
+    "# Context Source Policy",
+    "Only use project context sources explicitly enabled by the user.",
+    sources.length ? sources.map((source) => `- ${source.priority + 1}. ${source.label} (${source.kind})`).join("\n") : "- No optional context sources are enabled.",
+    "When a disabled source conflicts with an enabled source, follow the enabled source and ask before re-enabling anything.",
+  ].join("\n");
 }
 
 function buildIdentitySection(): string {
@@ -109,10 +121,11 @@ function buildWorkflowKnowledgeSection(_project: ProjectFile | null): string {
     "1. Discovery (if needed) → gather requirements",
     "2. Brief generation → define product",
     "3. Direction planning → define visual style",
-    "4. Direction confirmation → user approves style",
+    "4. Asset planning → decide roles, prompts and sizes",
     "5. Image generation → create assets",
-    "6. Iteration & refinement",
-    "7. Export/handoff → deliver to coding tools",
+    "6. Review → inspect geometry, quality and completeness",
+    "7. Refinement → repair or regenerate only what needs work",
+    "8. Export/handoff → deliver to coding tools",
     "```",
     "",
     "## State-Based Decision Making",
@@ -127,7 +140,12 @@ function buildWorkflowKnowledgeSection(_project: ProjectFile | null): string {
     "- Call: plan_design_direction → confirm_direction → STOP",
     "",
     "### Direction Confirmed",
-    "- User sent [视觉方向确认] or confirmation message → Call: generate_images",
+    "- User sent [视觉方向确认] or confirmation message → Call: plan_assets first, then stop for approval if the plan changes the requested scope",
+    "- If assetPlan already exists and is current, call generate_images using the planned prompts",
+    "- After generation or any canvas mutation, call review_project before claiming completion",
+    "- If review_project reports issues, call repair_project for safe geometry/typography fixes; use manipulate_canvas or targeted regeneration only for issues that repair_project cannot safely fix",
+    "- If the Review score is below the Skill Runtime repair threshold, automatically request repair_project (after its normal confirmation) and run review_project again before offering Handoff",
+    "- Respect the Skill Runtime max repair rounds. If repair_project reports repairBlocked, stop automatic repair and ask the user whether to continue with force:true or accept/rollback the current version",
     "",
     "### Direction Adjustment",
     "- User sent [视觉方向调整] → Call: ask_discovery with direction-adjust form → STOP",
@@ -139,6 +157,7 @@ function buildWorkflowKnowledgeSection(_project: ProjectFile | null): string {
     "",
     "### Export/Handoff",
     "- Export request → Call: export_handoff (opens selection dialog)",
+    "- Handoff is blocked when preflight reports unfinished required Asset Plan items, active generation jobs, or no final assets. Explain the blocker and continue generation or ask the user to change the delivery scope.",
     "- Only 'ui-visual' / 'code-kickoff' exports include coding context for Cursor/Claude/Codex",
     "- Other targets export art/media/draft packs without coding kickoff",
     "",

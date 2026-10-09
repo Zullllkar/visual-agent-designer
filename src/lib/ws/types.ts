@@ -21,6 +21,7 @@ export const WsCommandSchema = z.object({
   prompts: z.array(z.string()).max(8).nullish(),
   projectId: z.string().nullish(),
   threadId: z.string().nullish(),
+  turnId: z.string().nullish(),
   runId: z.string().nullish(),
   approvalId: z.string().nullish(),
   toolArgs: z.record(z.string(), z.unknown()).optional(),

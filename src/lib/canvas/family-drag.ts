@@ -124,7 +124,7 @@ export function applyFamilyDrag(
   if (updates.length === 0) return;
   session.applying = true;
   try {
-    editor.updateShapes(updates);
+    editor.updateShapes(updates as any);
   } finally {
     session.applying = false;
   }

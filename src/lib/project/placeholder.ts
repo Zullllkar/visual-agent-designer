@@ -16,6 +16,7 @@ export function createPlaceholderProject(
     skillId?: string;
     skillVersion?: string;
     designSystemId?: string;
+    workspacePath?: string;
   },
 ): ProjectFile {
   const now = new Date().toISOString();
@@ -40,5 +41,6 @@ export function createPlaceholderProject(
     skillId: options?.skillId,
     skillVersion: options?.skillVersion,
     designSystemId: options?.designSystemId,
+    workspacePath: options?.workspacePath,
   };
 }

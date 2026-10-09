@@ -24,7 +24,7 @@ export function CanvasMinimap() {
       const content = editor.getCurrentPageBounds();
       const viewport = editor.getViewportPageBounds();
       const shapes = editor.getCurrentPageShapes().filter((s) =>
-        ["image-asset", "reference-card"].includes(s.type as string)
+        ["image-asset", "reference-card", "text-note"].includes(s.type as string)
       );
       return { content, viewport, shapeCount: shapes.length };
     },
@@ -169,7 +169,7 @@ export function CanvasMinimap() {
         />
         {editor.getCurrentPageShapes().map((shape) => {
           if (
-            !["image-asset", "reference-card"].includes(shape.type as string)
+            !["image-asset", "reference-card", "text-note"].includes(shape.type as string)
           )
             return null;
           const bounds = editor.getShapePageBounds(shape.id);

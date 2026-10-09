@@ -1,4 +1,8 @@
 /**
+ * @deprecated Internal fallback workflow only. Formal runtime is WebSocket +
+ * LangGraph ReAct; this fixed pipeline must not be used as a second product
+ * entry point. AgentRunService may call it only after the LLM is unavailable.
+ *
  * 工作流：用户一句话想法 → ProjectFile
  * --------------------------------------------------------------
  * 委托 design-pipeline 执行完整 LLM Agent + 生图流水线。

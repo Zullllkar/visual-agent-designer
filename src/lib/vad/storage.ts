@@ -19,6 +19,9 @@ import {
 import { isDaemonEnabled } from "./daemon-config";
 import * as daemon from "./daemon-client";
 import * as local from "./persist";
+import { loadWithDaemonFallback, loadListPreferLocalIfEmpty } from "./load-with-daemon-fallback";
+import { mergeProjectsById } from "./merge-project-lists";
+import { isStaleProjectWrite, nextProjectRevision } from "@/lib/project/revision";
 
 export type { VadFileNode } from "./types";
 export type { ApplyFileEditResult } from "./apply-file-edit";
@@ -48,6 +51,7 @@ export async function saveProjectToVad(
   try {
     const existing = await loadProjectFromVad(project.id);
     if (existing) {
+      if (isStaleProjectWrite(project, existing)) return existing;
       toSave = {
         ...project,
         assets: existing.assets?.length
@@ -55,6 +59,9 @@ export async function saveProjectToVad(
           : project.assets,
         linkedRepo: project.linkedRepo ?? existing.linkedRepo,
       };
+      toSave = nextProjectRevision(toSave, existing);
+    } else {
+      toSave = { ...project, revision: project.revision ?? 1 };
     }
   } catch {
     /* 首次保存或读盘失败：按入参写入 */
@@ -72,12 +79,10 @@ export async function saveProjectToVad(
 export async function loadProjectFromVad(
   projectId: string
 ): Promise<ProjectFile | null> {
-  return withFallback(
-    async () => {
-      const p = await daemon.daemonLoadProject(projectId);
-      return p;
-    },
+  return loadWithDaemonFallback(
+    () => daemon.daemonLoadProject(projectId),
     () => local.loadProjectFromVad(projectId),
+    isDaemonEnabled(),
     "loadProject"
   );
 }
@@ -85,19 +90,24 @@ export async function loadProjectFromVad(
 export async function loadMergedProjectFromVad(
   projectId: string
 ): Promise<ProjectFile | null> {
-  return withFallback(
+  return loadWithDaemonFallback(
     () => daemon.daemonLoadProject(projectId),
     () => loadMergedLocal(projectId),
+    isDaemonEnabled(),
     "loadMergedProject"
   );
 }
 
 export async function listProjectsFromVad(): Promise<ProjectFile[]> {
-  return withFallback(
-    () => daemon.daemonListProjects(),
-    () => local.listProjectsFromVad(),
-    "listProjects"
-  );
+  if (!isDaemonEnabled()) return local.listProjectsFromVad();
+  try {
+    const fromDaemon = await daemon.daemonListProjects();
+    const fromLocal = await local.listProjectsFromVad();
+    return mergeProjectsById(fromDaemon, fromLocal);
+  } catch (e) {
+    console.warn("[vad-storage] daemon listProjects failed, fallback local:", e);
+    return local.listProjectsFromVad();
+  }
 }
 
 export async function deleteProjectFromVad(projectId: string): Promise<void> {
@@ -125,9 +135,10 @@ export async function saveChatHistoryToVad(
 export async function loadChatHistoryFromVad(
   projectId: string
 ): Promise<ChatMessage[]> {
-  return withFallback(
+  return loadListPreferLocalIfEmpty(
     () => daemon.daemonLoadChat(projectId),
     () => local.loadChatHistoryFromVad(projectId),
+    isDaemonEnabled(),
     "loadChat"
   );
 }
@@ -135,9 +146,10 @@ export async function loadChatHistoryFromVad(
 export async function listProjectFileTree(
   projectId: string
 ): Promise<VadFileNode[]> {
-  return withFallback(
+  return loadListPreferLocalIfEmpty(
     () => daemon.daemonListFileTree(projectId),
     () => local.listProjectFileTree(projectId),
+    isDaemonEnabled(),
     "listFiles"
   );
 }

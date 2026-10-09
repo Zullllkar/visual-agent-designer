@@ -7,7 +7,7 @@
 import "server-only";
 
 import { nanoid } from "nanoid";
-import type { BaseCheckpointSaver } from "@langchain/langgraph";
+import { Command, type BaseCheckpointSaver } from "@langchain/langgraph";
 
 import type { ProviderConfig } from "@/lib/providers/registry";
 import type { ProjectFile } from "@/lib/project/schema";
@@ -24,10 +24,25 @@ import { loadWorkspaceRules, formatRulesForPrompt } from "./workspace-rules";
 import { hookManager } from "./hooks";
 import type { RiskLevel } from "./tools/types";
 import { registerAllTools, toolRegistry } from "./tools";
-import { normalizeGenerateImagesApprovalArgs } from "./tools/generate-images-approval";
+import {
+  imageApprovalNarration,
+  imageApprovalThinkingText,
+} from "./approved-tool-events";
+import {
+  imageToolApprovalId,
+  normalizeGenerateImagesApprovalArgs,
+  toolResultNeedsUserConfirmation,
+} from "./tools/generate-images-approval";
 import { parsePageReference } from "./orchestrator-planner";
 import { collectProjectReferenceImages } from "./reference-images";
 import { isWaitingChatTurn, runBlocksNewAgentTurn } from "./run-lock";
+import { grantToolForProject, grantToolInProject } from "./tool-approval-policy";
+import {
+  isImageApprovalTool,
+  isReinterruptOfApprovedImageTool,
+  shouldResumeGraphInterrupt,
+  TRUSTED_TOOL_RESUME_SCRATCH,
+} from "./tool-confirmation-pause";
 
 export type RunStatus =
   | "accepted"
@@ -41,6 +56,8 @@ export type RunStatus =
 
 export interface AgentRun {
   runId: string;
+  /** Logical user turn: one request, its tool calls, and background jobs. */
+  turnId: string;
   threadId: string;
   projectId: string;
   status: RunStatus;
@@ -60,16 +77,21 @@ export interface AgentRun {
 export interface PendingToolApproval {
   approvalId: string;
   checkpointInterruptId?: string;
+  pausedByInterrupt?: boolean;
   toolName: string;
   toolCallId?: string;
   args: Record<string, unknown>;
   riskLevel: RiskLevel;
   reason: string;
+  model?: string;
+  estimatedSeconds?: number;
+  affectedAssets?: string[];
   requestedAt: number;
   status: "pending" | "approved" | "cancelled";
 }
 
 export interface CreateRunInput {
+  turnId?: string;
   threadId: string;
   prompt: string;
   project: ProjectFile | null;
@@ -87,6 +109,7 @@ class AgentRunService {
     const runId = nanoid(12);
     const run: AgentRun = {
       runId,
+      turnId: input.turnId ?? nanoid(12),
       threadId: input.threadId,
       projectId: input.agentCtx.projectId,
       status: "accepted",
@@ -97,6 +120,7 @@ class AgentRunService {
       promptSummary: summarizePrompt(input.prompt),
       jobIds: [],
     };
+    input.agentCtx.scratch.turnId = run.turnId;
     this.runs.set(runId, run);
     // 持久化初始状态
     saveRun(input.agentCtx.projectId, run).catch(() => {});
@@ -226,11 +250,15 @@ class AgentRunService {
           const data = event.data as {
             approvalId?: string;
             checkpointInterruptId?: string;
+            pausedByInterrupt?: boolean;
             toolName?: string;
             toolCallId?: string;
             args?: Record<string, unknown>;
             riskLevel?: RiskLevel;
             reason?: string;
+            model?: string;
+            estimatedSeconds?: number;
+            affectedAssets?: string[];
           };
           if (data.approvalId && data.toolName) {
             const pendingArgs = normalizePendingToolArgs(
@@ -245,11 +273,17 @@ class AgentRunService {
             run.pendingToolApproval = {
               approvalId: data.approvalId,
               checkpointInterruptId: data.checkpointInterruptId,
+              pausedByInterrupt:
+                data.pausedByInterrupt === true ||
+                Boolean(data.checkpointInterruptId),
               toolName: data.toolName,
               toolCallId: data.toolCallId,
               args: pendingArgs,
               riskLevel: data.riskLevel ?? "moderate",
               reason: data.reason ?? "Tool execution requires confirmation.",
+              model: data.model,
+              estimatedSeconds: data.estimatedSeconds,
+              affectedAssets: data.affectedAssets,
               requestedAt: Date.now(),
               status: "pending",
             };
@@ -261,14 +295,90 @@ class AgentRunService {
           waitingForUser = true;
           break;
         }
+        if (event.type === "image_generation.confirm") {
+          const data = event.data as {
+            prompt?: string;
+            prompts?: string[];
+            count?: number;
+            width?: number;
+            height?: number;
+            role?: string;
+            reason?: string;
+          };
+          if (!run.pendingToolApproval || run.pendingToolApproval.status !== "pending") {
+            run.pendingToolApproval = {
+              approvalId: imageToolApprovalId(runId, "generate_images"),
+              toolName: "generate_images",
+              args: {
+                prompt: data.prompt,
+                prompts: data.prompts,
+                count: data.count,
+                width: data.width,
+                height: data.height,
+                role: data.role,
+              },
+              riskLevel: "moderate",
+              reason: data.reason ?? "Image generation requires confirmation.",
+              requestedAt: Date.now(),
+              status: "pending",
+            };
+            run.lastHeartbeatAt = Date.now();
+            await saveRun(input.agentCtx.projectId, run).catch(() => {});
+          }
+          waitingForUser = true;
+          break;
+        }
         if (
           event.type === "discovery.questions" ||
-          event.type === "direction.confirm" ||
-          event.type === "image_generation.confirm"
+          event.type === "direction.confirm"
         ) {
           waitingForUser = true;
           break;
         }
+      }
+
+      const leftoverConfirmation = input.agentCtx.scratch.__toolConfirmation as
+        | {
+            approvalId?: string;
+            checkpointInterruptId?: string;
+            pausedByInterrupt?: boolean;
+            toolName?: string;
+            toolCallId?: string;
+            args?: Record<string, unknown>;
+            riskLevel?: RiskLevel;
+            reason?: string;
+            title?: string;
+          }
+        | undefined;
+      if (
+        !waitingForUser &&
+        leftoverConfirmation?.approvalId &&
+        leftoverConfirmation.toolName
+      ) {
+        waitingForUser = true;
+        run.pendingToolApproval = {
+          approvalId: leftoverConfirmation.approvalId,
+          checkpointInterruptId: leftoverConfirmation.checkpointInterruptId,
+          pausedByInterrupt:
+            leftoverConfirmation.pausedByInterrupt === true ||
+            Boolean(leftoverConfirmation.checkpointInterruptId),
+          toolName: leftoverConfirmation.toolName,
+          toolCallId: leftoverConfirmation.toolCallId,
+          args: leftoverConfirmation.args ?? {},
+          riskLevel: leftoverConfirmation.riskLevel ?? "moderate",
+          reason:
+            leftoverConfirmation.reason ??
+            "This tool can modify project state or trigger side effects, so it needs user approval before execution.",
+          requestedAt: Date.now(),
+          status: "pending",
+        };
+        run.lastHeartbeatAt = Date.now();
+        await saveRun(input.agentCtx.projectId, run).catch(() => {});
+        yield {
+          type: "tool.confirm",
+          data: { runId, ...leftoverConfirmation },
+        };
+        delete input.agentCtx.scratch.__toolConfirmation;
       }
 
       yield {
@@ -296,11 +406,17 @@ class AgentRunService {
             type: "run.completed",
             data: { runId, waitingForUser: false },
           };
+      if (waitingForUser) {
+        abortController.abort();
+      }
 
       // 持久化 user + assistant 消息到 chat-history.jsonl
     } catch (e) {
       // 如果是取消操作，直接返回
       if (abortController.signal.aborted) {
+        if (run.status === "waiting_user") {
+          return;
+        }
         run.status = timeoutInterrupted ? "interrupted" : "cancelled";
         run.error = timeoutInterrupted
           ? `Run exceeded ${Math.round(maxRunMs / 60_000)} minutes`
@@ -425,6 +541,31 @@ class AgentRunService {
         })) {
           yield fallbackEvent;
           if (fallbackEvent.type === "image_generation.confirm") {
+            const data = fallbackEvent.data as {
+              prompt?: string;
+              prompts?: string[];
+              count?: number;
+              width?: number;
+              height?: number;
+              role?: string;
+              reason?: string;
+            };
+            run.pendingToolApproval = {
+              approvalId: imageToolApprovalId(runId, "generate_images"),
+              toolName: "generate_images",
+              args: {
+                prompt: data.prompt,
+                prompts: data.prompts,
+                count: data.count,
+                width: data.width,
+                height: data.height,
+                role: data.role,
+              },
+              riskLevel: "moderate",
+              reason: data.reason ?? "Image generation requires confirmation.",
+              requestedAt: Date.now(),
+              status: "pending",
+            };
             run.status = "waiting_user";
             run.endedAt = Date.now();
             saveRun(input.agentCtx.projectId, run).catch(() => {});
@@ -538,7 +679,7 @@ class AgentRunService {
     run.pendingToolApproval = {
       ...pending,
       ...(action === "approve" && args ? { args } : {}),
-      status: action === "approve" ? "approved" : "cancelled",
+      status: action === "cancel" ? "cancelled" : "pending",
     };
     input.agentCtx.scratch.__currentPhase = run.phase;
     saveRun(input.agentCtx.projectId, run).catch(() => {});
@@ -599,7 +740,160 @@ class AgentRunService {
       const agentTool = toolRegistry.get(pending.toolName);
       if (!agentTool) throw new Error(`Unknown approved tool: ${pending.toolName}`);
 
-      const finalArgs = { ...approvedArgs, confirmed: true, approvalId };
+    const finalArgs = { ...approvedArgs, confirmed: true, approvalId };
+      if (
+        pending.riskLevel === "moderate" &&
+        (args as { rememberApproval?: unknown } | undefined)?.rememberApproval === true
+      ) {
+        grantToolForProject(input.agentCtx.projectId, pending.toolName);
+        if (input.project) {
+          const persistedProject = grantToolInProject(input.project, pending.toolName);
+          await saveProjectToVad(persistedProject).catch(() => undefined);
+          input.agentCtx.scratch.__updatedProject = persistedProject;
+        }
+      }
+      input.agentCtx.scratch[TRUSTED_TOOL_RESUME_SCRATCH] = {
+        approvalId,
+        toolName: pending.toolName,
+        args: finalArgs,
+      };
+      if (
+        action === "approve" &&
+        shouldResumeGraphInterrupt({
+          toolName: pending.toolName,
+          checkpointInterruptId: pending.checkpointInterruptId,
+          pausedByInterrupt: pending.pausedByInterrupt,
+          args: pending.args,
+        })
+      ) {
+        try {
+          const rules = await loadWorkspaceRules(input.agentCtx.projectId);
+          const rulesPrompt = formatRulesForPrompt(rules);
+          const agent = createVadAgent({
+            providerConfig: input.providerConfig,
+            project: input.project,
+            agentCtx: input.agentCtx,
+            userMessage: input.prompt,
+            checkpointer: input.checkpointer ?? getCheckpointer(),
+            threadId: run.threadId,
+            runId,
+            rulesPrompt,
+            abortSignal: abortController.signal,
+          });
+          const stream = agent.streamEvents(
+            new Command({
+              resume: {
+                action: "approve",
+                approvalId,
+                args: finalArgs,
+              },
+            }),
+            {
+              version: "v2",
+              configurable: { thread_id: run.threadId },
+              signal: abortController.signal,
+              recursionLimit: 50,
+            }
+          );
+          let waitingForUser = false;
+          for await (const event of adaptStreamEvents(
+            stream,
+            runId,
+            input.agentCtx,
+            run.threadId
+          )) {
+            if (event.type === "run.started") continue;
+            if (event.type === "project.update") {
+              const updatedProject = (event.data as { project?: ProjectFile }).project;
+              if (updatedProject) {
+                await saveProjectToVad(updatedProject).catch(() => undefined);
+              }
+            }
+            if (event.type === "tool.started") {
+              const d = event.data as { toolName?: string };
+              run.currentStep = d.toolName ?? pending.toolName;
+              run.lastHeartbeatAt = Date.now();
+              saveRun(input.agentCtx.projectId, run).catch(() => {});
+            } else if (event.type === "tool.completed") {
+              const d = event.data as { toolName?: string };
+              run.currentStep = d.toolName ? `${d.toolName}:done` : undefined;
+              run.lastHeartbeatAt = Date.now();
+              saveRun(input.agentCtx.projectId, run).catch(() => {});
+            }
+            yield event;
+            if (
+              event.type === "tool.confirm" ||
+              event.type === "image_generation.confirm" ||
+              event.type === "discovery.questions" ||
+              event.type === "direction.confirm"
+            ) {
+              if (
+                isReinterruptOfApprovedImageTool({
+                  toolName: pending.toolName,
+                  eventType: event.type,
+                })
+              ) {
+                break;
+              }
+              waitingForUser = true;
+              break;
+            }
+          }
+          if (waitingForUser) {
+            run.status = "waiting_user";
+            run.endedAt = Date.now();
+            run.lastHeartbeatAt = Date.now();
+            saveRun(input.agentCtx.projectId, run).catch(() => {});
+            await hookManager.afterRun({
+              runId,
+              threadId: run.threadId,
+              projectId: input.agentCtx.projectId,
+              phase: run.phase,
+              project: input.project,
+              status: "waiting_user",
+              durationMs: Date.now() - runStartTime,
+            });
+            yield {
+              type: "run.waiting_user",
+              data: { runId, reason: "user_input_required" },
+            };
+            return;
+          }
+          if (!isImageApprovalTool(pending.toolName)) {
+            run.status = "completed";
+            run.endedAt = Date.now();
+            run.lastHeartbeatAt = Date.now();
+            saveRun(input.agentCtx.projectId, run).catch(() => {});
+            await hookManager.afterRun({
+              runId,
+              threadId: run.threadId,
+              projectId: input.agentCtx.projectId,
+              phase: run.phase,
+              project: input.project,
+              status: "completed",
+              durationMs: Date.now() - runStartTime,
+            });
+            yield {
+              type: "run.completed",
+              data: {
+                runId,
+                approvalId,
+                waitingForUser: false,
+                approvedTool: pending.toolName,
+              },
+            };
+            return;
+          }
+        } catch (graphErr) {
+          if (abortController.signal.aborted) throw graphErr;
+        }
+      }
+      if (run.pendingToolApproval) {
+        run.pendingToolApproval = {
+          ...run.pendingToolApproval,
+          status: "approved",
+        };
+      }
       const hookCtx = {
         runId,
         threadId: run.threadId,
@@ -611,10 +905,17 @@ class AgentRunService {
       yield {
         type: "thinking.delta",
         data: {
-          text: `\nUser approved ${pending.toolName}. Executing the approved tool now.\n`,
+          text: imageApprovalThinkingText(pending.toolName),
           runId,
         },
       };
+      const narration = imageApprovalNarration(pending.toolName);
+      if (narration) {
+        yield {
+          type: "message.delta",
+          data: { text: narration, runId },
+        };
+      }
       yield {
         type: "tool.started",
         data: {
@@ -641,6 +942,9 @@ class AgentRunService {
         runId,
         toolCallId: pending.toolCallId,
         abortSignal: abortController.signal,
+        onProjectUpdate: (project) => {
+          input.agentCtx.scratch.__updatedProject = project;
+        },
       });
       const durationMs = Date.now() - started;
 
@@ -652,6 +956,48 @@ class AgentRunService {
         durationMs,
       });
 
+      if (toolResultNeedsUserConfirmation(result.data)) {
+        run.status = "waiting_user";
+        run.currentStep = pending.toolName;
+        run.endedAt = Date.now();
+        run.lastHeartbeatAt = Date.now();
+        run.pendingToolApproval = {
+          ...pending,
+          args: finalArgs,
+          status: "pending",
+        };
+        saveRun(input.agentCtx.projectId, run).catch(() => {});
+        yield {
+          type: "tool.completed",
+          data: {
+            runId,
+            approvalId,
+            toolName: pending.toolName,
+            toolCallId: pending.toolCallId,
+            output: {
+              ok: false,
+              summary: result.summary,
+              data: result.data,
+            },
+            outputSummary: result.summary,
+            ok: false,
+            approved: false,
+          },
+        };
+        if (result.updatedProject) {
+          await saveProjectToVad(result.updatedProject).catch(() => undefined);
+          yield {
+            type: "project.update",
+            data: { runId, project: result.updatedProject },
+          };
+        }
+        yield {
+          type: "run.waiting_user",
+          data: { runId, reason: "user_input_required" },
+        };
+        return;
+      }
+
       run.currentStep = `${pending.toolName}:done`;
       const currentPhase = input.agentCtx.scratch.__currentPhase;
       if (typeof currentPhase === "string") {
@@ -661,6 +1007,14 @@ class AgentRunService {
       run.endedAt = Date.now();
       run.lastHeartbeatAt = Date.now();
       saveRun(input.agentCtx.projectId, run).catch(() => {});
+
+      if (result.updatedProject) {
+        await saveProjectToVad(result.updatedProject).catch(() => undefined);
+        yield {
+          type: "project.update",
+          data: { runId, project: result.updatedProject },
+        };
+      }
 
       yield {
         type: "tool.completed",
@@ -680,12 +1034,16 @@ class AgentRunService {
         },
       };
 
-      if (result.updatedProject) {
-        await saveProjectToVad(result.updatedProject).catch(() => undefined);
-        yield {
-          type: "project.update",
-          data: { runId, project: result.updatedProject },
-        };
+      if (isImageApprovalTool(pending.toolName)) {
+        await drainImageGraphInterrupt({
+          run,
+          runId,
+          input,
+          approvalId,
+          finalArgs,
+          abortSignal: abortController.signal,
+        }).catch(() => undefined);
+        delete input.agentCtx.scratch[TRUSTED_TOOL_RESUME_SCRATCH];
       }
 
       await hookManager.afterRun({
@@ -853,6 +1211,63 @@ class AgentRunService {
 }
 
 export const agentRuns = new AgentRunService();
+
+async function drainImageGraphInterrupt(input: {
+  run: AgentRun;
+  runId: string;
+  input: CreateRunInput;
+  approvalId: string;
+  finalArgs: Record<string, unknown>;
+  abortSignal: AbortSignal;
+}): Promise<void> {
+  const rules = await loadWorkspaceRules(input.input.agentCtx.projectId);
+  const agent = createVadAgent({
+    providerConfig: input.input.providerConfig,
+    project: input.input.project,
+    agentCtx: input.input.agentCtx,
+    userMessage: input.input.prompt,
+    checkpointer: input.input.checkpointer ?? getCheckpointer(),
+    threadId: input.run.threadId,
+    runId: input.runId,
+    rulesPrompt: formatRulesForPrompt(rules),
+    abortSignal: input.abortSignal,
+  });
+  const stream = agent.streamEvents(
+    new Command({
+      resume: {
+        action: "approve",
+        approvalId: input.approvalId,
+        args: input.finalArgs,
+      },
+    }),
+    {
+      version: "v2",
+      configurable: { thread_id: input.run.threadId },
+      signal: input.abortSignal,
+      recursionLimit: 8,
+    }
+  );
+  for await (const event of adaptStreamEvents(
+    stream,
+    input.runId,
+    input.input.agentCtx,
+    input.run.threadId
+  )) {
+    if (
+      event.type === "tool.confirm" ||
+      event.type === "image_generation.confirm" ||
+      event.type === "run.started"
+    ) {
+      continue;
+    }
+    if (event.type === "project.update") {
+      const updatedProject = (event.data as { project?: ProjectFile }).project;
+      if (updatedProject) {
+        await saveProjectToVad(updatedProject).catch(() => undefined);
+      }
+    }
+  }
+}
 
 function summarizePrompt(prompt: string): string {
   const oneLine = prompt.replace(/\s+/g, " ").trim();

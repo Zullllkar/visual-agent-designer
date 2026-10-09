@@ -2,8 +2,10 @@ import { nanoid } from "nanoid";
 
 import { uniquePrompts } from "@/lib/agents/distinct-image-prompts";
 import { GENERATING_PLACEHOLDER_SRC } from "@/lib/canvas/generating-placeholder";
+import { mergePendingGeneratingAssets } from "@/lib/canvas/stage-generating-assets";
 import type { ImageProvider } from "@/lib/providers/image/types";
 import type { ImageAsset } from "@/lib/project/assets-schema";
+import { assignAssetTitles, deriveAssetTitle } from "@/lib/project/asset-title";
 
 export interface DirectImageGenerationRequest {
   prompt: string;
@@ -57,8 +59,15 @@ export function buildDirectPendingAssets(
         )
       : [fallbackPrompt]
   );
+  const titles = assignAssetTitles(
+    prompts.map((prompt) => ({
+      prompt,
+      role: input.role,
+    })),
+  );
   return prompts.map((prompt, index) => ({
     id: directPendingAssetId(batchId, index),
+    title: titles[index] ?? deriveAssetTitle({ prompt, role: input.role }),
     prompt,
     src: GENERATING_PLACEHOLDER_SRC,
     width: input.width,
@@ -86,6 +95,7 @@ export async function runDirectImageGenerationBatch({
   concurrency = 2,
   onAssetsReady,
   onProgress,
+  ledgerProjectId,
 }: {
   image: ImageProvider;
   input: DirectImageGenerationRequest;
@@ -95,6 +105,7 @@ export async function runDirectImageGenerationBatch({
   concurrency?: number;
   onAssetsReady?: (assets: ImageAsset[]) => void | Promise<void>;
   onProgress?: (progress: DirectImageGenerationProgress) => void | Promise<void>;
+  ledgerProjectId?: string;
 }): Promise<DirectImageGenerationResult> {
   const total = pendingAssets.length;
   const batchId = pendingAssets[0]?.batchId ?? nanoid(8);
@@ -106,6 +117,26 @@ export async function runDirectImageGenerationBatch({
   let cancelled = 0;
   const errors: string[] = [];
   const generatedAssets: ImageAsset[] = [];
+
+  const remember = async (draft: {
+    model: string;
+    prompt: string;
+    status: "succeeded" | "failed" | "cancelled";
+    assetId?: string;
+    seed?: string;
+    durationMs?: number;
+    error?: string;
+  }) => {
+    if (!ledgerProjectId) return;
+    const { noteImageGeneration } = await import("@/lib/generation/ledger-store");
+    await noteImageGeneration(ledgerProjectId, {
+      ...draft,
+      width: input.width,
+      height: input.height,
+      negativePrompt: input.negativePrompt,
+      referenceImages: input.referenceImages,
+    });
+  };
 
   const report = async (message?: string, currentTaskId?: string) => {
     await onProgress?.({
@@ -163,6 +194,14 @@ export async function runDirectImageGenerationBatch({
         liveAssets = replaceAsset(liveAssets, pending.id, asset);
         generatedAssets.push(asset);
         succeeded++;
+        await remember({
+          model: output.model,
+          prompt: itemPrompt,
+          status: "succeeded",
+          assetId: pending.id,
+          seed: output.seed,
+          durationMs: asset.durationMs,
+        });
         try {
           await onAssetsReady?.(liveAssets);
         } catch (persistError) {
@@ -178,6 +217,13 @@ export async function runDirectImageGenerationBatch({
         failed++;
         const message = error instanceof Error ? error.message : String(error);
         errors.push(message);
+        await remember({
+          model: pending.model === "pending" ? "unknown" : pending.model,
+          prompt: itemPrompt,
+          status: "failed",
+          assetId: pending.id,
+          error: message,
+        });
         liveAssets = replaceAsset(liveAssets, pending.id, {
           ...pending,
           status: "failed",
@@ -198,13 +244,24 @@ export async function runDirectImageGenerationBatch({
   );
 
   if (signal?.aborted) {
+    const notes: Array<ReturnType<typeof remember>> = [];
     liveAssets = liveAssets.map((asset) => {
       if (asset.status !== "generating" || !pendingAssets.some((p) => p.id === asset.id)) {
         return asset;
       }
       cancelled++;
+      notes.push(
+        remember({
+          model: asset.model === "pending" ? "unknown" : asset.model,
+          prompt: asset.prompt,
+          status: "cancelled",
+          assetId: asset.id,
+          error: "Cancelled",
+        })
+      );
       return { ...asset, status: "cancelled" as const, error: "Cancelled" };
     });
+    await Promise.all(notes);
     await onAssetsReady?.(liveAssets);
     await report(`Cancelled after ${succeeded} images`);
   }
@@ -228,11 +285,7 @@ function ensurePendingAssets(
   assets: ImageAsset[],
   pendingAssets: ImageAsset[]
 ): ImageAsset[] {
-  const existingIds = new Set(assets.map((asset) => asset.id));
-  return [
-    ...assets,
-    ...pendingAssets.filter((asset) => !existingIds.has(asset.id)),
-  ];
+  return mergePendingGeneratingAssets(assets, pendingAssets);
 }
 
 function replaceAsset(

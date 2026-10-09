@@ -17,7 +17,7 @@ import {
 export const generateBriefTool: AgentTool = {
   name: "generate_brief",
   description: "按当前视觉目标裁剪字段，从用户想法生成结构化 Brief",
-  inputPhase: ["INIT", "DISCOVERY"],
+  inputPhase: ["DISCOVERY"],
   outputPhase: "BRIEF",
   riskLevel: "safe",
   idempotencyKey: () => "brief",
@@ -49,7 +49,7 @@ export const generateBriefTool: AgentTool = {
     ctx.agentCtx.scratch.designContext = designContext;
     const updated = ProjectFileSchema.parse({
       ...ctx.project,
-      id: ctx.project?.id ?? nanoid(10),
+      id: ctx.project?.id ?? ctx.agentCtx.projectId ?? nanoid(10),
       slug: ctx.project?.slug ?? slugify(brief.productName) ?? nanoid(10),
       title: brief.productName,
       rawIdea: ctx.project?.rawIdea || idea,

@@ -1,4 +1,5 @@
 "use client";
+import { createShapeId, type RecordProps, type TLBaseShape } from "@/lib/tldraw-compat";
 
 /**
  * 家族底板：把主图 + 派生素材收进一块浅底，降低全画布散点感。
@@ -9,13 +10,10 @@ import {
   HTMLContainer,
   Rectangle2d,
   ShapeUtil,
-  createShapeId,
   useEditor,
   useValue,
   type Editor,
   type Geometry2d,
-  type RecordProps,
-  type TLBaseShape,
 } from "tldraw";
 import { familyBoardRect, type PlacedRect } from "@/lib/canvas/board-layout";
 import { familyBoardShapeProps } from "@/lib/canvas/family-board-props";
@@ -99,13 +97,12 @@ export function familyBoardFromMembers(
   return familyBoardRect(rects);
 }
 
-// @ts-expect-error TLShape union does not include custom shapes by design
 export class FamilyBoardShapeUtil extends ShapeUtil<FamilyBoardShape> {
-  static override type = "family-board" as const;
+  static type = "family-board" as any;
 
-  static override props: RecordProps<FamilyBoardShape> = familyBoardShapeProps;
+  static props: RecordProps<FamilyBoardShape> = familyBoardShapeProps;
 
-  override getDefaultProps(): FamilyBoardShape["props"] {
+  getDefaultProps(): FamilyBoardShape["props"] {
     return {
       w: 320,
       h: 220,
@@ -116,7 +113,7 @@ export class FamilyBoardShapeUtil extends ShapeUtil<FamilyBoardShape> {
     };
   }
 
-  override getGeometry(shape: FamilyBoardShape): Geometry2d {
+  getGeometry(shape: FamilyBoardShape): Geometry2d {
     return new Rectangle2d({
       width: Math.max(1, shape.props.w),
       height: Math.max(1, shape.props.h),
@@ -124,15 +121,15 @@ export class FamilyBoardShapeUtil extends ShapeUtil<FamilyBoardShape> {
     });
   }
 
-  override canResize = () => false;
-  override hideRotateHandle = () => true;
-  override canBind = () => false;
-  override canDuplicate = () => false;
-  override canSnap = () => false;
-  override hideSelectionBoundsBg = () => true;
-  override hideSelectionBoundsFg = () => true;
+  canResize = () => false;
+  hideRotateHandle = () => true;
+  canBind = () => false;
+  canDuplicate = () => false;
+  canSnap = () => false;
+  hideSelectionBoundsBg = () => true;
+  hideSelectionBoundsFg = () => true;
 
-  override onTranslateStart = (shape: FamilyBoardShape) => {
+  onTranslateStart = (shape: FamilyBoardShape) => {
     beginFamilyDrag(
       this.editor,
       shape.id,
@@ -140,7 +137,7 @@ export class FamilyBoardShapeUtil extends ShapeUtil<FamilyBoardShape> {
     );
   };
 
-  override onTranslate = (
+  onTranslate = (
     initial: FamilyBoardShape,
     current: FamilyBoardShape
   ) => {
@@ -152,18 +149,18 @@ export class FamilyBoardShapeUtil extends ShapeUtil<FamilyBoardShape> {
     );
   };
 
-  override onTranslateEnd = (
+  onTranslateEnd = (
     _initial: FamilyBoardShape,
     current: FamilyBoardShape
   ) => {
     endFamilyDrag(current.id);
   };
 
-  override component(shape: FamilyBoardShape) {
+  component(shape: FamilyBoardShape) {
     return <FamilyBoardShapeView shape={shape} />;
   }
 
-  override getIndicatorPath = (shape: FamilyBoardShape): Path2D | undefined => {
+  getIndicatorPath = (shape: FamilyBoardShape): Path2D | undefined => {
     if (typeof Path2D === "undefined") return undefined;
     const r = 20;
     const w = Math.max(1, shape.props.w);
@@ -215,7 +212,7 @@ function FamilyBoardShapeView({ shape }: { shape: FamilyBoardShape }) {
     }
     const memberShapeIds = collectMemberImageShapeIds(editor, memberIds);
     if (memberShapeIds.length === 0) return;
-    editor.setSelectedShapes(memberShapeIds);
+    editor.setSelectedShapes(memberShapeIds as any);
   }, [boardSelected, editor, memberIds, shape.id]);
 
   useLayoutEffect(() => {
@@ -231,7 +228,7 @@ function FamilyBoardShapeView({ shape }: { shape: FamilyBoardShape }) {
     editor.updateShapes([
       {
         id: shape.id,
-        type: "family-board",
+        type: "family-board" as any,
         x: live.x,
         y: live.y,
         props: {

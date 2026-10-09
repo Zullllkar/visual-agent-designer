@@ -4,6 +4,19 @@ const path = require("node:path");
 const DEFAULT_BOUNDS = { width: 1280, height: 800 };
 const WORK_AREA_SLACK = 32;
 
+function normalizePosition(x, y, width, height, workArea) {
+  if (!workArea || typeof x !== "number" || typeof y !== "number") {
+    return { x: undefined, y: undefined };
+  }
+  const areaX = typeof workArea.x === "number" ? workArea.x : 0;
+  const areaY = typeof workArea.y === "number" ? workArea.y : 0;
+  const minVisible = 80;
+  return {
+    x: Math.min(Math.max(Math.round(x), areaX - width + minVisible), areaX + workArea.width - minVisible),
+    y: Math.min(Math.max(Math.round(y), areaY - height + minVisible), areaY + workArea.height - minVisible),
+  };
+}
+
 function isWorkAreaSized(width, height, workArea) {
   if (!workArea) return false;
   return (
@@ -22,9 +35,12 @@ function loadWindowState(file, workArea) {
       raw.height >= 480
     ) {
       const workAreaSized = isWorkAreaSized(raw.width, raw.height, workArea);
+      const position = !workAreaSized
+        ? normalizePosition(raw.x, raw.y, raw.width, raw.height, workArea)
+        : { x: undefined, y: undefined };
       return {
-        x: typeof raw.x === "number" && !workAreaSized ? raw.x : undefined,
-        y: typeof raw.y === "number" && !workAreaSized ? raw.y : undefined,
+        x: position.x,
+        y: position.y,
         width: workAreaSized ? DEFAULT_BOUNDS.width : raw.width,
         height: workAreaSized ? DEFAULT_BOUNDS.height : raw.height,
         isMaximized: Boolean(raw.isMaximized),

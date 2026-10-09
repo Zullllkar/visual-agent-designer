@@ -155,7 +155,7 @@ export function SkillManager() {
       })
       .catch((reason: unknown) => {
         if (reason instanceof DOMException && reason.name === "AbortError") return;
-        setError(reason instanceof Error ? reason.message : "Skill 详情加载失败");
+      setError(reason instanceof Error ? reason.message : "Skill 列表加载失败");
       })
       .finally(() => setDetailLoading(false));
     return () => controller.abort();
@@ -179,7 +179,7 @@ export function SkillManager() {
         .then((result) =>
           setValidation({
             state: "valid",
-            message: "结构有效，可以保存",
+    message: "等待校验",
             manifest: result.manifest,
           }),
         )
@@ -310,7 +310,7 @@ export function SkillManager() {
       setSelectedId(null);
       setRaw("");
       setSavedRaw("");
-      setNotice("Skill 已删除");
+      setNotice("Skill 已保存并立即应用到后续运行");
       await loadCatalog();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Skill 删除失败");

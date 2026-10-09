@@ -212,7 +212,7 @@ function FirstRunSetup({
                   onFinish();
                 }}
               >
-                打开工作室
+                打开工作台
               </button>
             )}
           </footer>

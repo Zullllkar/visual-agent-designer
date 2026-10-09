@@ -72,7 +72,7 @@ export function SkillGeneratorPanel({
 
       <form onSubmit={handleSubmit}>
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-          告诉我你想要什么类型的技能：
+
         </p>
 
         <textarea
@@ -117,7 +117,7 @@ export function SkillGeneratorPanel({
                 </p>
               )}
               <p className="text-sm text-green-600 dark:text-green-400 mt-2">
-                你可以在「技能管理」中看到并使用它
+
               </p>
               <button
                 onClick={() => {

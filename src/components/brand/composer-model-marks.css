@@ -1,0 +1,159 @@
+.composer-model-menu {
+  position: relative;
+}
+
+.vad-provider-logo.is-mark {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--brand-color);
+}
+
+.vad-provider-logo.is-mark svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+  color: var(--brand-color);
+}
+
+.composer-model-chip-label {
+  min-width: 0;
+  max-width: 9rem;
+  overflow: hidden;
+  color: inherit;
+  font-size: 12.5px;
+  font-weight: 550;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-model-chevron {
+  flex: none;
+  opacity: 0.55;
+}
+
+.composer-model-chevron.is-open {
+  transform: rotate(180deg);
+}
+
+.composer-model-popover {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 12;
+  display: grid;
+  min-width: 232px;
+  padding: 6px;
+  border-radius: 14px;
+  background: var(--studio-surface, var(--surface));
+  box-shadow:
+    0 0 0 1px rgba(26, 25, 22, 0.06),
+    0 12px 32px rgba(26, 25, 22, 0.12);
+  text-align: left;
+}
+
+.composer-model-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 6px 8px;
+  border-radius: 10px;
+}
+
+.composer-model-row-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  place-items: center;
+  background: transparent;
+}
+
+.composer-model-letter,
+.vad-provider-logo.is-row {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--foreground) 6%, var(--studio-surface, var(--surface)));
+  color: var(--foreground);
+}
+
+.vad-provider-logo.is-row svg {
+  width: 16px;
+  height: 16px;
+  color: var(--brand-color);
+}
+
+.composer-model-letter {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.vad-provider-logo.is-row {
+  background: color-mix(in srgb, var(--brand-color) 14%, var(--studio-surface, var(--surface)));
+  color: var(--brand-color);
+}
+
+.composer-model-row-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.composer-model-row-copy small {
+  color: var(--studio-muted, var(--muted));
+  font-size: 11px;
+  font-weight: 550;
+}
+
+.composer-model-row-copy strong {
+  overflow: hidden;
+  color: var(--studio-fg, var(--foreground));
+  font-size: 13px;
+  font-weight: 620;
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-model-more {
+  display: flex;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 4px;
+  border: 0;
+  border-top: 1px solid rgba(26, 25, 22, 0.06);
+  border-radius: 0 0 8px 8px;
+  background: transparent;
+  color: var(--studio-muted, var(--muted));
+  font-size: 12px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.composer-model-more:hover {
+  color: var(--studio-fg, var(--foreground));
+}
+
+.studio-tool-chip .vad-provider-logo.is-mark,
+.vad-agent-model-btn .vad-provider-logo.is-mark,
+.studio-tool-chip .composer-model-chip-label {
+  overflow: visible;
+  text-overflow: ellipsis;
+}
+
+.studio-tool-chip .composer-model-chip-label,
+.vad-agent-model-btn .composer-model-chip-label {
+  overflow: hidden;
+}

@@ -41,7 +41,7 @@ export function McpQuickCopy({
       <p className="flex items-center gap-2 text-[11px] app-subtle">
         <Loader2 className="size-3 animate-spin" />
         读取 MCP 接入状态…
-      </p>
+           </p>
     );
   }
 
@@ -101,8 +101,8 @@ export function McpQuickCopy({
           className="app-btn inline-flex items-center gap-1.5 rounded-lg border app-border bg-[var(--surface)] px-3 py-2 text-xs"
         >
           <ExternalLink className="size-3.5" />
-          在 Cursor 中安装
-        </button>
+           在 Cursor 中安装
+         </button>
         <button
           type="button"
           onClick={() => void copyCommand("claude")}

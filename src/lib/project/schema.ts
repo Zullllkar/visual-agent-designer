@@ -59,6 +59,54 @@ export const DesignDirectionSchema = z.object({
   styleSourceAssetId: z.string().optional(),
 });
 
+export const ContextSourcePreferenceSchema = z.object({
+  id: z.string(),
+  kind: z.enum(["brief", "direction", "asset-plan", "references", "canvas", "notes", "handoff"]),
+  label: z.string(),
+  enabled: z.boolean(),
+  priority: z.number().int().nonnegative(),
+  updatedAt: z.string(),
+});
+
+/** Agent 在执行生图前产出的结构化素材计划。 */
+export const AssetPlanItemSchema = z.object({
+  id: z.string(),
+  role: z.enum(["hero", "illustration", "product-shot", "background", "icon", "avatar", "decoration"]),
+  purpose: z.string(),
+  prompt: z.string(),
+  width: z.number().int().min(256).max(4096),
+  height: z.number().int().min(256).max(4096),
+  priority: z.enum(["required", "optional"]).default("required"),
+  referenceIds: z.array(z.string()).optional(),
+  status: z.enum(["planned", "generated", "skipped"]).default("planned"),
+});
+
+export const AssetPlanSchema = z.object({
+  version: z.literal(1),
+  summary: z.string(),
+  items: z.array(AssetPlanItemSchema),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  history: z.array(z.object({ version: z.number().int().positive(), savedAt: z.string(), items: z.array(AssetPlanItemSchema) })).optional(),
+});
+
+export const ApprovalPolicySchema = z.record(z.string(), z.enum(["project"]));
+
+export const ProjectRevisionSchema = z.object({
+  id: z.string(),
+  createdAt: z.string(),
+  reason: z.string(),
+  pages: z.array(CanvasPageSchema),
+  assets: z.array(ImageAssetSchema).optional(),
+  references: z.array(ReferenceAssetSchema).optional(),
+  assetPlan: AssetPlanSchema.optional(),
+  designContext: z.lazy(() => DesignContextSchema).optional(),
+  contextSources: z.array(ContextSourcePreferenceSchema).optional(),
+  critique: ProjectCritiqueSchema.optional(),
+  critiqueHistory: z.array(CritiqueHistoryEntrySchema).optional(),
+  approvalPolicy: ApprovalPolicySchema.optional(),
+});
+
 /** 项目级设计记忆：用于跨轮次保持品牌、视觉与内容一致性。 */
 export const DesignContextSchema = z.object({
   version: z.literal(1),
@@ -91,6 +139,21 @@ export const CanvasSnapshotSchema = z.object({
   shapes: z.array(z.record(z.string(), z.unknown())),
 });
 
+/** 画布文本卡片：脚本 / 文案 / 规则 / 笔记 */
+export const CanvasNoteSchema = z.object({
+  id: z.string(),
+  kind: z.enum(["script", "copy", "rule", "note"]),
+  title: z.string(),
+  body: z.string(),
+  x: z.number().optional(),
+  y: z.number().optional(),
+  w: z.number().optional(),
+  h: z.number().optional(),
+  parentAssetId: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string().optional(),
+});
+
 export const ProjectFileSchema = z.object({
   id: z.string(),
   slug: z.string(),
@@ -99,13 +162,19 @@ export const ProjectFileSchema = z.object({
   rawIdea: z.string(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  /** Monotonic server-side revision used to reject stale Agent/Job writes. */
+  revision: z.number().int().nonnegative().optional(),
   brief: ProductBriefSchema.optional(),
   /** Product Architect Agent 产出。 */
   architecture: ProductArchitectureSchema.optional(),
   /** Design Director Agent 产出。 */
   designDirection: DesignDirectionSchema.optional(),
+  assetPlan: AssetPlanSchema.optional(),
+  approvalPolicy: ApprovalPolicySchema.optional(),
+  revisionHistory: z.array(ProjectRevisionSchema).max(12).optional(),
   /** Lovart-style 项目级设计上下文记忆。 */
   designContext: DesignContextSchema.optional(),
+  contextSources: z.array(ContextSourcePreferenceSchema).optional(),
   prototype: PrototypeFlowSchema.optional(),
   pages: z.array(CanvasPageSchema),
   critique: ProjectCritiqueSchema.optional(),
@@ -140,6 +209,8 @@ export const ProjectFileSchema = z.object({
    */
   materializations: z.record(z.string(), MaterializationRecordSchema).optional(),
   canvasSnapshot: CanvasSnapshotSchema.optional(),
+  /** 画布上的脚本 / 文案 / 规则卡片 */
+  canvasNotes: z.array(CanvasNoteSchema).optional(),
   brandKit: BrandKitSchema.optional(),
   /**
    * 关联的代码仓库：保存 / 导出时把 handoff 包同步到该目录，
@@ -156,14 +227,24 @@ export const ProjectFileSchema = z.object({
       lastError: z.string().optional(),
     })
     .optional(),
+  /**
+   * 本机创作目录。生成文件写在该目录的 .vibeboard/ 下，而不是应用 .vad/projects。
+   */
+  workspacePath: z.string().optional(),
 });
 
 export type ProductBrief = z.infer<typeof ProductBriefSchema>;
 export type ProductArchitecture = z.infer<typeof ProductArchitectureSchema>;
 export type DesignDirection = z.infer<typeof DesignDirectionSchema>;
+export type AssetPlan = z.infer<typeof AssetPlanSchema>;
+export type AssetPlanItem = z.infer<typeof AssetPlanItemSchema>;
+export type ApprovalPolicy = z.infer<typeof ApprovalPolicySchema>;
+export type ProjectRevision = z.infer<typeof ProjectRevisionSchema>;
 export type DesignContext = z.infer<typeof DesignContextSchema>;
+export type ContextSourcePreference = z.infer<typeof ContextSourcePreferenceSchema>;
 export type PrototypeFlow = z.infer<typeof PrototypeFlowSchema>;
 export type CanvasSnapshot = z.infer<typeof CanvasSnapshotSchema>;
+export type CanvasNote = z.infer<typeof CanvasNoteSchema>;
 export type ProjectFile = z.infer<typeof ProjectFileSchema>;
 export type BrandKit = z.infer<typeof BrandKitSchema>;
 export type LinkedRepo = NonNullable<ProjectFile["linkedRepo"]>;

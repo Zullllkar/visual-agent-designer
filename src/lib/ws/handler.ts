@@ -8,7 +8,7 @@ import "server-only";
 
 import type { Server } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
-import { nanoid } from "nanoid";
+import { resolveAgentContextProjectId } from "@/lib/agents/resolve-agent-project";
 
 import {
   WsCommandSchema,
@@ -33,19 +33,22 @@ import { jobScheduler } from "@/lib/agents/job/job-scheduler";
 import { registerAllJobHandlers } from "@/lib/agents/job/job-handlers";
 import type { JobEvent } from "@/lib/agents/job/job-types";
 import { appendEvent } from "@/lib/agents/event-persist";
+import { shouldCanvasSyncOnToolCompleted } from "@/lib/agents/approved-tool-events";
 import { interruptActiveRunsOnStartup, loadPendingApprovalRuns, loadRun } from "@/lib/agents/run-persist";
 import { formatImageConfirmMarker } from "@/lib/agents/image-prompts";
 import {
   bindCommandToWaitingRun,
-  isImageGenerationConfirmedPrompt,
   matchWaitingApproval,
-  resumeWaitingImageApproval,
+  resumeBlockedImageApproval,
   rewriteMissingToolApproval,
 } from "@/lib/ws/missing-run-fallback";
 import { loadConversationsFromVad } from "@/lib/vad/persist";
 import { activeContext } from "@/lib/bridge/active-context";
 import { bridgeRequests } from "@/lib/bridge/pending-requests";
 import { rememberProviderConfig } from "@/lib/bridge/provider-cache";
+import { clearThreadMemory } from "@/lib/agents/checkpoint";
+import { VAD_PROJECTS_DIR } from "@/lib/vad/paths";
+import { promises as fs } from "node:fs";
 
 let jobForwarderAttached = false;
 let runRecoveryStarted = false;
@@ -74,6 +77,14 @@ export function attachWebSocketHandler(server: Server): void {
       .then(async () => {
         const pending = await loadPendingApprovalRuns();
         for (const run of pending) agentRuns.hydrateRun(run);
+        try {
+          const projectIds = await fs.readdir(VAD_PROJECTS_DIR);
+          for (const projectId of projectIds) {
+            await jobScheduler.recoverProjectJobs(projectId);
+          }
+        } catch {
+          // A workspace may not have a global .vad/projects directory.
+        }
       })
       .catch(() => undefined);
   }
@@ -194,8 +205,7 @@ export function attachWebSocketHandler(server: Server): void {
       rememberProviderConfig(cmd.projectId, cmd.providerConfig as ProviderConfig | undefined);
 
       if (
-        (cmd.action === "agent.approve" ||
-          (cmd.action === "agent.run" && isImageGenerationConfirmedPrompt(cmd.prompt))) &&
+        (cmd.action === "agent.approve" || cmd.action === "agent.run") &&
         cmd.projectId
       ) {
         const waiting =
@@ -209,7 +219,7 @@ export function attachWebSocketHandler(server: Server): void {
           });
         if (waiting) {
           agentRuns.hydrateRun(waiting);
-          const resumed = resumeWaitingImageApproval(cmd, waiting);
+          const resumed = resumeBlockedImageApproval(cmd, waiting);
           if (resumed) cmd = resumed;
         }
       }
@@ -308,6 +318,14 @@ export function attachWebSocketHandler(server: Server): void {
             return;
           }
           const threadId = resolvedThread.threadId;
+          if (/^\/(reset-memory|new-context)\b/i.test(cmd.prompt.trim())) {
+            clearThreadMemory(threadId);
+            const runId = `memory-${Date.now()}`;
+            sendJson(ws, { type: "command.ack", data: { runId, threadId } });
+            sendJson(ws, { type: "message.delta", data: { runId, text: "已清理当前会话记忆，项目文件和画布保持不变。接下来我会从当前项目状态重新开始。" } });
+            sendJson(ws, { type: "run.completed", data: { runId, reason: "memory_reset" } });
+            break;
+          }
           const providerConfig = cmd.providerConfig as ProviderConfig | undefined;
 
           agentRuns.releaseWaitingChatTurn(threadId);
@@ -327,7 +345,11 @@ export function attachWebSocketHandler(server: Server): void {
           }
 
           const currentProject = await loadMergedProjectFromVad(cmd.projectId);
-          const agentCtx = await buildAgentContext(providerConfig, currentProject);
+          const agentCtx = await buildAgentContext(
+            providerConfig,
+            currentProject,
+            cmd.projectId
+          );
           agentCtx.threadId = threadId;
 
           if (cmd.attachments && cmd.attachments.length > 0) {
@@ -350,6 +372,7 @@ export function attachWebSocketHandler(server: Server): void {
           }
 
           const run = agentRuns.createRun({
+            turnId: typeof (cmd as { turnId?: unknown }).turnId === "string" ? (cmd as { turnId: string }).turnId : undefined,
             threadId,
             prompt: cmd.prompt,
             project: currentProject,
@@ -380,8 +403,16 @@ export function attachWebSocketHandler(server: Server): void {
               // 持久化事件到日志
               appendEvent(cmd.projectId!, seqEvent).catch(() => {});
 
-              // tool.completed 后自动推送 canvas.sync，通知客户端刷新画布
-              if (wsEvent.type === "tool.completed") {
+              // 生图占位靠 project.update；立刻 canvas.sync 会把尚未落盘的空画布刷回来
+              if (
+                wsEvent.type === "tool.completed" &&
+                shouldCanvasSyncOnToolCompleted(
+                  typeof (wsEvent.data as { toolName?: unknown })?.toolName ===
+                    "string"
+                    ? (wsEvent.data as { toolName: string }).toolName
+                    : undefined
+                )
+              ) {
                 const syncEvent = eventBuffer.push(threadId, {
                   type: "canvas.sync" as const,
                   data: { projectId: cmd.projectId, reason: "tool_completed" },
@@ -450,7 +481,11 @@ export function attachWebSocketHandler(server: Server): void {
 
           const run = agentRuns.hydrateRun(storedRun);
           const currentProject = await loadMergedProjectFromVad(cmd.projectId);
-          const agentCtx = await buildAgentContext(providerConfig, currentProject);
+          const agentCtx = await buildAgentContext(
+            providerConfig,
+            currentProject,
+            cmd.projectId
+          );
           agentCtx.threadId = run.threadId;
 
           connectionManager.subscribeToCanvas(ws, cmd.projectId);
@@ -485,7 +520,15 @@ export function attachWebSocketHandler(server: Server): void {
               sendJson(ws, seqEvent);
               appendEvent(cmd.projectId, seqEvent).catch(() => {});
 
-              if (wsEvent.type === "tool.completed") {
+              if (
+                wsEvent.type === "tool.completed" &&
+                shouldCanvasSyncOnToolCompleted(
+                  typeof (wsEvent.data as { toolName?: unknown })?.toolName ===
+                    "string"
+                    ? (wsEvent.data as { toolName: string }).toolName
+                    : undefined
+                )
+              ) {
                 const syncEvent = eventBuffer.push(run.threadId, {
                   type: "canvas.sync" as const,
                   data: { projectId: cmd.projectId, reason: "tool_completed" },
@@ -622,13 +665,14 @@ export function attachWebSocketHandler(server: Server): void {
 
 async function buildAgentContext(
   providerConfig?: ProviderConfig,
-  project?: ProjectFile | null
+  project?: ProjectFile | null,
+  requestedProjectId?: string | null
 ): Promise<AgentContext> {
   const { skill, designSystem } = await resolveSkillContext(providerConfig, project);
   const scratch: Record<string, unknown> = {};
   injectProviderScratch(scratch, providerConfig);
   return {
-    projectId: project?.id ?? nanoid(10),
+    projectId: resolveAgentContextProjectId(project, requestedProjectId),
     scratch,
     providers: resolveProviders(providerConfig),
     skill,

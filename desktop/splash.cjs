@@ -11,8 +11,9 @@ function escapeHtml(text) {
 }
 
 function splashDataUrl(message, chrome) {
-  const background = chrome?.background ?? "#f1efe8";
-  const ink = chrome?.ink ?? "#1a1916";
+  const background = chrome?.background ?? "#edeef1";
+  const ink = chrome?.ink ?? "#141416";
+  const accent = chrome?.accent ?? "#141416";
   const html = `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -71,7 +72,7 @@ function splashDataUrl(message, chrome) {
     }
     .ants {
       fill: none;
-      stroke: #c96b5c;
+      stroke: ${accent};
       stroke-width: 1.45;
       stroke-linecap: round;
       stroke-dasharray: 7 12;
@@ -124,9 +125,9 @@ function splashDataUrl(message, chrome) {
       background: linear-gradient(
         90deg,
         transparent 0%,
-        color-mix(in srgb, #c96b5c 35%, transparent) 28%,
-        #c96b5c 50%,
-        color-mix(in srgb, #c96b5c 35%, transparent) 72%,
+        color-mix(in srgb, ${accent} 35%, transparent) 28%,
+        ${accent} 50%,
+        color-mix(in srgb, ${accent} 35%, transparent) 72%,
         transparent 100%
       );
       animation: shimmer 2.4s cubic-bezier(0.45, 0, 0.55, 1) 0.6s infinite;

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { prepareGenerateImagesApproval } from "./generate-images-approval";
+import {
+  imageToolApprovalId,
+  prepareGenerateImagesApproval,
+  toolResultNeedsUserConfirmation,
+} from "./generate-images-approval";
 import type { ToolContext } from "./types";
 
 describe("prepareGenerateImagesApproval", () => {
@@ -183,6 +187,35 @@ describe("prepareGenerateImagesApproval", () => {
     expect(prompt).toContain("Duolingo English Test practice");
     expect(prompt).not.toContain("normal assistant text");
     expect(prompt).not.toContain("Run/Cancel/Edit controls");
+  });
+
+  it("treats approvalId as user confirmation even without the chat marker", () => {
+    const ctx = makeToolContext("生成一张深色首页");
+    const approval = prepareGenerateImagesApproval(
+      {
+        prompt: "Dark OmniTab home",
+        approvalId: "run-1:generate_images",
+      },
+      ctx
+    );
+    expect(approval!.confirmed).toBe(true);
+  });
+
+  it("uses a stable per-run image approval id so two tool calls share one card", () => {
+    expect(imageToolApprovalId("run-1", "generate_images")).toBe(
+      "run-1:generate_images"
+    );
+    expect(
+      imageToolApprovalId("run-1", "generate_images")
+    ).toBe(imageToolApprovalId("run-1", "generate_images"));
+  });
+
+  it("detects confirmationRequired tool results so resume can wait again", () => {
+    expect(
+      toolResultNeedsUserConfirmation({ confirmationRequired: true, prompt: "x" })
+    ).toBe(true);
+    expect(toolResultNeedsUserConfirmation({ jobId: "job-1" })).toBe(false);
+    expect(toolResultNeedsUserConfirmation(null)).toBe(false);
   });
 });
 

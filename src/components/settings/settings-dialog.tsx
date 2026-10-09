@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ArrowUpRight,
   Cpu,
   HardDrive,
   Info,
@@ -10,34 +11,25 @@ import {
   X,
 } from "lucide-react";
 import { type ReactNode, useEffect, useId, useState } from "react";
+import { VadMark } from "@/components/brand/vad-mark";
 import { DaemonStatusHint } from "@/components/daemon-status-hint";
 import { ProviderSettingsDialog } from "@/components/provider-settings-dialog";
 import { BridgePane } from "@/components/settings/bridge-pane";
 import { useDesktopRuntime } from "@/lib/desktop/use-desktop-runtime";
-import {
-  type LocalePreference,
-  type ThemePreference,
-  usePreferences,
-} from "@/lib/preferences";
+import { type LocalePreference, type ThemePreference, usePreferences } from "@/lib/preferences";
 import { STUDIO_SHORTCUTS } from "@/lib/studio/commands";
 import { openFirstRunSetup } from "@/lib/studio/first-run";
 import { useReduceMotion } from "@/lib/studio/motion";
 import { useStudioRail } from "@/lib/studio/rail";
 import {
-  type StartupPreference,
   readStartupPreference,
+  type StartupPreference,
   writeStartupPreference,
 } from "@/lib/studio/startup";
 import type { VadDesktopInfo } from "@/types/vad-desktop";
 import "./settings-dialog.css";
 
-export type SettingsSection =
-  | "general"
-  | "models"
-  | "bridge"
-  | "storage"
-  | "shortcuts"
-  | "about";
+export type SettingsSection = "general" | "models" | "bridge" | "storage" | "shortcuts" | "about";
 
 const NAV: Array<{
   id: SettingsSection;
@@ -52,14 +44,32 @@ const NAV: Array<{
   { id: "about", label: "关于", icon: Info },
 ];
 
-const TITLES: Record<SettingsSection, string> = {
-  general: "通用",
-  models: "模型",
-  bridge: "连接 coding agent",
-  storage: "存储",
-  shortcuts: "快捷键",
-  about: "关于",
+const PANES: Record<SettingsSection, { title: string; hint: string }> = {
+  general: { title: "通用", hint: "语言、外观与启动方式" },
+  models: { title: "模型", hint: "推理编排与生图连接" },
+  bridge: { title: "连接", hint: "把当前画布交给 Cursor、Claude Code 或 Codex" },
+  storage: { title: "存储", hint: "项目、日志与检查点都在本机" },
+  shortcuts: { title: "快捷键", hint: "画布与工作台常用操作" },
+  about: { title: "关于", hint: "版本、许可证与运行环境" },
 };
+
+function useDesktopInfo(): VadDesktopInfo | null {
+  const desktop = useDesktopRuntime();
+  const [info, setInfo] = useState<VadDesktopInfo | null>(null);
+
+  useEffect(() => {
+    if (!desktop) return;
+    let cancelled = false;
+    void window.vadDesktop?.getInfo().then((value) => {
+      if (!cancelled) setInfo(value);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [desktop]);
+
+  return info;
+}
 
 export function SettingsDialog({
   onClose,
@@ -70,6 +80,7 @@ export function SettingsDialog({
 }) {
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const titleId = useId();
+  const info = useDesktopInfo();
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -87,38 +98,40 @@ export function SettingsDialog({
         aria-label="关闭设置"
         onClick={onClose}
       />
-      <div
-        className="vad-settings"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-      >
+      <div className="vad-settings" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <nav className="vad-settings-nav" aria-label="设置分类">
+          <p className="vad-settings-nav-label">设置</p>
           {NAV.map((item) => {
             const Icon = item.icon;
             return (
               <button
                 key={item.id}
                 type="button"
-                className={
-                  "vad-settings-nav-item" + (section === item.id ? " is-active" : "")
-                }
+                className={`vad-settings-nav-item${section === item.id ? " is-active" : ""}`}
                 onClick={() => setSection(item.id)}
               >
-                <Icon className="size-4" />
+                <Icon aria-hidden />
                 {item.label}
               </button>
             );
           })}
+          <div className="vad-settings-nav-foot">
+            <VadMark size={15} />
+            <span>Vibeboard</span>
+            <small>{info?.version ? `v${info.version}` : "v0.1.0"}</small>
+          </div>
         </nav>
 
         <section className="vad-settings-pane">
           <header className="vad-settings-head">
-            <h2 id={titleId}>{TITLES[section]}</h2>
+            <div>
+              <h2 id={titleId}>{PANES[section].title}</h2>
+              <p className="vad-settings-hint">{PANES[section].hint}</p>
+            </div>
             <button
               type="button"
               className="vad-settings-close"
-              aria-label="关闭"
+              aria-label="关闭设置"
               onClick={onClose}
             >
               <X className="size-4" />
@@ -165,17 +178,20 @@ function GeneralPane({ onClose }: { onClose: () => void }) {
           <option value="en">English</option>
         </select>
       </SettingsRow>
-      <SettingsRow title="主题" description="浅色或深色，下次启动沿用这次的选择。">
-        <select
-          className="vad-settings-select"
+      <SettingsRow
+        title="主题"
+        description="浅色或深色，下次启动沿用这次的选择。"
+        stack
+      >
+        <ThemeCards
           value={theme === "dark" ? "dark" : "light"}
-          onChange={(event) => setTheme(event.target.value as ThemePreference)}
-        >
-          <option value="light">浅色</option>
-          <option value="dark">深色</option>
-        </select>
+          onChange={(next) => setTheme(next as ThemePreference)}
+        />
       </SettingsRow>
-      <SettingsRow title="启动时" description="下次打开应用时进入工作室，或回到上次的画布。">
+      <SettingsRow
+        title="启动时"
+        description="下次打开应用时进入工作室，或回到上次的画布。"
+      >
         <select
           className="vad-settings-select"
           value={startup}
@@ -194,7 +210,7 @@ function GeneralPane({ onClose }: { onClose: () => void }) {
         title="收起侧栏"
         description="首页左侧改成窄轨，把空间留给 Brief 和作品。"
       >
-        <Toggle pressed={rail} onPressedChange={setRail} label="收起侧栏" />
+        <SettingsToggle pressed={rail} onPressedChange={setRail} label="收起侧栏" />
       </SettingsRow>
       {desktop ? (
         <SettingsRow
@@ -217,7 +233,7 @@ function GeneralPane({ onClose }: { onClose: () => void }) {
         title="减少动态效果"
         description="关闭卡片抬起和侧栏过渡，界面会更安静。"
       >
-        <Toggle
+        <SettingsToggle
           pressed={reduceMotion}
           onPressedChange={setReduceMotion}
           label="减少动态效果"
@@ -227,20 +243,57 @@ function GeneralPane({ onClose }: { onClose: () => void }) {
   );
 }
 
+function ThemeCards({
+  value,
+  onChange,
+}: {
+  value: "light" | "dark";
+  onChange: (next: "light" | "dark") => void;
+}) {
+  const options: Array<{ value: "light" | "dark"; label: string; hint: string }> = [
+    { value: "light", label: "浅色", hint: "铝台墨钮" },
+    { value: "dark", label: "深色", hint: "近黑窗框" },
+  ];
+  return (
+    <div className="vad-theme-cards">
+      {options.map((option) => {
+        const active = option.value === value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={active}
+            className={`vad-theme-card is-${option.value}${active ? " is-active" : ""}`}
+            onClick={() => onChange(option.value)}
+          >
+            <span className="vad-theme-preview" aria-hidden>
+              <span className="vad-theme-preview-side">
+                <i />
+                <i />
+                <i />
+              </span>
+              <span className="vad-theme-preview-main">
+                <i className="is-title" />
+                <i className="is-line" />
+                <i className="is-line is-short" />
+                <b />
+              </span>
+            </span>
+            <span className="vad-theme-card-copy">
+              <strong>{option.label}</strong>
+              <small>{option.hint}</small>
+            </span>
+            <span className="vad-theme-card-radio" aria-hidden />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function StoragePane() {
   const desktop = useDesktopRuntime();
-  const [info, setInfo] = useState<VadDesktopInfo | null>(null);
-
-  useEffect(() => {
-    if (!desktop) return;
-    let cancelled = false;
-    void window.vadDesktop?.getInfo().then((value) => {
-      if (!cancelled) setInfo(value);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [desktop]);
+  const info = useDesktopInfo();
 
   return (
     <>
@@ -261,12 +314,15 @@ function StoragePane() {
             打开目录
           </button>
         ) : (
-          <span className="app-subtle text-xs">.vad/projects/</span>
+          <span className="vad-settings-meta">.vad/projects/</span>
         )}
       </SettingsRow>
       {info?.vadRoot ? <p className="vad-settings-path">{info.vadRoot}</p> : null}
       {desktop ? (
-        <SettingsRow title="日志" description="桌面端运行日志，排查启动和连不上本地服务时用。">
+        <SettingsRow
+          title="日志"
+          description="桌面端运行日志，排查启动和连不上本地服务时用。"
+        >
           <button
             type="button"
             className="vad-settings-btn"
@@ -282,7 +338,7 @@ function StoragePane() {
             title="检查点"
             description="长任务中间状态写在本机检查点目录。"
           >
-            <span className="app-subtle text-xs">本机</span>
+            <span className="vad-settings-meta">本机</span>
           </SettingsRow>
           <p className="vad-settings-path">{info.checkpoints}</p>
         </>
@@ -301,42 +357,55 @@ function ShortcutsPane() {
           <div className="vad-settings-copy">
             <strong>{row.action}</strong>
           </div>
-          <kbd className="vad-settings-kbd">{row.keys}</kbd>
+          <Keys combo={row.keys} />
         </div>
       ))}
     </>
   );
 }
 
+function Keys({ combo }: { combo: string }) {
+  const parts = combo.split(" + ");
+  return (
+    <span className="vad-settings-keys">
+      {parts.map((part, index) => (
+        <span key={part} className="vad-settings-keys-part">
+          {index > 0 ? <i aria-hidden>+</i> : null}
+          <kbd className="vad-settings-kbd">{part}</kbd>
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function AboutPane() {
   const desktop = useDesktopRuntime();
-  const [info, setInfo] = useState<VadDesktopInfo | null>(null);
-
-  useEffect(() => {
-    if (!desktop) return;
-    let cancelled = false;
-    void window.vadDesktop?.getInfo().then((value) => {
-      if (!cancelled) setInfo(value);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [desktop]);
+  const info = useDesktopInfo();
+  const version = info?.version ? `v${info.version}` : "v0.1.0";
 
   return (
     <>
-      <SettingsRow
-        title="Vibeboard"
-        description="本地优先的画布工作台。模型 Key 留在本机。"
-      >
-        <span className="app-subtle text-xs">
-          {info?.version ? `v${info.version}` : "v0.1.0"}
+      <div className="vad-settings-brand">
+        <span className="vad-settings-brand-mark">
+          <VadMark size={24} />
         </span>
-      </SettingsRow>
+        <div className="vad-settings-brand-copy">
+          <strong>Vibeboard</strong>
+          <p>本地优先的画布工作台。模型 Key 与项目文件都留在本机。</p>
+        </div>
+        <span className="vad-settings-meta">{version}</span>
+      </div>
       <SettingsRow title="许可证" description="源代码按 Apache-2.0 发布。">
-        <span className="app-subtle text-xs">Apache-2.0</span>
+        <span className="vad-settings-meta">Apache-2.0</span>
       </SettingsRow>
-      <SettingsRow title="运行环境" description={desktop ? "Electron 桌面壳，数据在用户目录。" : "浏览器调试，数据在仓库 .vad/ 与本地存储。"}>
+      <SettingsRow
+        title="运行环境"
+        description={
+          desktop
+            ? "Electron 桌面壳，数据在用户目录。"
+            : "浏览器调试，数据在仓库 .vad/ 与本地存储。"
+        }
+      >
         <span className="app-subtle text-xs">{desktop ? "桌面端" : "浏览器"}</span>
       </SettingsRow>
       <SettingsRow title="仓库" description="问题与贡献走 GitHub。">
@@ -347,10 +416,11 @@ function AboutPane() {
           rel="noreferrer"
         >
           打开 GitHub
+          <ArrowUpRight />
         </a>
       </SettingsRow>
       <SettingsRow title="技术栈" description="Next.js、tldraw、Zustand。本地优先，不上传 Key。">
-        <span className="app-subtle text-xs">OSS</span>
+        <span className="vad-settings-meta">OSS</span>
       </SettingsRow>
     </>
   );
@@ -359,24 +429,26 @@ function AboutPane() {
 function SettingsRow({
   title,
   description,
+  stack = false,
   children,
 }: {
   title: string;
   description: string;
+  stack?: boolean;
   children: ReactNode;
 }) {
   return (
-    <div className="vad-settings-row">
+    <div className={`vad-settings-row${stack ? " vad-settings-row--stack" : ""}`}>
       <div className="vad-settings-copy">
         <strong>{title}</strong>
         <p>{description}</p>
       </div>
-      {children}
+      <div className="vad-settings-control">{children}</div>
     </div>
   );
 }
 
-function Toggle({
+function SettingsToggle({
   pressed,
   onPressedChange,
   label,
@@ -391,7 +463,7 @@ function Toggle({
       role="switch"
       aria-checked={pressed}
       aria-label={label}
-      className={"vad-settings-switch" + (pressed ? " is-on" : "")}
+      className={`vad-settings-switch${pressed ? " is-on" : ""}`}
       onClick={() => onPressedChange(!pressed)}
     />
   );

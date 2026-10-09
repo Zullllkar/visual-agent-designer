@@ -18,7 +18,7 @@ import type { LlmPresetId } from "@/store/provider-store";
 
 export type ProviderLogoId = LlmPresetId | ImagePresetId;
 
-const OPENAI_ICON: SimpleIcon = {
+export const OPENAI_ICON: SimpleIcon = {
   title: "OpenAI",
   slug: "openai",
   hex: "10A37F",

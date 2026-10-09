@@ -61,6 +61,13 @@ export const LayoutHintSchema = z.object({
   order: z.number().int().optional(),
 });
 
+/** 区域像素主色（采样自定稿图，不是 LLM 估的） */
+export const SwatchSchema = z.object({
+  dominant: z.string(),
+  accent: z.string().optional(),
+  dominantShare: z.number().min(0).max(1).optional(),
+});
+
 export const MaterialSlotSchema = z.object({
   id: z.string(),
   parentAssetId: z.string(),
@@ -77,6 +84,7 @@ export const MaterialSlotSchema = z.object({
   notes: z.string().optional(),
   media: z.string().nullable().optional(),
   layoutHint: LayoutHintSchema.optional(),
+  swatch: SwatchSchema.optional(),
   /** slice=直接裁切 / refine=像素锚定提纯 / regenerate=文字重绘 */
   genMode: z.enum(["slice", "refine", "regenerate"]).optional(),
   outputSpec: z
@@ -96,18 +104,24 @@ export const CodeSlotSchema = z.object({
   bbox: BBoxSchema,
   rebuildInCode: z.literal(true),
   copy: z.string().optional(),
+  /** plan / prompt = 权威文案；vision = 从生成图读出的字，仅供参考 */
+  copySource: z.enum(["plan", "prompt", "vision"]).optional(),
+  /** copy 被校正过时，Vision 实际读到的原文 */
+  copyObserved: z.string().optional(),
   suggestedComponent: z.string().optional(),
   states: z
     .array(
       z.object({
         name: z.string(),
         notes: z.string(),
+        copy: z.string().optional(),
       })
     )
     .optional(),
   notes: z.string().optional(),
   media: z.null().optional(),
   layoutHint: LayoutHintSchema.optional(),
+  swatch: SwatchSchema.optional(),
 });
 
 export const LayoutNodeSchema = z.union([MaterialSlotSchema, CodeSlotSchema]);
@@ -235,6 +249,7 @@ export function buildLayoutIRFromDesignSpec(input: {
         prompt,
         status: "pending",
         notes: region.notes,
+        swatch: region.swatch,
         genMode: plan.genMode,
         outputSpec: plan.outputSpec,
         genModeConfidence: plan.confidence,
@@ -256,9 +271,13 @@ export function buildLayoutIRFromDesignSpec(input: {
         bbox,
         rebuildInCode: true,
         copy: region.copy,
+        copySource: region.copySource,
+        copyObserved: region.copyObserved,
+        states: region.states,
         suggestedComponent: suggestComponent(codeRole),
         notes: region.notes,
         media: null,
+        swatch: region.swatch,
       });
     }
   }

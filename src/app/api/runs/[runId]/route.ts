@@ -16,6 +16,7 @@ import {
 import { normalizeGenerateImagesApprovalArgs } from "@/lib/agents/tools/generate-images-approval";
 import { appendEvent } from "@/lib/agents/event-persist";
 import { injectProviderScratch } from "@/lib/agents/content-preferences";
+import { resolveAgentContextProjectId } from "@/lib/agents/resolve-agent-project";
 import type { AgentContext } from "@/lib/agents/types";
 import { resolveProviders, type ProviderConfig } from "@/lib/providers/registry";
 import { resolveSkillContext } from "@/lib/skills/context";
@@ -220,7 +221,7 @@ export async function POST(req: Request, ctx: RunRouteContext) {
   }
 
   const project = await loadMergedProjectFromVad(projectId);
-  const agentCtx = await buildAgentContext(providerConfig, project);
+  const agentCtx = await buildAgentContext(providerConfig, project, projectId);
   agentCtx.threadId = run.threadId;
 
   const emit = (event: WsEvent) => {
@@ -351,13 +352,14 @@ function numberValue(value: unknown): number | undefined {
 
 async function buildAgentContext(
   providerConfig?: ProviderConfig,
-  project?: ProjectFile | null
+  project?: ProjectFile | null,
+  requestedProjectId?: string | null
 ): Promise<AgentContext> {
   const { skill, designSystem } = await resolveSkillContext(providerConfig, project);
   const scratch: Record<string, unknown> = {};
   injectProviderScratch(scratch, providerConfig);
   return {
-    projectId: project?.id ?? "unknown-project",
+    projectId: resolveAgentContextProjectId(project, requestedProjectId),
     scratch,
     providers: resolveProviders(providerConfig),
     skill,

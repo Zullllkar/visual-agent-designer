@@ -1,17 +1,22 @@
 ﻿/**
  * Chat Session schema
  * --------------------------------------------------------------
- * 鐢ㄦ埛涓庤璁?Agent 鐨勬寔缁璇濄€? *
- * - 涓€涓?project 涓€涓?chat session锛坢essages 鎸夋椂闂寸嚎杩藉姞锛? * - 姣忔潯 message 鍙兘鏄?user / assistant / tool 涓夌瑙掕壊
- * - 娴佸紡鍝嶅簲闃舵锛圫SE锛夌殑 event 涔熶細琚繚瀛樻垚 message锛岃 UI 鑳?鍥炴斁"
+ * 用户与设计 Agent 的持续对话。
  *
- * 杩欎釜 schema 鍚屾椂缁?Route Handler 鍜?Chat Pane锛坈lient锛夌敤锛? * 鎵€浠ヤ繚鎸佺函鏁版嵁 + zod锛屼笉寮曞叆鏈嶅姟绔緷璧栥€? */
+ * - 一个 project 一个 chat session（messages 按时间线追加）
+ * - 每条 message 可能是 user / assistant / tool 三种角色
+ * - 流式响应阶段（SSE）的 event 也会被保存成 message，让 UI 能"回放"
+ *
+ * 这个 schema 同时给 Route Handler 和 Chat Pane（client）用，
+ * 所以保持纯数据 + zod，不引入服务端依赖。
+ */
 
 import { z } from "zod";
 import type { ProjectFile } from "@/lib/project/schema";
 import type { PipelineLogEntry } from "./pipeline-logger";
+import { TOOL_NAMES, type ToolName } from "./tool-contract";
 
-/** 娴佸紡浜嬩欢绫诲瀷 鈥斺€?Open Design 涔熸槸杩欏锛坱hinking/tool/file/done锛?*/
+/** 流式事件类型 —— Open Design 也是这套（thinking/tool/file/done） */
 export const ChatEventTypeSchema = z.enum([
   "thinking",
   "tool_call",
@@ -56,46 +61,17 @@ export const ChatEventTypeSchema = z.enum([
 ]);
 export type ChatEventType = z.infer<typeof ChatEventTypeSchema>;
 
-/** 宸ュ叿璋冪敤 鈥斺€?鎶?Brief/Layout/Critic/Repair 绛?Agent 鍖呰鎴?tool */
+/** 工具调用 —— 把 Brief/Layout/Critic/Repair 等 Agent 包装成 tool */
 export const ToolCallSchema = z.object({
   id: z.string(),
-  name: z.enum([
-    "generate_brief",
-    "plan_architecture",
-    "plan_design_direction",
-    "generate_layout",
-    "polish_content",
-    "generate_images",
-    "generate_image_variants",
-    "restyle_page_images",
-    "edit_page",
-    "export_handoff",
-    "materialize_mockup",
-    "critique_pages",
-    "repair_page",
-    "answer_question",
-    "inspect_canvas",
-    "manipulate_canvas",
-    "star_asset",
-    "batch_delete_assets",
-    "delegate_task",
-    "screenshot_canvas",
-    "brand_kit",
-    "file_system",
-    "persist_sandbox_file",
-    "execute",
-    "generate_video",
-    "job_status",
-    "ask_discovery",
-    "confirm_direction",
-    "adopt_asset_style",
-  ]),
-  /** 宸ュ叿鍏ュ弬锛堣嚜鐢?json锛屾瘡涓伐鍏疯嚜宸?zod 鏍￠獙锛?*/
-  args: z.record(z.string(), z.unknown()).optional(),
+  name: z.enum(TOOL_NAMES),
+  /** 工具入参（自由 json，每个工具自己 zod 校验） */
+  args: z.record(z.string(), z.unknown()).default({}),
 });
 export type ToolCall = z.infer<typeof ToolCallSchema>;
+export type CanonicalToolName = ToolName;
 
-/** @鎻愬強绫诲瀷 */
+/** @提及类型 */
 export const MentionSchema = z.object({
   type: z.enum(["model", "brand_asset", "skill", "asset", "page"]),
   id: z.string(),
@@ -103,13 +79,13 @@ export const MentionSchema = z.object({
 });
 export type Mention = z.infer<typeof MentionSchema>;
 
-/** 鍗曟潯鑱婂ぉ娑堟伅 */
+/** 单条聊天消息 */
 export const ChatMessageSchema = z.object({
   id: z.string(),
   role: z.enum(["user", "assistant", "tool"]),
-  /** 鏂囨湰鍐呭锛坲ser / assistant 鐢級 */
+  /** 文本内容（user / assistant 用） */
   content: z.string().optional(),
-  /** 娑堟伅闄勪欢锛堢敤鎴蜂笂浼犵殑鍥剧墖绛夛級 */
+  /** 消息附件（用户上传的图片等） */
   attachments: z
     .array(
       z.object({
@@ -123,11 +99,11 @@ export const ChatMessageSchema = z.object({
       })
     )
     .optional(),
-  /** @鎻愬強鍒楄〃 */
+  /** @提及列表 */
   mentions: z.array(MentionSchema).optional(),
-  /** 宸ュ叿璋冪敤 / 缁撴灉锛坅ssistant / tool 鐢級 */
+  /** 工具调用 / 结果（assistant / tool 用） */
   toolCall: ToolCallSchema.optional(),
-  /** 宸ュ叿杩斿洖鐨勭畝鏄庣粨鏋滐紙tool 鐢紱濡?"鐢熸垚 3 椤? / "璇勫垎 7.2"锛?*/
+  /** 工具返回的简明结果（tool 用；如 "生成 3 页" / "评分 7.2"） */
   toolResult: z
     .object({
       ok: z.boolean(),
@@ -139,27 +115,27 @@ export const ChatMessageSchema = z.object({
 });
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 
-/** 瀹屾暣 chat session锛堟寜 projectId 鍏宠仈锛?*/
+/** 完整 chat session（按 projectId 关联） */
 export const ChatSessionSchema = z.object({
   projectId: z.string(),
   messages: z.array(ChatMessageSchema),
-  /** 褰撳墠婵€娲荤殑 skill / design-system锛涚敤鎴峰彲鍦?UI 鍒囨崲 */
+  /** 当前激活的 skill / design-system；用户可在 UI 切换 */
   activeSkillId: z.string().optional(),
   activeDesignSystemId: z.string().optional(),
 });
 export type ChatSession = z.infer<typeof ChatSessionSchema>;
 
-// 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-// SSE 浜嬩欢 wire 鏍煎紡
-// 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-// 鏈嶅姟绔?enqueue锛歚event: <type>\ndata: <json>\n\n`
-// 瀹㈡埛绔敤 EventSource 鎴栨墜瑙?stream锛岃В鏋愬悗鏄犲皠鍥炶繖閲岀殑绫诲瀷銆?
+// ──────────────────────────────────────────────────────────────────
+// SSE 事件 wire 格式
+// ──────────────────────────────────────────────────────────────────
+// 服务端 enqueue：`event: <type>\ndata: <json>\n\n`
+// 客户端用 EventSource 或手解 stream，解析后映射回这里的类型。
 export interface ChatStreamEvent {
   type: ChatEventType;
   data: unknown;
 }
 
-/** 鍚勪簨浠剁殑 data 褰㈢姸锛堣鍓嶇绫诲瀷鏀剁獎锛?*/
+/** 各事件的 data 形状（让前端类型收窄） */
 export type ThinkingEventData = { text: string };
 export type ToolCallEventData = { id: string; name: ToolCall["name"]; args?: Record<string, unknown> };
 export type ToolResultEventData = {
@@ -178,7 +154,7 @@ export type CodeDiffEventData = {
   oldText?: string;
   newText?: string;
   summary?: string;
-  /** 鍏宠仈鐨勫伐鍏疯皟鐢?id锛岀敤浜庨瑙堢‘璁?*/
+  /** 关联的工具调用 id，用于预览确认 */
   toolCallId?: string;
   diffId?: string;
 };
@@ -198,7 +174,7 @@ export type ErrorEventData = {
   code?: string;
   retryable?: boolean;
   details?: unknown;
-  /** Billing 鐩稿叧锛氱Н鍒嗕笉瓒崇瓑 */
+  /** Billing 相关：积分不足等 */
   billing?: {
     type: "insufficient_credits" | "plan_limit" | "generation_refund";
     creditsNeeded?: number;
@@ -211,9 +187,9 @@ export type HandoffDownloadEventData = {
   fileCount: number;
 };
 
-// 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-// WebSocket 浜嬩欢 data 绫诲瀷
-// 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// ──────────────────────────────────────────────────────────────────
+// WebSocket 事件 data 类型
+// ──────────────────────────────────────────────────────────────────
 
 export type MessageDeltaEventData = { text: string; runId: string };
 export type ThinkingDeltaEventData = { text: string; runId: string };
@@ -255,9 +231,9 @@ export type ImageGenerationConfirmEventData = {
   role?: string;
 };
 
-// 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-// Tool Artifact 鈥?宸ュ叿杈撳嚭鐨勭粨鏋勫寲浜х墿
-// 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// ──────────────────────────────────────────────────────────────────
+// Tool Artifact — 工具输出的结构化产物
+// ──────────────────────────────────────────────────────────────────
 
 export interface ImageArtifact {
   type: "image";

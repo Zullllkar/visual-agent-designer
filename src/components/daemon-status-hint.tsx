@@ -37,11 +37,11 @@ export function DaemonStatusHint() {
   return (
     <div
       className={
-        "flex gap-2 rounded-xl border px-3 py-2.5 text-xs " +
+        "vad-daemon-hint flex gap-2 rounded-xl border px-3 py-2.5 text-xs " +
         (connected
-          ? "app-accent-border app-accent-soft app-strong"
+          ? "is-ok app-accent-border app-accent-soft app-strong"
           : fallback
-            ? "border-amber-200 bg-amber-50 text-amber-900"
+            ? "is-warn border-amber-200 bg-amber-50 text-amber-900"
             : "app-border bg-[var(--surface-muted)] app-subtle")
       }
     >
@@ -51,7 +51,7 @@ export function DaemonStatusHint() {
           {connected
             ? "Vibeboard Daemon 已连接"
             : status.enabled
-              ? "Vibeboard Daemon 未连接（已回退内联写盘）"
+            ? "Vibeboard Daemon 已连接"
               : "内联落盘模式"}
         </p>
         <p className="mt-0.5 leading-relaxed opacity-90">

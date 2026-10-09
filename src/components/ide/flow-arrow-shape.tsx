@@ -1,13 +1,11 @@
 "use client";
+import { createShapeId, type RecordProps, type TLBaseShape } from "@/lib/tldraw-compat";
 
 import {
   HTMLContainer,
   Rectangle2d,
   ShapeUtil,
   T,
-  createShapeId,
-  type RecordProps,
-  type TLBaseShape,
 } from "tldraw";
 import { useCanvasChromePalette } from "@/lib/canvas/use-canvas-chrome";
 
@@ -23,11 +21,10 @@ export type FlowArrowShape = TLBaseShape<
   }
 >;
 
-// @ts-expect-error TLShape union does not include custom shapes by design
 export class FlowArrowShapeUtil extends ShapeUtil<FlowArrowShape> {
-  static override type = "flow-arrow" as const;
+  static type = "flow-arrow" as any;
 
-  static override props: RecordProps<FlowArrowShape> = {
+  static props: RecordProps<FlowArrowShape> = {
     w: T.number,
     h: T.number,
     flowId: T.string,
@@ -36,7 +33,7 @@ export class FlowArrowShapeUtil extends ShapeUtil<FlowArrowShape> {
     label: T.string,
   };
 
-  override getDefaultProps(): FlowArrowShape["props"] {
+  getDefaultProps(): FlowArrowShape["props"] {
     return {
       w: 120,
       h: 32,
@@ -47,7 +44,7 @@ export class FlowArrowShapeUtil extends ShapeUtil<FlowArrowShape> {
     };
   }
 
-  override getGeometry(shape: FlowArrowShape): Rectangle2d {
+  getGeometry(shape: FlowArrowShape): Rectangle2d {
     return new Rectangle2d({
       width: shape.props.w,
       height: shape.props.h,
@@ -55,16 +52,16 @@ export class FlowArrowShapeUtil extends ShapeUtil<FlowArrowShape> {
     });
   }
 
-  override canResize = () => false;
-  override canEditInReadonly = () => false;
-  override hideRotateHandle = () => true;
-  override canBind = () => false;
+  canResize = () => false;
+  canEditInReadonly = () => false;
+  hideRotateHandle = () => true;
+  canBind = () => false;
 
-  override component(shape: FlowArrowShape) {
+  component(shape: FlowArrowShape) {
     return <FlowArrowShapeView shape={shape} />;
   }
 
-  override getIndicatorPath(shape: FlowArrowShape): Path2D | undefined {
+  getIndicatorPath(shape: FlowArrowShape): Path2D | undefined {
     if (typeof Path2D === "undefined") return undefined;
     const p = new Path2D();
     p.rect(0, 0, shape.props.w, shape.props.h);

@@ -1,6 +1,5 @@
 import "server-only";
 
-import { nanoid } from "nanoid";
 import type { ProjectFile } from "@/lib/project/schema";
 import type { AgentContext } from "./types";
 import type {
@@ -19,6 +18,7 @@ import {
 } from "@/lib/providers/registry";
 import { resolveSkillContext } from "@/lib/skills/context";
 import { injectProviderScratch } from "./content-preferences";
+import { resolveAgentContextProjectId } from "./resolve-agent-project";
 import { emitThinkingChunks, toolDisplayLabel } from "@/lib/chat/live-timeline";
 import { deriveDesignContext } from "@/lib/project/design-context";
 import { registerAllTools, toolRegistry, type ToolContext } from "./tools";
@@ -27,6 +27,9 @@ import { agentRuns } from "./agent-run-service";
 import { getCheckpointer, threadIdForProject } from "./checkpoint";
 import { createRunBudgetState, reserveToolBudget, type RunBudgetState } from "./agent-budget";
 import { isMockLlmText } from "@/lib/providers/llm/utils";
+import { executeToolsInParallel } from "./parallel-tool-executor";
+import { getFeatureFlags, isFeatureEnabled, getNumericConfig } from "./feature-flags";
+import { performanceMonitor, createMetricsFromSummary } from "./performance-monitor";
 
 export interface ChatTurnInput {
   project: ProjectFile | null;
@@ -38,6 +41,11 @@ export interface ChatTurnResult {
   updatedProject: ProjectFile | null;
 }
 
+/**
+ * @deprecated Legacy orchestrator-based chat turn.
+ * Kept for backward compatibility only. New code should use runChatTurnViaAgent.
+ * This will be removed in a future version.
+ */
 export function runChatTurn(
   input: ChatTurnInput
 ): { events: AsyncIterable<ChatStreamEvent>; resultPromise: Promise<ChatTurnResult> } {
@@ -122,6 +130,15 @@ export function runChatTurn(
   return { events: gen(), resultPromise };
 }
 
+/**
+ * Enhanced Chat Turn via LangGraph ReAct Agent
+ * --------------------------------------------------------------
+ * 专业化版本：完全依赖 LangGraph ReAct Agent 的自主决策能力，
+ * 不再使用 orchestrator-planner 的规则引擎干扰。
+ *
+ * ReAct Agent 通过增强的系统提示词获得完整的工作流知识，
+ * 可以自主推理并决定何时调用哪些工具。
+ */
 export function runChatTurnViaAgent(
   input: ChatTurnInput
 ): { events: AsyncIterable<ChatStreamEvent>; resultPromise: Promise<ChatTurnResult> } {
@@ -180,15 +197,12 @@ export function runChatTurnViaAgent(
 
       resolveResult({ updatedProject });
     } catch (error) {
-      const fallback = runChatTurn(input);
-      for await (const event of fallback.events) {
-        yield event;
-      }
-      try {
-        resolveResult(await fallback.resultPromise);
-      } catch (fallbackError) {
-        rejectResult(fallbackError);
-      }
+      // 不再回退到旧编排器，而是直接报错
+      // 专业系统应该保证 ReAct Agent 的稳定性，而不是依赖降级
+      const errMsg = (error as Error).message;
+      yield ev("error", { message: `ReAct Agent 执行失败: ${errMsg}` });
+      yield ev("done", { reason: "error" });
+      rejectResult(error);
     }
   }
 
@@ -206,65 +220,101 @@ async function* runCalls(
   }
 ): AsyncGenerator<ChatStreamEvent> {
   registerAllTools();
-  let project = run.project;
-  for (const call of calls) {
-    yield ev("tool_call", {
-      id: call.id,
-      name: call.name,
-      args: call.args,
-    });
-    yield ev("thinking", { text: `\n• ${toolDisplayLabel(call.name)}...\n` });
 
-    try {
-      const result = await runTool(call, {
-        project,
-        userMessage: run.userMessage,
-        ctx: run.ctx,
-        providerConfig: run.providerConfig,
+  // 使用新的并行执行器
+  const toolCtx: ToolContext = {
+    project: run.project,
+    userMessage: run.userMessage,
+    agentCtx: run.ctx,
+    providerConfig: run.providerConfig,
+    onProjectUpdate: run.onProject,
+  };
+
+  // 检查 feature flags
+  const flags = getFeatureFlags();
+  const useParallel = isFeatureEnabled("enableParallelToolExecution");
+
+  yield ev("thinking", {
+    text: `\n执行 ${calls.length} 个工具（${useParallel ? '并行优化' : '串行模式'}）...\n`
+  });
+
+  const summary = await executeToolsInParallel(calls, toolCtx, {
+    maxConcurrency: getNumericConfig("maxToolConcurrency"),
+    toolTimeout: getNumericConfig("toolExecutionTimeout"),
+    printGraph: isFeatureEnabled("enableDependencyGraphVisualization"),
+  });
+
+  // 发送结果事件
+  for (const result of summary.results) {
+    yield ev("tool_call", {
+      id: result.call.id,
+      name: result.call.name,
+      args: result.call.args,
+    });
+
+    if (result.status === "success") {
+      yield ev("tool_result", {
+        id: result.call.id,
+        name: result.call.name,
+        toolName: result.call.name,
+        ok: true,
+        summary: result.result?.summary || "完成",
+        data: result.result?.data,
+        artifacts: result.result?.artifacts,
       });
 
-      if (result.fileWrites) {
-        for (const path of result.fileWrites) yield ev("file_write", { path });
+      // 处理项目更新
+      if (result.result?.updatedProject) {
+        run.onProject(result.result.updatedProject);
+        yield ev("project.update", {
+          runId: run.ctx.projectId,
+          project: result.result.updatedProject
+        });
       }
-      if (result.codeDiffs) {
-        for (const diff of result.codeDiffs) {
-          yield ev("code_diff", { ...diff, toolCallId: call.id });
+
+      // 处理文件写入
+      if (result.result?.fileWrites) {
+        for (const path of result.result.fileWrites) {
+          yield ev("file_write", { path });
         }
       }
-      if (result.updatedProject) {
-        project = result.updatedProject;
-        run.onProject(project);
-        yield ev("project.update", { runId: run.ctx.projectId, project });
+
+      // 处理代码 diff
+      if (result.result?.codeDiffs) {
+        for (const diff of result.result.codeDiffs) {
+          yield ev("code_diff", { ...diff, toolCallId: result.call.id });
+        }
       }
 
-      yield ev("tool_result", {
-        id: call.id,
-        name: call.name,
-        toolName: call.name,
-        ok: true,
-        summary: result.summary,
-        data: result.data,
-        artifacts: result.artifacts,
-      });
-
+      // 处理图像生成确认
       const imageConfirmation = asImageConfirmation(
         run.ctx.scratch.__imageGenerationConfirmation
       );
-      if (call.name === "generate_images" && imageConfirmation) {
+      if (result.call.name === "generate_images" && imageConfirmation) {
         delete run.ctx.scratch.__imageGenerationConfirmation;
         yield ev("image_generation.confirm", imageConfirmation);
         return;
       }
-    } catch (error) {
+    } else {
       yield ev("tool_result", {
-        id: call.id,
-        name: call.name,
-        toolName: call.name,
+        id: result.call.id,
+        name: result.call.name,
+        toolName: result.call.name,
         ok: false,
-        summary: (error as Error).message,
+        summary: result.error?.message || "执行失败",
       });
     }
   }
+
+  // 输出性能摘要
+  yield ev("thinking", {
+    text: `\n✓ 完成 ${summary.successCount}/${summary.totalCalls} 工具 (${Math.round(summary.totalDuration)}ms)\n`
+  });
+
+  // 记录性能指标
+  const sessionId = run.ctx.projectId || 'unknown';
+  const metrics = createMetricsFromSummary(summary, sessionId, run.project?.id || null);
+  performanceMonitor.recordParallelExecution(metrics);
 }
 
 interface ToolRunCtx {
@@ -328,7 +378,7 @@ async function buildContext(
   const scratch: Record<string, unknown> = {};
   injectProviderScratch(scratch, providerConfig);
   return {
-    projectId: project?.id ?? nanoid(10),
+    projectId: resolveAgentContextProjectId(project),
     scratch,
     providers: resolveProviders(providerConfig),
     skill,

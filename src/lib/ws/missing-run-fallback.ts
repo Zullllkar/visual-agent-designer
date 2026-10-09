@@ -3,6 +3,10 @@ import {
   parseImageGenerationConfirmation,
 } from "@/lib/agents/image-generation-confirmation";
 import { formatImageConfirmMarker } from "@/lib/agents/image-prompts";
+import {
+  isImageApprovalTool,
+  isResumableImageApprovalRun,
+} from "@/lib/agents/tool-confirmation-pause";
 import type { WsCommand } from "./types";
 
 type WaitingRun = {
@@ -48,21 +52,20 @@ export function matchWaitingApproval<T extends WaitingRun>(
   input: { projectId: string; approvalId?: string | null },
 ): T | undefined {
   const pending = runs.filter(
-    (run) =>
-      run.projectId === input.projectId &&
-      run.status === "waiting_user" &&
-      run.pendingToolApproval?.status === "pending",
+    (run) => run.projectId === input.projectId && isResumableImageApprovalRun(run),
   );
+  const ranked = [...pending].sort((a, b) => {
+    if (a.status === "waiting_user" && b.status !== "waiting_user") return -1;
+    if (b.status === "waiting_user" && a.status !== "waiting_user") return 1;
+    return 0;
+  });
   if (input.approvalId) {
-    const exact = pending.find((run) => run.pendingToolApproval?.approvalId === input.approvalId);
+    const exact = ranked.find((run) => run.pendingToolApproval?.approvalId === input.approvalId);
     if (exact) return exact;
   }
   return (
-    pending.find(
-      (run) =>
-        run.pendingToolApproval?.toolName === "generate_images" ||
-        run.pendingToolApproval?.toolName === "generate_image_variants",
-    ) ?? pending[0]
+    ranked.find((run) => isImageApprovalTool(run.pendingToolApproval?.toolName)) ??
+    ranked[0]
   );
 }
 
@@ -78,6 +81,35 @@ export function bindCommandToWaitingRun(cmd: WsCommand, run: WaitingRun): WsComm
 
 export function isImageGenerationConfirmedPrompt(prompt?: string | null): boolean {
   return typeof prompt === "string" && prompt.includes(IMAGE_CONFIRM_MARKER);
+}
+
+/** 生图确认卡点生成时，接着原来的等待 run，而不是再开一轮撞 RUN_IN_PROGRESS。 */
+export function resumeBlockedImageApproval(
+  cmd: WsCommand,
+  run: WaitingRun,
+): WsCommand | null {
+  const toolName = run.pendingToolApproval?.toolName;
+  if (
+    toolName !== "generate_images" &&
+    toolName !== "generate_image_variants"
+  ) {
+    return null;
+  }
+  if (run.pendingToolApproval?.status !== "pending") return null;
+  if (cmd.action === "agent.approve") {
+    return resumeWaitingImageApproval(cmd, run);
+  }
+  if (cmd.action !== "agent.run") return null;
+  if (isImageGenerationConfirmedPrompt(cmd.prompt)) {
+    return resumeWaitingImageApproval(cmd, run);
+  }
+  if (
+    typeof cmd.count === "number" ||
+    (Array.isArray(cmd.prompts) && cmd.prompts.length > 0)
+  ) {
+    return resumeWaitingImageApproval(cmd, run);
+  }
+  return null;
 }
 
 /** 无 runId 的确认卡（agent.approve）点生成时，接着原来的等待 run，而不是再开一轮。 */

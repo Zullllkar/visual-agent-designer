@@ -6,6 +6,20 @@
 
 import { z } from "zod";
 
+/**
+ * 生图前定好的 UI 文案（headline / CTA / 导航项…）。
+ * 这是文案的权威来源；Vision 从生成图上读回来的字只是佐证。
+ */
+export const CopyPlanItemSchema = z.object({
+  id: z.string(),
+  role: z
+    .enum(["headline", "subhead", "cta", "nav", "label", "body", "caption", "other"])
+    .default("other"),
+  text: z.string().min(1),
+});
+
+export type CopyPlanItem = z.infer<typeof CopyPlanItemSchema>;
+
 export const DesignSpecRegionSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -37,11 +51,41 @@ export const DesignSpecRegionSchema = z.object({
     })
     .optional(),
   copy: z.string().optional(),
+  /**
+   * plan   = 与生图前的 copyPlan 对上了，copy 是权威文案
+   * prompt = 与 imagePrompt 里的引号文本对上了
+   * vision = 只有 Vision 从生成图上读出来的字，可能有错别字，只当提示
+   */
+  copySource: z.enum(["plan", "prompt", "vision"]).optional(),
+  /** copySource 非 vision 时，Vision 实际读到的原文（便于对照） */
+  copyObserved: z.string().optional(),
   notes: z.string().optional(),
+  /**
+   * 代码区域的交互 / 数据状态（hover、disabled、empty、loading、error…）。
+   * 静态图上看不见，由 role + 文案 + 产品语境推断；agent 实现时必须覆盖。
+   */
+  states: z
+    .array(
+      z.object({
+        name: z.string(),
+        notes: z.string(),
+        /** 该状态下的替代文案（空态提示、错误信息等） */
+        copy: z.string().optional(),
+      })
+    )
+    .optional(),
   /** 媒体槽专用英文生图 prompt（拆素材时使用） */
   materialPrompt: z.string().optional(),
   /** Vision 判定：media=独立生图零件；code=用组件/HTML 实现 */
   delivery: z.enum(["media", "code"]).optional(),
+  /** 像素采样得到的区域主色（不是 LLM 猜的），供 coding agent 直接用 */
+  swatch: z
+    .object({
+      dominant: z.string(),
+      accent: z.string().optional(),
+      dominantShare: z.number().min(0).max(1).optional(),
+    })
+    .optional(),
 });
 
 export const DesignSpecTokensSchema = z.object({
@@ -51,6 +95,10 @@ export const DesignSpecTokensSchema = z.object({
         name: z.string(),
         value: z.string(),
         usage: z.string().optional(),
+        /** pixels=图片采样；vision=LLM 读图；prompt=从文字里捞的 hex */
+        source: z.enum(["pixels", "vision", "prompt"]).optional(),
+        /** pixels 来源时的覆盖率 0–1 */
+        share: z.number().min(0).max(1).optional(),
       })
     )
     .default([]),
@@ -129,6 +177,10 @@ export const AssetDesignSpecSchema = z.object({
   artStyle: DesignSpecArtStyleSchema.optional(),
   doNot: z.array(z.string()).default([]),
   implementationNotes: z.array(z.string()).default([]),
+  /** 生图前定好的文案（来自 asset.copyPlan），整份随规格交付 */
+  copyPlan: z.array(CopyPlanItemSchema).optional(),
+  /** copyPlan 里没能对应到任何 region 的文案：图上没画出来，但实现时仍必须有 */
+  unplacedCopy: z.array(CopyPlanItemSchema).optional(),
   source: z.enum(["vision", "heuristic"]).default("heuristic"),
   model: z.string().optional(),
   /** Vision 失败 / 回退 heuristic 时的可读告警 */

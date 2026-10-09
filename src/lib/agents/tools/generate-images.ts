@@ -25,6 +25,7 @@ import {
   resolveRunDesignContext,
 } from "./utils";
 import { parseProjectFileLight } from "@/lib/project/parse-project";
+import { ensureProjectBrief } from "@/lib/project/ensure-brief";
 import { processBase64Assets } from "@/lib/vad/persist";
 import { jobScheduler } from "@/lib/agents/job/job-scheduler";
 import { agentRuns } from "@/lib/agents/agent-run-service";
@@ -42,9 +43,14 @@ import {
   runDirectImageGenerationBatch,
   type DirectImageGenerationRequest,
 } from "@/lib/agents/direct-image-generation";
-import { stageGeneratingAssets } from "@/lib/canvas/stage-generating-assets";
+import { alignPendingGeneratingAssets, stageGeneratingAssets } from "@/lib/canvas/stage-generating-assets";
 import { registerAllJobHandlers } from "@/lib/agents/job/job-handlers";
 import { resolveProviders } from "@/lib/providers/registry";
+import {
+  persistThenSubmitJob,
+  publishGeneratingPlaceholders,
+} from "@/lib/agents/persist-then-submit";
+import { isSameActiveImageJob } from "@/lib/agents/image-job-dedupe";
 
 export const generateImagesTool: AgentTool = {
   name: "generate_images",
@@ -54,7 +60,7 @@ export const generateImagesTool: AgentTool = {
     "If the user asks for N images, write N different prompts (or let the system expand lock+delta). One prompt means one image.",
     "When the user attached reference images (project.references / 【参考图】), the tool automatically feeds them into the image model; optionally pass referenceIds to prefer specific ones.",
   ].join(" "),
-  inputPhase: ["BRIEF", "DIRECTION", "GENERATION"],
+  inputPhase: ["BRIEF", "DIRECTION", "ASSET_PLAN", "GENERATION"],
   outputPhase: "GENERATION",
   riskLevel: "moderate",
   requiresConfirmation: true,
@@ -127,9 +133,13 @@ export const generateImagesTool: AgentTool = {
     args: Record<string, unknown>,
     ctx: ToolContext
   ): Promise<ToolResult> {
-    if (!ctx.project?.brief) {
-      throw new Error("Missing brief; cannot generate images.");
+    if (!ctx.project) {
+      throw new Error("Missing project; cannot generate images.");
     }
+    ctx.project = ensureProjectBrief(ctx.project, {
+      prompt: typeof args.prompt === "string" ? args.prompt : undefined,
+      userMessage: ctx.userMessage,
+    });
 
     const preferIds = [
       ...(Array.isArray(args.referenceIds)
@@ -152,13 +162,24 @@ export const generateImagesTool: AgentTool = {
     }
 
     const mode = (args.mode as string | undefined) ?? "async";
-    const approval = prepareGenerateImagesApproval(args, ctx);
+    const plannedItems = ctx.project.assetPlan?.items.filter((item) => item.status === "planned") ?? [];
+    const planningArgs =
+      !args.prompt && !args.prompts && plannedItems.length > 0
+        ? {
+            ...args,
+            prompts: plannedItems.slice(0, 8).map((item) => item.prompt),
+            width: plannedItems[0]?.width,
+            height: plannedItems[0]?.height,
+            role: plannedItems[0]?.role,
+          }
+        : args;
+    const approval = prepareGenerateImagesApproval(planningArgs, ctx);
     if (!approval) throw new Error("Missing project; cannot prepare image generation.");
     const { preview } = approval;
     const normalized = normalizeImagePrompts({
-      prompt: args.prompt ?? preview.prompt,
-      prompts: args.prompts ?? preview.prompts,
-      variants: args.variants,
+      prompt: planningArgs.prompt ?? preview.prompt,
+      prompts: planningArgs.prompts ?? preview.prompts,
+      variants: planningArgs.variants,
     });
     const prompts = (
       (preview.prompts?.length ? preview.prompts : normalized.prompts).filter(
@@ -200,68 +221,22 @@ export const generateImagesTool: AgentTool = {
       };
     }
 
-    if (mode === "async") {
+    if (mode === "async" || mode === "sync") {
       registerAllJobHandlers();
-      const requestSignature = imageJobSignature({
-        prompt,
-        prompts,
-        count,
-        width,
-        height,
-        role,
-      });
       if (ctx.agentCtx.projectId) {
         const existingJob = jobScheduler
           .listJobs({ projectId: ctx.agentCtx.projectId })
-          .find((job) => {
-            const payload = job.payload as
-              | {
-                  approvalId?: unknown;
-                  prompt?: unknown;
-                  prompts?: unknown;
-                  count?: unknown;
-                  width?: unknown;
-                  height?: unknown;
-                  role?: unknown;
-                  request?: { prompt?: unknown; prompts?: unknown; count?: unknown };
-                }
-              | undefined;
-            const payloadPrompts = Array.isArray(payload?.prompts)
-              ? payload.prompts.filter((p): p is string => typeof p === "string")
-              : Array.isArray(payload?.request?.prompts)
-                ? payload.request.prompts.filter(
-                    (p): p is string => typeof p === "string"
-                  )
-                : [
-                    typeof payload?.prompt === "string"
-                      ? payload.prompt
-                      : typeof payload?.request?.prompt === "string"
-                        ? payload.request.prompt
-                        : "",
-                  ].filter(Boolean);
-            const payloadCount = Number(
-              payload?.count ?? payload?.request?.count ?? 1
-            );
-            return (
-              (job.type === "image_generation" ||
-                job.type === "direct_image_generation") &&
-              (job.status === "pending" || job.status === "running") &&
-              ((approvalId && payload?.approvalId === approvalId) ||
-                imageJobSignature({
-                  prompt:
-                    typeof payload?.prompt === "string"
-                      ? payload.prompt
-                      : typeof payload?.request?.prompt === "string"
-                        ? payload.request.prompt
-                        : "",
-                  prompts: payloadPrompts,
-                  count: payloadCount,
-                  width: Number(payload?.width ?? 1280),
-                  height: Number(payload?.height ?? 720),
-                  role: typeof payload?.role === "string" ? payload.role : undefined,
-                }) === requestSignature)
-            );
-          });
+          .find((job) =>
+            isSameActiveImageJob(job, {
+              approvalId,
+              prompt,
+              prompts,
+              count,
+              width,
+              height,
+              role,
+            })
+          );
         if (existingJob) {
           return {
             summary: `Image generation is already running for this approval: ${existingJob.id}`,
@@ -294,34 +269,48 @@ export const generateImagesTool: AgentTool = {
         role,
         collectedRefs,
       });
-      const pendingAssets = buildDirectPendingAssets(directRequest, batchId);
+      const pendingAssets = alignPendingGeneratingAssets(
+        ctx.project.assets ?? [],
+        buildDirectPendingAssets(directRequest, batchId)
+      );
       const projectWithPending = parseProjectFileLight(
         stageGeneratingAssets(ctx.project, pendingAssets)
       );
-      const job = jobScheduler.submit({
-        type: "direct_image_generation",
-        payload: {
-          project: projectWithPending,
-          providerConfig: ctx.providerConfig,
-          request: directRequest,
-          pendingAssets,
-        },
-        runId: ctx.runId,
-        toolCallId: ctx.toolCallId,
-        projectId: ctx.agentCtx.projectId,
-        threadId: ctx.agentCtx.threadId,
-        phase: "GENERATION",
-        batchId,
-      });
+      const job = await persistThenSubmitJob(
+        () => publishGeneratingPlaceholders(ctx, projectWithPending),
+        () =>
+          jobScheduler.submit({
+            type: "direct_image_generation",
+            payload: {
+              approvalId,
+              project: projectWithPending,
+              providerConfig: ctx.providerConfig,
+              request: directRequest,
+              pendingAssets,
+              width,
+              height,
+              role,
+              prompt,
+              prompts: imagePrompts,
+              count,
+            },
+            runId: ctx.runId,
+            turnId: typeof ctx.agentCtx.scratch.turnId === "string" ? ctx.agentCtx.scratch.turnId : undefined,
+            toolCallId: ctx.toolCallId,
+            projectId: ctx.agentCtx.projectId,
+            threadId: ctx.agentCtx.threadId,
+            phase: "GENERATION",
+            batchId,
+          })
+      );
       if (ctx.runId) {
         agentRuns.addJobToRun(ctx.runId, job.id);
       }
-      ctx.onProjectUpdate?.(projectWithPending);
       return {
         summary:
           prompts.length > 1
-            ? `Started ${prompts.length} distinct image types: ${job.id}`
-            : `Started ${count} image generation job(s): ${job.id}`,
+            ? `已开始生成 ${prompts.length} 张不同画面，画布上会出现占位图。`
+            : `已开始生成 ${count} 张，画布上会出现占位图。`,
         data: {
           jobId: job.id,
           jobType: job.type,
@@ -358,7 +347,10 @@ export const generateImagesTool: AgentTool = {
       role,
       collectedRefs: { ...collectedRefs, srcs: resolvedRefs },
     });
-    const pendingAssets = buildDirectPendingAssets(directInput, batchId);
+    const pendingAssets = alignPendingGeneratingAssets(
+      ctx.project.assets ?? [],
+      buildDirectPendingAssets(directInput, batchId)
+    );
     const projectWithPending = parseProjectFileLight(
       stageGeneratingAssets(ctx.project, pendingAssets)
     );
@@ -378,6 +370,7 @@ export const generateImagesTool: AgentTool = {
               pendingAssets,
               signal: ctx.abortSignal,
               concurrency: 2,
+              ledgerProjectId: ctx.project.id,
             }),
           (x) => ({ succeeded: x.succeeded, failed: x.failed })
         )
@@ -388,6 +381,7 @@ export const generateImagesTool: AgentTool = {
           pendingAssets,
           signal: ctx.abortSignal,
           concurrency: 2,
+          ledgerProjectId: ctx.project.id,
         });
 
     const writtenAssets = await processBase64Assets(
@@ -464,25 +458,4 @@ function toDirectRequest(input: {
 
 function stableBatchId(value: string): string {
   return createHash("sha1").update(value).digest("hex").slice(0, 10);
-}
-
-function imageJobSignature(input: {
-  prompt: string;
-  prompts?: string[];
-  count: number;
-  width: number;
-  height: number;
-  role?: string;
-}): string {
-  return stableBatchId(
-    JSON.stringify({
-      prompts: (input.prompts?.length ? input.prompts : [input.prompt]).map((p) =>
-        p.replace(/\s+/g, " ").trim()
-      ),
-      count: input.count,
-      width: input.width,
-      height: input.height,
-      role: input.role ?? "",
-    })
-  );
 }

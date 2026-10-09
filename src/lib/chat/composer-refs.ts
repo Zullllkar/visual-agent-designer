@@ -3,6 +3,7 @@
  */
 
 import type { ReferenceAsset } from "@/lib/project/assets-schema";
+import { displayAssetTitle } from "@/lib/project/asset-title";
 
 /** 同一张图只保留一条（id / src / from-asset notes）。 */
 export function upsertComposerReference(
@@ -20,4 +21,24 @@ export function upsertComposerReference(
 
 export function composerRefIdForAsset(assetId: string): string {
   return `from-asset-${assetId}`;
+}
+
+export function referenceFromAsset(asset: {
+  id: string;
+  prompt?: string;
+  title?: string;
+  src: string;
+  width?: number;
+  height?: number;
+}): ReferenceAsset {
+  return {
+    id: composerRefIdForAsset(asset.id),
+    label: displayAssetTitle(asset).slice(0, 40),
+    src: asset.src,
+    width: asset.width || 1024,
+    height: asset.height || 1024,
+    source: "upload",
+    createdAt: new Date().toISOString(),
+    notes: `from-asset:${asset.id}`,
+  };
 }

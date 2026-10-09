@@ -1,7 +1,7 @@
 import type { ProjectFile } from "@/lib/project/schema";
 import { parseTargetId, type TargetId } from "@/lib/targets/resolve";
 
-export const HOME_PROJECT_PREVIEW_LIMIT = 3;
+export const HOME_PROJECT_PREVIEW_LIMIT = 4;
 export const LIBRARY_PAGE_SIZE = 12;
 
 export type LibraryTargetFilter = "all" | TargetId;

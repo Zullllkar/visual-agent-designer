@@ -1,6 +1,7 @@
 import type { ProjectFile } from "@/lib/project/schema";
 import { projectWithSelectedAssets } from "./select-assets";
 import { isCodingHandoffPack, resolveHandoffPackKind } from "./pack-kind";
+import { buildQualityGateSuggestions, type QualityGateSuggestion } from "@/lib/agents/quality-gate";
 
 export type HandoffPreflightLevel = "ok" | "warning" | "error";
 
@@ -18,6 +19,7 @@ export interface HandoffPreflightResult {
   blockedCount: number;
   warningCount: number;
   checks: HandoffPreflightCheck[];
+  repairSuggestions: QualityGateSuggestion[];
 }
 
 export function buildHandoffPreflight(
@@ -94,6 +96,8 @@ export function buildHandoffPreflight(
 
   const pack = resolveHandoffPackKind(project);
   const coding = isCodingHandoffPack(pack);
+  const requiredPlanItems = project.assetPlan?.items.filter((item) => item.priority === "required") ?? [];
+  const incompletePlanItems = requiredPlanItems.filter((item) => item.status !== "generated");
 
   const checks: HandoffPreflightCheck[] = [
     {
@@ -176,6 +180,17 @@ export function buildHandoffPreflight(
       level: generatingAssets.length > 0 ? "warning" : "ok",
     },
     {
+      id: "asset-plan",
+      label: "素材计划",
+      detail:
+        requiredPlanItems.length === 0
+          ? "没有绑定必需素材计划"
+          : incompletePlanItems.length === 0
+            ? `全部 ${requiredPlanItems.length} 项必需素材已完成`
+            : `还有 ${incompletePlanItems.length} 项必需素材未完成：${incompletePlanItems.map((item) => item.purpose).join("、")}`,
+      level: incompletePlanItems.length > 0 ? "error" : "ok",
+    },
+    {
       id: "failed-assets",
       label: "失败/取消素材",
       detail:
@@ -226,6 +241,28 @@ export function buildHandoffPreflight(
           : "尚未确定交付范围",
       level: finalAssets.length > 0 ? "ok" : "warning",
     },
+    {
+      id: "starred-finals",
+      label: "收藏定稿",
+      detail: (() => {
+        const selectedUnstarred = finalAssets.filter((a) => a.status !== "starred").length;
+        const starredInProject = (project.assets ?? []).filter(
+          (a) => a.status === "starred" && isFinalHandoffAsset(a)
+        ).length;
+        if (finalAssets.length === 0) return "还没勾选图";
+        if (selectedUnstarred === 0) return `${finalAssets.length} 张均为收藏定稿`;
+        if (starredInProject === 0) {
+          return `勾选了 ${finalAssets.length} 张探索图，项目里还没有收藏。建议先在画布 star 真正要用的，避免把草稿当定稿`;
+        }
+        return `${selectedUnstarred} 张未收藏（探索图）。确认它们属于定稿，或改点「仅收藏」`;
+      })(),
+      level: (() => {
+        if (finalAssets.length === 0) return "warning";
+        const selectedUnstarred = finalAssets.filter((a) => a.status !== "starred").length;
+        if (selectedUnstarred === 0) return "ok";
+        return "warning";
+      })(),
+    },
   ];
 
   const blockedCount = checks.filter((check) => check.level === "error").length;
@@ -238,6 +275,7 @@ export function buildHandoffPreflight(
     blockedCount,
     warningCount,
     checks,
+    repairSuggestions: buildQualityGateSuggestions(project.critique),
   };
 }
 

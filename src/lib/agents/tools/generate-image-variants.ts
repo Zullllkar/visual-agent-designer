@@ -18,9 +18,14 @@ import {
   type DirectImageGenerationRequest,
 } from "@/lib/agents/direct-image-generation";
 import { isEmptySpawnSlot } from "@/lib/canvas/spawn-child-asset";
-import { stageGeneratingAssets } from "@/lib/canvas/stage-generating-assets";
+import { alignPendingGeneratingAssets, stageGeneratingAssets } from "@/lib/canvas/stage-generating-assets";
+import {
+  persistThenSubmitJob,
+  publishGeneratingPlaceholders,
+} from "@/lib/agents/persist-then-submit";
 import type { AgentTool, ToolContext, ToolResult } from "./types";
 import { parseProjectFileLight } from "@/lib/project/parse-project";
+import { ensureProjectBrief } from "@/lib/project/ensure-brief";
 import { expandDistinctPrompts, uniquePrompts } from "@/lib/agents/distinct-image-prompts";
 import type { GenerateImagesApprovalPlan } from "./generate-images-approval";
 import {
@@ -67,9 +72,13 @@ export const generateImageVariantsTool: AgentTool = {
     args: Record<string, unknown>,
     ctx: ToolContext
   ): Promise<ToolResult> {
-    if (!ctx.project?.brief) {
-      throw new Error("缺少 brief，无法生成素材变体");
+    if (!ctx.project) {
+      throw new Error("缺少项目，无法生成素材变体");
     }
+    ctx.project = ensureProjectBrief(ctx.project, {
+      prompt: typeof args.prompt === "string" ? args.prompt : undefined,
+      userMessage: ctx.userMessage,
+    });
     assertRealImageForGeneration(ctx.providerConfig);
     registerAllJobHandlers();
 
@@ -116,38 +125,44 @@ export const generateImageVariantsTool: AgentTool = {
       role: parent.role ?? inferImageRole(parent.width, parent.height),
     };
 
-    const pendingAssets = buildVariantPendingAssets({
-      assets: existingAssets,
-      parentId: parent.id,
-      request,
-      batchId: variantGroupId,
-      designContextVersion: designContext?.version,
-    });
+    const pendingAssets = alignPendingGeneratingAssets(
+      existingAssets,
+      buildVariantPendingAssets({
+        assets: existingAssets,
+        parentId: parent.id,
+        request,
+        batchId: variantGroupId,
+        designContextVersion: designContext?.version,
+      })
+    );
 
     const projectWithPending = parseProjectFileLight({
       ...stageGeneratingAssets(ctx.project, pendingAssets),
       designContext: resolveRunDesignContext(ctx.project, ctx.agentCtx.scratch),
     });
 
-    const job = jobScheduler.submit({
-      type: "direct_image_generation",
-      payload: {
-        project: projectWithPending,
-        providerConfig: ctx.providerConfig,
-        request,
-        pendingAssets,
-      },
-      runId: ctx.runId,
-      toolCallId: ctx.toolCallId,
-      projectId: ctx.agentCtx.projectId,
-      threadId: ctx.agentCtx.threadId,
-      phase: "GENERATION",
-    });
+    const job = await persistThenSubmitJob(
+      () => publishGeneratingPlaceholders(ctx, projectWithPending),
+      () =>
+        jobScheduler.submit({
+          type: "direct_image_generation",
+          payload: {
+            project: projectWithPending,
+            providerConfig: ctx.providerConfig,
+            request,
+            pendingAssets,
+          },
+          runId: ctx.runId,
+            turnId: typeof ctx.agentCtx.scratch.turnId === "string" ? ctx.agentCtx.scratch.turnId : undefined,
+          toolCallId: ctx.toolCallId,
+          projectId: ctx.agentCtx.projectId,
+          threadId: ctx.agentCtx.threadId,
+          phase: "GENERATION",
+        })
+    );
     if (ctx.runId) {
       agentRuns.addJobToRun(ctx.runId, job.id);
     }
-
-    ctx.onProjectUpdate?.(projectWithPending);
 
     return {
       summary: `已提交 ${imagePrompts.length} 张变体生成任务（父素材 ${parent.id.slice(0, 8)}）`,

@@ -7,6 +7,7 @@ import {
   AlertCircle,
   Info,
   ArrowRight,
+  Wrench,
 } from "lucide-react";
 import type {
   CritiqueIssue,
@@ -26,10 +27,14 @@ export function CritiquePanel({
   critique,
   activePageId,
   history,
+  onRepair,
+  onRollback,
 }: {
   critique?: ProjectCritique;
   activePageId?: string;
   history?: CritiqueHistoryEntry[];
+  onRepair?: (input: { pageId: string; issue: CritiqueIssue }) => void;
+  onRollback?: () => void;
 }) {
   if (!critique || critique.reports.length === 0) {
     return (
@@ -51,6 +56,11 @@ export function CritiquePanel({
       </div>
 
       {history && history.length > 1 ? <HistoryTimeline history={history} /> : null}
+      {onRollback ? (
+        <button type="button" onClick={onRollback} className="inline-flex h-7 w-full items-center justify-center rounded-md border app-border text-[10px] app-subtle hover:bg-[var(--surface-muted)]">
+          恢复最近一次修复前的版本
+        </button>
+      ) : null}
 
       <div>
         <div className="flex items-baseline justify-between">
@@ -64,7 +74,7 @@ export function CritiquePanel({
         </p>
       </div>
 
-      <IssueList report={activeReport} />
+      <IssueList report={activeReport} onRepair={onRepair} />
 
       <details className="group rounded-md border app-border">
         <summary className="flex cursor-pointer items-center justify-between gap-2 px-2.5 py-1.5 text-[11px] app-subtle transition hover:bg-[var(--surface-muted)]">
@@ -144,7 +154,7 @@ function HistoryTimeline({ history }: { history: CritiqueHistoryEntry[] }) {
   );
 }
 
-function IssueList({ report }: { report: CritiqueReport }) {
+function IssueList({ report, onRepair }: { report: CritiqueReport; onRepair?: (input: { pageId: string; issue: CritiqueIssue }) => void }) {
   if (report.issues.length === 0) {
     return (
       <p className="rounded-md bg-emerald-50 p-2 text-[11px] text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
@@ -155,13 +165,13 @@ function IssueList({ report }: { report: CritiqueReport }) {
   return (
     <ul className="space-y-1.5">
       {report.issues.map((issue, i) => (
-        <IssueRow key={i} issue={issue} />
+        <IssueRow key={i} issue={issue} pageId={report.pageId} onRepair={onRepair} />
       ))}
     </ul>
   );
 }
 
-function IssueRow({ issue }: { issue: CritiqueIssue }) {
+function IssueRow({ issue, pageId, onRepair }: { issue: CritiqueIssue; pageId: string; onRepair?: (input: { pageId: string; issue: CritiqueIssue }) => void }) {
   const [open, setOpen] = useState(false);
   const Icon =
     issue.severity === "high"
@@ -206,6 +216,17 @@ function IssueRow({ issue }: { issue: CritiqueIssue }) {
         <p className="border-t app-border bg-[var(--surface-muted)] px-2.5 py-1.5 text-[11px] app-strong">
           建议：{issue.suggestion}
         </p>
+      ) : null}
+      {onRepair ? (
+        <div className="border-t app-border px-2.5 py-1.5">
+          <button
+            type="button"
+            onClick={() => onRepair({ pageId, issue })}
+            className="inline-flex items-center gap-1.5 rounded-md bg-[var(--primary-soft)] px-2 py-1 text-[10px] font-medium text-[var(--primary)] hover:opacity-80"
+          >
+            <Wrench className="size-3" /> 让 Agent 修复
+          </button>
+        </div>
       ) : null}
     </li>
   );

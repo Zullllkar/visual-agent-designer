@@ -9,6 +9,7 @@ import { z } from "zod";
 import type { Agent } from "./types";
 import type { ProductBrief, DesignDirection } from "@/lib/project/schema";
 import type { CanvasPage } from "@/lib/canvas/schema";
+import { CopyPlanItemSchema } from "@/lib/project/design-spec-schema";
 import { stripJsonFence } from "@/lib/providers/llm/openai-compatible";
 import { isMockLlmText } from "@/lib/providers/llm/utils";
 import { buildSystemPrompt } from "@/lib/skills/prompt-stack";
@@ -24,6 +25,10 @@ export const ImagePlanTaskSchema = z.object({
   role: z
     .enum(["hero", "illustration", "product-shot", "background", "avatar"])
     .optional(),
+  /** UI 屏才有：生图前定好的 headline / CTA / 导航文案，随资产进 handoff */
+  copyPlan: z.array(CopyPlanItemSchema).optional(),
+  /** 短中文名，如「训练首页」；缺省时由 prompt 推导。 */
+  title: z.string().optional(),
 });
 
 export const ImagePlanSchema = z.object({
@@ -165,9 +170,13 @@ async function tryLlmStandalonePlan(
       "Plan standalone visual image assets for the canvas.",
       "Return strict JSON with tasks only.",
       `Return exactly ${n} task(s). Do not increase the count.`,
-      "Each task needs nodeId, imagePrompt, width, height, and role.",
+      "Each task needs nodeId, imagePrompt, width, height, role, and a short human title (Chinese ≤12 chars, like 训练首页). Never use an id as the title.",
       parseTargetId(targetId) === "ui-visual"
-        ? "For app UI requests, produce a UI mockup prompt, not a poster or promo banner."
+        ? [
+            "For app UI requests, produce a UI mockup prompt, not a poster or promo banner.",
+            "Also decide the real UI copy BEFORE the image exists: add `copyPlan` to each UI task — an array of {id, role, text} where role ∈ headline|subhead|cta|nav|label|body|caption|other. 3–10 items: the headline, subhead, primary CTA, nav items and key labels the screen must show. Use the product's language (match the brief). Keep each text short and final (no placeholders like 'Lorem' or 'Your text here').",
+            "Quote every copyPlan text verbatim inside imagePrompt so the image model renders it, e.g. headline \"Plan your week in one glance\". This copy becomes the source of truth for the coding agent.",
+          ].join("\n")
         : "Follow the Goal prompt contract. Do not apply the UI poster ban unless targetId is ui-visual.",
       typeof ctx.scratch.citedAssetId === "string"
         ? "The user cited a canvas asset. Match that attached image's palette, materials, lighting, typography, and UI chrome. Do not reuse Design context or other recent canvas prompts."
@@ -198,12 +207,33 @@ async function tryLlmStandalonePlan(
   const parsed = ImagePlanSchema.safeParse(json);
   if (!parsed.success) return null;
 
-  const tasks = parsed.data.tasks.slice(0, n).map((task, index) => ({
-    ...task,
-    pageId: task.pageId || STANDALONE_BOARD_ID,
-    nodeId: task.nodeId || "asset-" + (index + 1),
-  }));
+  const tasks = parsed.data.tasks.slice(0, n).map((task, index) =>
+    withCopyPlanInPrompt({
+      ...task,
+      pageId: task.pageId || STANDALONE_BOARD_ID,
+      nodeId: task.nodeId || "asset-" + (index + 1),
+    })
+  );
   return { tasks };
+}
+
+/**
+ * 规划好的文案必须原样出现在 imagePrompt 里，图模型才有机会画对；
+ * 模型漏引用时在这里补一句。同时给 copyPlan 项补 id。
+ */
+export function withCopyPlanInPrompt(task: ImagePlanTask): ImagePlanTask {
+  const plan = (task.copyPlan ?? [])
+    .map((c, i) => ({ ...c, id: c.id?.trim() || `copy-${i + 1}`, text: c.text.trim() }))
+    .filter((c) => c.text.length > 0);
+  if (plan.length === 0) return { ...task, copyPlan: undefined };
+  const missing = plan.filter((c) => !task.imagePrompt.includes(c.text));
+  const imagePrompt =
+    missing.length === 0
+      ? task.imagePrompt
+      : `${task.imagePrompt.trim()} Render this UI text exactly: ${missing
+          .map((c) => `${c.role} "${c.text}"`)
+          .join(", ")}.`;
+  return { ...task, copyPlan: plan, imagePrompt };
 }
 
 function planStandaloneAssetsFallback(
@@ -299,6 +329,7 @@ async function tryLlmPlan(
     technicalAddendum: [
       "# Task: Image Planner",
       "Write one English imagePrompt for each pending image node.",
+      "Each task also needs a short human title (Chinese ≤12 chars, like 训练首页). Never use an id as the title.",
       "Return strict JSON: {\"tasks\":[...]}",
       "Only include real pending pageId/nodeId pairs from pendingNodes.",
     ].join("\n\n"),

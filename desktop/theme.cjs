@@ -1,18 +1,21 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
+/** Match studio-home.css aluminum shell and ink buttons. */
 const CHROME = {
   light: {
-    background: "#f1efe8",
-    overlay: "#fafaf7",
-    symbol: "#1a1916",
-    ink: "#1a1916",
+    background: "#edeef1",
+    overlay: "#edeef1",
+    symbol: "#141416",
+    ink: "#141416",
+    accent: "#141416",
   },
   dark: {
-    background: "#161412",
-    overlay: "#1e1c19",
-    symbol: "#f1efe8",
-    ink: "#f1efe8",
+    background: "#0e0f12",
+    overlay: "#0e0f12",
+    symbol: "#f2f3f5",
+    ink: "#f2f3f5",
+    accent: "#f2f3f5",
   },
 };
 
@@ -39,9 +42,26 @@ function windowChrome(theme) {
   return CHROME[normalizeTheme(theme)];
 }
 
+function titleBarOverlayOptions(theme, scrim) {
+  if (scrim) {
+    return {
+      color: "#00000000",
+      symbolColor: "#f4f4f5",
+      height: 40,
+    };
+  }
+  const chrome = windowChrome(theme);
+  return {
+    color: chrome.overlay,
+    symbolColor: chrome.symbol,
+    height: 40,
+  };
+}
+
 module.exports = {
   loadUiTheme,
   saveUiTheme,
   windowChrome,
   normalizeTheme,
+  titleBarOverlayOptions,
 };

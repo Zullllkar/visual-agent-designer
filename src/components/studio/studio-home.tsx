@@ -69,7 +69,9 @@ export function StudioHome() {
       .then(async (res) => {
         const type = res.headers.get("content-type") ?? "";
         if (!res.ok || !type.includes("application/json")) return [];
-        return res.json();
+        const text = await res.text();
+        if (!text.trim()) return [];
+        return JSON.parse(text);
       })
       .then((data) => {
         if (Array.isArray(data)) importProjectsQuietly(data);

@@ -9,19 +9,31 @@ import type { BaseCheckpointSaver } from "@langchain/langgraph";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { ChatOpenAI } from "@langchain/openai";
 import { z } from "zod";
+import { parseImageGenerationConfirmation } from "@/lib/agents/image-generation-confirmation";
+import {
+  applyApprovalDecision,
+  awaitUserToolApproval,
+  readTrustedToolResume,
+  shouldPauseToolForConfirmation,
+} from "@/lib/agents/tool-confirmation-pause";
 
 import { createRunBudgetState, reserveToolBudget } from "@/lib/agents/agent-budget";
+import { bindGenerationProject } from "@/lib/generation/ledger-context";
 import { inferInitialPhase, phaseLabel, resolveNextPhase, type AgentPhase } from "@/lib/agents/agent-phase";
 import { isChatInlineTool } from "@/lib/agents/chat-inline-tools";
 import { truncateToolResultForLlm } from "@/lib/agents/context-budget";
 import { createContextWindowPreModelHook } from "@/lib/agents/context-window";
 import { costTracker } from "@/lib/agents/cost-tracker";
 import { hookManager } from "@/lib/agents/hooks";
-import { buildSystemPrompt } from "@/lib/agents/system-prompt";
+import { buildEnhancedSystemPrompt } from "@/lib/agents/enhanced-system-prompt";
 import { registerAllTools, toolRegistry } from "@/lib/agents/tools";
-import { prepareGenerateImagesApproval } from "@/lib/agents/tools/generate-images-approval";
+import {
+  imageToolApprovalId,
+  prepareGenerateImagesApproval,
+} from "@/lib/agents/tools/generate-images-approval";
 import { prepareVariantImageApproval } from "@/lib/agents/tools/generate-image-variants";
 import { toolRequiresConfirmation, toolRiskLevel } from "@/lib/agents/tools/tool-risk";
+import { isToolGrantedByProject } from "@/lib/agents/tool-approval-policy";
 import type { ToolContext } from "@/lib/agents/tools/types";
 import type { AgentContext } from "@/lib/agents/types";
 import type { ProjectFile } from "@/lib/project/schema";
@@ -40,7 +52,8 @@ export interface CreateAgentOptions {
 }
 
 export function createVadAgent(options: CreateAgentOptions) {
-  const llm = createChatModel(options.providerConfig);
+  bindGenerationProject(options.agentCtx.projectId);
+  const llm = createChatModel(options.providerConfig, options.agentCtx.projectId);
   registerAllTools();
   if (options.project?.targetId) {
     options.agentCtx.scratch.targetId = options.project.targetId;
@@ -83,23 +96,53 @@ export function createVadAgent(options: CreateAgentOptions) {
       ) => {
         let toolArgs = args;
         const nativeToolCallId = runtime?.toolCallId ?? runtime?.toolCall?.id;
+        const trustedResume = readTrustedToolResume(options.agentCtx.scratch);
+        if (trustedResume?.toolName === agentTool.name) {
+          toolArgs = {
+            ...toolArgs,
+            ...trustedResume.args,
+            confirmed: true,
+            approvalId: trustedResume.approvalId,
+          };
+        }
         const imageApproval =
           agentTool.name === "generate_images"
             ? prepareGenerateImagesApproval(toolArgs, toolCtx)
             : agentTool.name === "generate_image_variants"
               ? prepareVariantImageApproval(toolArgs, toolCtx)
               : null;
-        const needsGenericConfirmation =
-          shouldRequireConfirmation(agentTool.name, toolArgs, agentTool.requiresConfirmation) &&
-          (imageApproval ? !imageApproval.confirmed : toolArgs.confirmed !== true);
+        const needsGenericConfirmation = shouldPauseToolForConfirmation({
+          toolName: agentTool.name,
+          requiresConfirmation:
+            shouldRequireConfirmation(agentTool.name, toolArgs, agentTool.requiresConfirmation),
+          args: toolArgs,
+          userMessageConfirmed: parseImageGenerationConfirmation(options.userMessage)
+            .confirmed,
+          trustedResume: trustedResume?.toolName === agentTool.name,
+          projectId: options.agentCtx.projectId,
+          confirmationPolicy: toolRegistry.confirmationPolicy(agentTool.name),
+          projectGranted: isToolGrantedByProject(options.project, agentTool.name),
+        });
 
         if (needsGenericConfirmation) {
           const approvalArgs = imageApproval?.approvedArgs ?? toolArgs;
-          const approvalId = [
-            options.runId ?? "run",
-            agentTool.name,
-            nativeToolCallId ?? stableArgsKey(approvalArgs),
-          ].join(":");
+          const existingConfirmation = options.agentCtx.scratch.__toolConfirmation as
+            | { approvalId?: string; toolName?: string }
+            | undefined;
+          const isImageTool =
+            agentTool.name === "generate_images" ||
+            agentTool.name === "generate_image_variants";
+          const approvalId =
+            existingConfirmation?.toolName === agentTool.name &&
+            existingConfirmation.approvalId
+              ? existingConfirmation.approvalId
+              : isImageTool
+                ? imageToolApprovalId(options.runId, agentTool.name)
+                : [
+                    options.runId ?? "run",
+                    agentTool.name,
+                    nativeToolCallId ?? stableArgsKey(approvalArgs),
+                  ].join(":");
           const approvalPayload = {
             approvalId,
             title: imageApproval?.preview.title ?? `Execute ${agentTool.name}`,
@@ -107,23 +150,31 @@ export function createVadAgent(options: CreateAgentOptions) {
             toolCallId: nativeToolCallId,
             riskLevel: toolRiskLevel(agentTool.name),
             args: approvalArgs,
+            pausedByInterrupt: true,
             reason: imageApproval?.preview.reason ??
               "This tool can modify project state or trigger side effects, so it needs user approval before execution.",
+            model:
+              options.providerConfig.image && "model" in options.providerConfig.image
+                ? options.providerConfig.image.model
+                : undefined,
+            estimatedSeconds: isImageTool ? Math.max(15, Number(imageApproval?.preview.count ?? 1) * 15) : undefined,
+            affectedAssets: Array.isArray(approvalArgs.assetIds)
+              ? approvalArgs.assetIds.filter((id): id is string => typeof id === "string")
+              : undefined,
           };
           options.agentCtx.scratch.__toolConfirmation = approvalPayload;
-          return JSON.stringify({
-            ok: false,
-            summary: `${agentTool.name} is waiting for user approval before execution.`,
-            data: {
-              confirmationRequired: true,
-              approvalId,
-              toolName: agentTool.name,
-              toolCallId: nativeToolCallId,
-              riskLevel: toolRiskLevel(agentTool.name),
-              args: approvalArgs,
-              reason: approvalPayload.reason,
-            },
-          });
+          const applied = applyApprovalDecision(
+            approvalPayload,
+            awaitUserToolApproval(approvalPayload)
+          );
+          if (applied.cancelled) {
+            return JSON.stringify({
+              ok: false,
+              summary: `${agentTool.name} was cancelled by the user.`,
+              data: { cancelled: true, approvalId },
+            });
+          }
+          toolArgs = applied.args;
         }
 
         if (agentTool.inputPhase && !agentTool.inputPhase.includes(currentPhase)) {
@@ -239,7 +290,7 @@ export function createVadAgent(options: CreateAgentOptions) {
   return createReactAgent({
     llm,
     tools: langchainTools,
-    prompt: buildSystemPrompt(options.project, options.agentCtx, options.rulesPrompt),
+    prompt: buildEnhancedSystemPrompt(options.project, options.agentCtx, options.rulesPrompt),
     checkpointer: options.checkpointer,
     // 每次调模型前：滑动窗口 + 旧消息摘要；超阈值写回 checkpoint
     preModelHook: createContextWindowPreModelHook(),
@@ -272,7 +323,39 @@ function stableStringify(value: unknown): string {
     .join(",")}}`;
 }
 
-function createChatModel(config: ProviderConfig) {
+function ledgerCallbacks(projectId: string | undefined, model: string, provider: string) {
+  if (!projectId) return [];
+  return [
+    {
+      handleLLMEnd(output: {
+        llmOutput?: { tokenUsage?: { promptTokens?: number; completionTokens?: number } };
+        generations?: Array<
+          Array<{
+            message?: {
+              usage_metadata?: { input_tokens?: number; output_tokens?: number };
+            };
+          }>
+        >;
+      }) {
+        const meta = output.generations?.[0]?.[0]?.message?.usage_metadata;
+        const legacy = output.llmOutput?.tokenUsage;
+        const inputTokens = meta?.input_tokens ?? legacy?.promptTokens ?? 0;
+        const outputTokens = meta?.output_tokens ?? legacy?.completionTokens ?? 0;
+        void import("@/lib/generation/ledger-store").then(({ noteLlmGeneration }) =>
+          noteLlmGeneration(projectId, {
+            model,
+            provider,
+            purpose: "对话",
+            inputTokens,
+            outputTokens,
+          })
+        );
+      },
+    },
+  ];
+}
+
+function createChatModel(config: ProviderConfig, projectId?: string) {
   if (!config.llm || config.llm.kind === "mock") {
     throw new Error("LangGraph Agent requires a real LLM provider, current provider is mock.");
   }
@@ -283,6 +366,7 @@ function createChatModel(config: ProviderConfig) {
       configuration: { baseURL: config.llm.baseURL },
       model: config.llm.model,
       streaming: true,
+      callbacks: ledgerCallbacks(projectId, config.llm.model, "openai-compatible"),
     });
   }
 
@@ -292,6 +376,7 @@ function createChatModel(config: ProviderConfig) {
       configuration: { baseURL: "https://api.deepseek.com/v1" },
       model: config.llm.model,
       streaming: true,
+      callbacks: ledgerCallbacks(projectId, config.llm.model, "deepseek"),
     });
   }
 
@@ -300,6 +385,7 @@ function createChatModel(config: ProviderConfig) {
       apiKey: config.llm.apiKey,
       model: config.llm.model,
       ...(config.llm.baseURL ? { baseURL: config.llm.baseURL } : {}),
+      callbacks: ledgerCallbacks(projectId, config.llm.model, "anthropic"),
     }) as unknown as InstanceType<typeof ChatAnthropic>;
   }
 
@@ -308,6 +394,7 @@ function createChatModel(config: ProviderConfig) {
       apiKey: config.llm.apiKey,
       model: config.llm.model,
       ...(config.llm.baseURL ? { baseURL: config.llm.baseURL } : {}),
+      callbacks: ledgerCallbacks(projectId, config.llm.model, "gemini"),
     }) as unknown as InstanceType<typeof ChatGoogleGenerativeAI>;
   }
 

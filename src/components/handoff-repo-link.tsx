@@ -5,13 +5,13 @@
  * 桌面端用系统目录选择器；浏览器端手填绝对路径。
  */
 
-import { useState } from "react";
 import { Check, ExternalLink, FolderOpen, Link2, Loader2, Unlink } from "lucide-react";
-import type { ProjectFile } from "@/lib/project/schema";
-import { cursorPromptDeeplink } from "@/lib/bridge/install-planner";
+import { useState } from "react";
+import { cursorPromptDeeplink } from "@/lib/bridge/deeplinks";
 import { openDeeplink } from "@/lib/bridge/use-bridge-status";
-import { buildRepoKickoffText } from "@/lib/handoff/kickoff-prompt";
 import { useDesktopRuntime } from "@/lib/desktop/use-desktop-runtime";
+import { buildRepoKickoffText } from "@/lib/handoff/kickoff-prompt";
+import type { ProjectFile } from "@/lib/project/schema";
 
 interface SyncPayload {
   ok: boolean;
@@ -93,8 +93,8 @@ export function HandoffRepoLink({
     <section className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)]/40 p-3">
       <p className="text-[11px] font-semibold uppercase tracking-wide app-subtle">同步到代码仓库</p>
       <p className="mt-1 text-[11px] leading-relaxed app-subtle">
-        不用下载 zip。关联后，设计稿会写到仓库的 <code>design/vibeboard/</code>，并补上
-        AGENTS.md / CLAUDE.md / Cursor 规则和项目级 MCP 配置。打开 Cursor 就能直接写代码。
+        不用下载 zip。关联后，设计稿会写到仓库的 <code>design/vibeboard/</code>，并补上 AGENTS.md /
+        CLAUDE.md / Cursor 规则和项目级 MCP 配置。也可以在侧栏「实现」里直接拉起本机 CLI。
       </p>
       <div className="mt-2 flex flex-col gap-2 sm:flex-row">
         <input
@@ -121,7 +121,11 @@ export function HandoffRepoLink({
           onClick={() => void run("POST")}
           className="inline-flex h-8 items-center gap-1 rounded-lg bg-[var(--primary)] px-2.5 text-[11px] font-semibold text-white disabled:opacity-50"
         >
-          {busy === "link" ? <Loader2 className="size-3.5 animate-spin" /> : <Link2 className="size-3.5" />}
+          {busy === "link" ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <Link2 className="size-3.5" />
+          )}
           {linked?.path ? "重新关联并同步" : "关联并同步"}
         </button>
         {linked?.path ? (
@@ -132,7 +136,11 @@ export function HandoffRepoLink({
               onClick={() => void run("PATCH")}
               className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--border)] px-2.5 text-[11px] disabled:opacity-50"
             >
-              {busy === "sync" ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+              {busy === "sync" ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Check className="size-3.5" />
+              )}
               再次同步
             </button>
             <button
@@ -141,8 +149,7 @@ export function HandoffRepoLink({
               onClick={openInCursor}
               className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--border)] px-2.5 text-[11px]"
             >
-              <ExternalLink className="size-3.5" />
-              在 Cursor 中打开
+              <ExternalLink className="size-3.5" />在 Cursor 中打开
             </button>
             <button
               type="button"
@@ -150,16 +157,24 @@ export function HandoffRepoLink({
               onClick={() => void run("DELETE")}
               className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--border)] px-2.5 text-[11px] disabled:opacity-50"
             >
-              {busy === "unlink" ? <Loader2 className="size-3.5 animate-spin" /> : <Unlink className="size-3.5" />}
+              {busy === "unlink" ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Unlink className="size-3.5" />
+              )}
               取消关联
             </button>
           </>
         ) : null}
       </div>
       {linked?.lastSyncedAt ? (
-        <p className="mt-1.5 text-[10px] app-subtle">上次同步 {linked.lastSyncedAt.replace("T", " ").slice(0, 19)}</p>
+        <p className="mt-1.5 text-[10px] app-subtle">
+          上次同步 {linked.lastSyncedAt.replace("T", " ").slice(0, 19)}
+        </p>
       ) : null}
-      {message ? <p className="mt-1.5 text-[11px] text-emerald-600 dark:text-emerald-400">{message}</p> : null}
+      {message ? (
+        <p className="mt-1.5 text-[11px] text-emerald-600 dark:text-emerald-400">{message}</p>
+      ) : null}
       {error ? <p className="mt-1.5 text-[11px] text-red-600 dark:text-red-400">{error}</p> : null}
     </section>
   );

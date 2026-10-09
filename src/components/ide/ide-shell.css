@@ -1,0 +1,1460 @@
+/* ── 画布工作台：统一浮层、面板与色阶 ──
+   加载顺序在 globals.css 之后，用同等特异度覆盖旧值。
+   色阶与首页 / 设置一致：冷灰桌面 → 白面板 → 单一描边 → 靛蓝点缀。 */
+
+.vad-ide-canvas,
+.vad-agent-panel,
+.vad-inspector,
+.vad-ide-topbar {
+  --ide-line: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --ide-line-strong: color-mix(in srgb, var(--foreground) 18%, transparent);
+  --ide-fill: color-mix(in srgb, var(--foreground) 4%, transparent);
+  --ide-fill-hover: color-mix(in srgb, var(--foreground) 7%, transparent);
+  --ide-float-bg: color-mix(in srgb, var(--surface) 94%, transparent);
+  --ide-float-shadow:
+    0 1px 2px color-mix(in srgb, var(--foreground) 6%, transparent),
+    0 12px 32px -16px color-mix(in srgb, var(--foreground) 32%, transparent);
+  --ide-ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+html.dark .vad-ide-canvas,
+html.dark .vad-agent-panel,
+html.dark .vad-inspector,
+html.dark .vad-ide-topbar {
+  --ide-float-bg: color-mix(in srgb, var(--surface) 92%, transparent);
+  --ide-float-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04), 0 14px 36px -16px rgba(0, 0, 0, 0.7);
+}
+
+/* ── 浏览器端顶栏（桌面端隐藏，由系统标题栏接管） ── */
+
+.vad-ide-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  height: 52px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 14px 0 12px;
+  border-bottom: 1px solid var(--ide-line);
+  background: var(--surface);
+}
+
+.vad-ide-topbar-left,
+.vad-ide-topbar-right {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.vad-ide-topbar-left {
+  flex: 1;
+}
+
+.vad-ide-topbar-home {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--foreground);
+  transition: background 0.15s var(--ide-ease);
+}
+
+.vad-ide-topbar-home:hover {
+  background: var(--ide-fill);
+}
+
+.vad-ide-crumbs {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.vad-ide-crumbs a {
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 0.15s var(--ide-ease);
+}
+
+.vad-ide-crumbs a:hover {
+  color: var(--foreground);
+}
+
+.vad-ide-crumbs span {
+  color: color-mix(in srgb, var(--muted) 50%, transparent);
+}
+
+.vad-ide-crumbs strong {
+  overflow: hidden;
+  max-width: 28rem;
+  color: var(--foreground);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vad-ide-crumbs em {
+  flex-shrink: 0;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--ide-line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.vad-ide-topbar-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.vad-ide-topbar-status i {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--success);
+}
+
+.vad-ide-topbar-rule {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--ide-line);
+}
+
+.vad-ide-topbar-prefs .app-chip {
+  height: 30px;
+  padding-inline: 9px;
+  border-color: transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted-strong);
+  font-size: 12px;
+}
+
+.vad-ide-topbar-prefs .app-chip:hover {
+  background: var(--ide-fill);
+  color: var(--foreground);
+}
+
+.vad-ide-topbar-icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background 0.15s var(--ide-ease),
+    color 0.15s var(--ide-ease);
+}
+
+.vad-ide-topbar-icon:hover {
+  background: var(--ide-fill);
+  color: var(--foreground);
+}
+
+.vad-ide-topbar-primary {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--primary);
+  color: var(--vad-accent-fg-on);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  box-shadow: 0 6px 14px -8px color-mix(in srgb, var(--primary) 80%, transparent);
+  transition: background 0.15s var(--ide-ease);
+}
+
+.vad-ide-topbar-primary:hover {
+  background: var(--primary-strong);
+}
+
+/* ── 画布桌面 ── */
+
+.vad-ide-canvas,
+.vad-canvas-surface {
+  --tl-color-background: var(--background);
+}
+
+.vad-ide-canvas {
+  --vad-canvas-dot: color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: var(--background);
+}
+
+html.dark .vad-ide-canvas {
+  --vad-canvas-dot: color-mix(in srgb, var(--foreground) 12%, transparent);
+  background: var(--background);
+}
+
+.vad-ide-canvas-grid--dots {
+  background-size: 24px 24px;
+  mask-image: radial-gradient(ellipse 90% 90% at 50% 50%, #000 55%, transparent 100%);
+}
+
+.vad-ide-canvas-grid--lines {
+  mask-image: none;
+  background-size: 24px 24px;
+}
+
+/* ── 画布浮层：同一套玻璃岛 ── */
+
+.vad-canvas-island,
+.vad-canvas-toolbar,
+.vad-canvas-view-bar,
+.vad-canvas-zoom,
+.vad-canvas-chip,
+.vad-canvas-chip-btn {
+  border: 1px solid var(--ide-line);
+  border-radius: 12px;
+  background: var(--ide-float-bg);
+  box-shadow: var(--ide-float-shadow);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  opacity: 1;
+}
+
+.vad-canvas-island {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+}
+
+.vad-canvas-island-btn {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted-strong);
+  font-size: 12.5px;
+  font-weight: 550;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition:
+    background 0.15s var(--ide-ease),
+    color 0.15s var(--ide-ease);
+}
+
+.vad-canvas-island-btn svg {
+  color: var(--muted);
+}
+
+.vad-canvas-island-btn:hover {
+  background: var(--ide-fill);
+  color: var(--foreground);
+}
+
+.vad-canvas-island-btn:hover svg {
+  color: var(--foreground);
+}
+
+.vad-canvas-island-rule {
+  width: 1px;
+  height: 16px;
+  margin: 0 2px;
+  background: var(--ide-line);
+}
+
+.vad-canvas-island-btn[aria-pressed="true"] {
+  background: var(--primary);
+  color: var(--vad-accent-fg-on);
+}
+
+.vad-canvas-island-btn[aria-pressed="true"] svg {
+  color: var(--vad-accent-fg-on);
+}
+
+.vad-records-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  display: grid;
+  place-items: center;
+  padding: 28px 24px 24px;
+  pointer-events: none;
+}
+
+.vad-records-panel {
+  pointer-events: auto;
+  display: flex;
+  width: min(760px, 100%);
+  height: min(680px, 100%);
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--ide-line);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--ide-float-shadow);
+}
+
+.vad-records-head {
+  display: flex;
+  height: 44px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 8px 0 16px;
+  border-bottom: 1px solid var(--ide-line);
+}
+
+.vad-records-head h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.vad-canvas-toolbar {
+  gap: 2px;
+  padding: 4px;
+  overflow: visible;
+}
+
+.vad-canvas-toolbar-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--muted-strong);
+}
+
+.vad-canvas-toolbar-btn:hover:not(:disabled) {
+  background: var(--ide-fill);
+  color: var(--foreground);
+}
+
+.vad-canvas-toolbar-btn--active {
+  background: var(--foreground) !important;
+  color: var(--background) !important;
+  box-shadow: none;
+}
+
+.vad-canvas-toolbar-divider,
+.vad-canvas-view-divider {
+  background: var(--ide-line);
+}
+
+.vad-canvas-view-btn,
+.vad-canvas-view-zoom-label,
+.vad-canvas-view-minimap-btn {
+  border-radius: 8px;
+  color: var(--muted-strong);
+}
+
+.vad-canvas-view-btn:hover,
+.vad-canvas-view-zoom-label:hover,
+.vad-canvas-view-minimap-btn:hover {
+  background: var(--ide-fill);
+  color: var(--foreground);
+}
+
+.vad-canvas-view-btn--active {
+  background: var(--ide-fill-hover);
+  color: var(--foreground);
+}
+
+.vad-canvas-view-zoom-label {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.vad-canvas-view-zoom-menu {
+  border-color: var(--ide-line);
+  border-radius: 10px;
+  box-shadow: var(--ide-float-shadow);
+}
+
+.vad-canvas-view-zoom-item--active {
+  background: var(--ide-fill-hover);
+  color: var(--foreground);
+}
+
+/* ── 画布空态 ── */
+
+.vad-canvas-empty {
+  display: flex;
+  max-width: 22rem;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.vad-canvas-empty-frame {
+  display: grid;
+  width: 168px;
+  height: 104px;
+  grid-template-columns: 1.4fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 22px;
+  padding: 10px;
+  border: 1px dashed var(--ide-line-strong);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+}
+
+.vad-canvas-empty-tile {
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--ide-line);
+}
+
+.vad-canvas-empty-tile.is-a {
+  grid-row: 1 / 3;
+  background:
+    radial-gradient(
+      120% 80% at 20% 15%,
+      color-mix(in srgb, var(--primary) 18%, transparent),
+      transparent 60%
+    ),
+    var(--surface);
+}
+
+.vad-canvas-empty-tile.is-c {
+  background: var(--ide-fill);
+}
+
+.vad-canvas-empty-title {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+.vad-canvas-empty-hint {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.vad-canvas-empty-cta {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  gap: 7px;
+  margin-top: 18px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--vad-accent-fg-on);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  box-shadow: 0 6px 14px -8px color-mix(in srgb, var(--primary) 80%, transparent);
+  transition:
+    background 0.15s var(--ide-ease),
+    transform 0.15s var(--ide-ease);
+}
+
+.vad-canvas-empty-cta:hover {
+  background: var(--primary-strong);
+  color: var(--vad-accent-fg-on);
+  filter: none;
+  transform: translateY(-1px);
+}
+
+/* ── Agent 面板 ── */
+
+.vad-agent-panel {
+  border-left: 1px solid var(--ide-line);
+}
+
+.vad-agent-header {
+  height: 44px;
+  padding: 0 10px 0 8px;
+  border-bottom: 1px solid var(--ide-line);
+}
+
+.vad-agent-run-strip {
+  padding: 8px 14px 9px;
+  border-bottom: 1px solid var(--ide-line);
+  background: var(--ide-fill);
+}
+
+.vad-agent-composer-wrap {
+  padding: 6px 12px 12px;
+}
+
+.vad-agent-composer {
+  border: 1px solid var(--ide-line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.vad-agent-composer:focus-within,
+.dark .vad-agent-composer:focus-within {
+  border-color: var(--ide-line-strong);
+  box-shadow: 0 10px 28px -18px color-mix(in srgb, var(--foreground) 30%, transparent);
+}
+
+.dark .vad-agent-composer {
+  border-color: var(--ide-line);
+  background: var(--surface);
+}
+
+.vad-agent-composer-input {
+  padding: 11px 12px 4px;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.vad-agent-model-btn {
+  height: 28px;
+  padding: 0 9px 0 7px;
+  border-radius: 999px;
+  color: var(--muted-strong);
+  font-size: 12px;
+}
+
+.vad-agent-model-btn:hover {
+  border-color: transparent;
+  background: var(--ide-fill);
+}
+
+.vad-agent-model-btn > svg {
+  color: var(--muted);
+}
+
+.vad-agent-send {
+  width: 30px;
+  height: 30px;
+  background: var(--ide-fill-hover);
+  color: var(--muted);
+}
+
+.vad-agent-send--ready {
+  background: var(--primary);
+  color: var(--vad-accent-fg-on);
+  box-shadow: 0 6px 14px -8px color-mix(in srgb, var(--primary) 80%, transparent);
+}
+
+.vad-agent-send--stop {
+  background: var(--foreground);
+  color: var(--background);
+}
+
+.vad-agent-icon-btn {
+  border-radius: 8px;
+}
+
+.vad-agent-icon-btn:hover {
+  background: var(--ide-fill);
+}
+
+.vad-slash-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 24;
+  max-height: min(320px, 46vh);
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--ide-line);
+  border-radius: 12px;
+  background: var(--ide-float-bg);
+  box-shadow: var(--ide-float-shadow);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.vad-slash-group {
+  margin: 6px 8px 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 550;
+  letter-spacing: -0.01em;
+}
+
+.vad-slash-group:first-child {
+  margin-top: 2px;
+}
+
+.vad-slash-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vad-slash-item.is-active,
+.vad-slash-item:hover {
+  background: var(--ide-fill-hover);
+}
+
+.vad-slash-item-hint {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.vad-slash-empty {
+  margin: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.vad-agent-suggest {
+  height: 28px;
+  padding: 0 11px;
+  border-color: var(--ide-line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.vad-agent-suggest:hover {
+  border-color: var(--ide-line-strong);
+  background: var(--surface);
+  color: var(--foreground);
+}
+
+.vad-agent-status__dot--wait {
+  background: var(--primary-strong);
+}
+
+.vad-agent-queue {
+  border-radius: 10px;
+  background: var(--ide-fill);
+}
+
+.vad-agent-resize-handle:hover,
+.vad-agent-resize-handle:focus-visible {
+  background: var(--ide-line-strong);
+}
+
+/* ── 左侧检视面板 ── */
+
+.vad-inspector,
+.dark .vad-inspector {
+  border-right: 1px solid var(--ide-line);
+}
+
+.vad-inspector-head,
+.dark .vad-inspector-head {
+  height: 44px;
+  padding: 0 8px 0 10px;
+  border-bottom: 1px solid var(--ide-line);
+}
+
+.vad-ide-inspector .vad-inspector-tabs {
+  flex: 0 1 auto;
+  gap: 2px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.vad-ide-inspector .vad-inspector-tab {
+  flex: 0 0 auto;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted-strong);
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.vad-ide-inspector .vad-inspector-tab:hover {
+  background: transparent;
+  color: var(--foreground);
+}
+
+.vad-ide-inspector .vad-inspector-tab[aria-pressed="true"] {
+  background: transparent;
+  color: var(--foreground);
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--foreground);
+}
+
+.vad-inspector-project {
+  position: relative;
+  margin-left: auto;
+}
+
+.vad-inspector-project-btn {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.vad-inspector-project-btn:hover,
+.vad-inspector-project-btn[aria-expanded="true"],
+.vad-inspector-project-btn[aria-pressed="true"] {
+  background: var(--ide-fill);
+  color: var(--foreground);
+}
+
+.vad-inspector-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  min-width: 148px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--ide-line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--ide-float-shadow);
+}
+
+.vad-inspector-menu button {
+  display: flex;
+  height: 30px;
+  align-items: center;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vad-inspector-menu button:hover,
+.vad-inspector-menu button[aria-current="true"] {
+  background: var(--ide-fill);
+}
+
+.vad-inspector-sub {
+  display: flex;
+  height: 36px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+  border-bottom: 1px solid var(--ide-line);
+}
+
+.vad-inspector-sub button {
+  height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.vad-inspector-sub button:hover {
+  color: var(--foreground);
+}
+
+.vad-inspector-sub button[aria-pressed="true"] {
+  background: transparent;
+  color: var(--foreground);
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--foreground);
+}
+
+.vad-inspector-more {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--ide-line);
+  background: transparent;
+}
+
+.vad-inspector-more-btn {
+  height: 26px;
+  border-radius: 7px;
+  font-size: 12px;
+}
+
+.vad-inspector-more-btn[data-active="true"] {
+  background: var(--ide-fill-hover);
+  color: var(--foreground);
+}
+
+.vad-inspector-toolbar {
+  height: 38px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--ide-line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.vad-inspector-scroll {
+  padding: 12px 12px 24px;
+}
+
+.vad-inspector-card,
+.vad-inspector-stat,
+.vad-inspector-job {
+  border: 1px solid var(--ide-line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: none;
+}
+
+.vad-inspector-card + .vad-inspector-card,
+.vad-inspector-summary + .vad-inspector-card {
+  margin-top: 8px;
+}
+
+.vad-inspector-quiet-btn {
+  height: 26px;
+  border-color: var(--ide-line);
+  border-radius: 7px;
+}
+
+.vad-inspector-quiet-btn:hover {
+  background: var(--ide-fill);
+}
+
+.vad-inspector-export-ghost {
+  border-color: var(--ide-line);
+  border-radius: 12px;
+}
+
+.vad-inspector-export-ghost:hover {
+  border-color: var(--ide-line-strong);
+  background: var(--ide-fill);
+}
+
+.vad-inspector-export-primary {
+  border-radius: 12px;
+  box-shadow: 0 6px 14px -8px color-mix(in srgb, var(--primary) 80%, transparent);
+}
+
+.vad-ide-status-pill,
+.vad-ide-stage-pill,
+.vad-ide-agent-label {
+  border-color: var(--ide-line);
+  border-radius: 999px;
+  background: transparent;
+}
+
+.vad-canvas-appearance {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 40;
+  padding: 10px 10px 8px;
+  border: 1px solid var(--ide-line);
+  border-radius: 12px;
+  background: var(--ide-float-bg);
+  box-shadow: var(--ide-float-shadow);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  text-align: left;
+}
+
+.vad-canvas-appearance-kicker {
+  margin: 0 0 8px 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 550;
+  letter-spacing: -0.01em;
+}
+
+.vad-canvas-appearance-swatches {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.vad-canvas-appearance-swatch {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.vad-canvas-appearance-preview {
+  display: block;
+  height: 44px;
+  border-radius: 8px;
+  background-color: var(--background);
+  box-shadow: inset 0 0 0 1px var(--ide-line);
+  transition: box-shadow 0.15s var(--ide-ease);
+}
+
+.vad-canvas-appearance-preview.is-dots {
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--foreground) 22%, transparent) 0.85px,
+    transparent 1.15px
+  );
+  background-size: 7px 7px;
+}
+
+.vad-canvas-appearance-preview.is-lines {
+  background-image:
+    linear-gradient(
+      color-mix(in srgb, var(--foreground) 14%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--foreground) 14%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 11px 11px;
+}
+
+.vad-canvas-appearance-preview.is-none {
+  background-image: none;
+}
+
+.vad-canvas-appearance-name {
+  font-size: 11px;
+  font-weight: 550;
+  letter-spacing: -0.01em;
+  text-align: center;
+}
+
+.vad-canvas-appearance-swatch:hover:not(.is-active) .vad-canvas-appearance-preview {
+  box-shadow: inset 0 0 0 1px var(--ide-line-strong);
+}
+
+.vad-canvas-appearance-swatch:hover:not(.is-active) .vad-canvas-appearance-name {
+  color: var(--foreground);
+}
+
+.vad-canvas-appearance-swatch.is-active .vad-canvas-appearance-preview {
+  box-shadow: inset 0 0 0 1.5px var(--foreground);
+}
+
+.vad-canvas-appearance-swatch.is-active .vad-canvas-appearance-name {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.vad-canvas-appearance-swatch:focus-visible {
+  outline: none;
+}
+
+.vad-canvas-appearance-swatch:focus-visible .vad-canvas-appearance-preview {
+  box-shadow:
+    inset 0 0 0 1.5px var(--foreground),
+    var(--shadow-glow);
+}
+
+.vad-canvas-toolbar:has(.vad-canvas-appearance) {
+  opacity: 1;
+  z-index: 30;
+}
+
+.vad-artwork-strip {
+  z-index: 8;
+}
+
+.vad-canvas-dock {
+  border: 1px solid var(--ide-line);
+  border-radius: 12px;
+  background: var(--ide-float-bg);
+  box-shadow: var(--ide-float-shadow);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.dark .vad-canvas-dock {
+  border-color: var(--ide-line);
+  background: var(--ide-float-bg);
+  box-shadow: var(--ide-float-shadow);
+}
+
+.vad-canvas-dock-btn {
+  flex-direction: column;
+  gap: 3px;
+  min-height: 46px;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 6px 4px 5px;
+  border-radius: 8px;
+  color: var(--muted-strong);
+  font-size: 10.5px;
+  font-weight: 550;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.vad-canvas-dock-btn svg {
+  color: var(--muted);
+}
+
+.vad-canvas-dock-btn:hover:not(:disabled) {
+  background: var(--ide-fill);
+  color: var(--foreground);
+}
+
+.vad-canvas-dock-btn:hover:not(:disabled) svg {
+  color: var(--foreground);
+}
+
+.vad-canvas-dock-btn--active {
+  background: var(--ide-fill-hover);
+  color: var(--foreground);
+}
+
+.vad-canvas-dock-btn--active svg {
+  color: var(--foreground);
+}
+
+.vad-canvas-dock-btn--icon {
+  flex: 0 0 auto;
+  flex-direction: row;
+  min-width: 32px;
+  padding: 0 6px;
+}
+
+.vad-canvas-dock-field {
+  margin: 0 8px 8px;
+  padding: 3px 3px 3px 10px;
+  border: 1px solid var(--ide-line);
+  border-radius: 10px;
+  background: var(--background);
+}
+
+.vad-canvas-dock-field:focus-within {
+  border-color: var(--ide-line-strong);
+  background: var(--surface);
+  box-shadow: none;
+}
+
+.vad-canvas-dock-input {
+  font-size: 12.5px;
+}
+
+.vad-canvas-dock-send:not(:disabled) {
+  background: var(--foreground);
+  color: var(--background);
+  box-shadow: none;
+}
+
+.vad-canvas-dock-send:not(:disabled):hover {
+  background: var(--foreground);
+  transform: none;
+}
+
+.vad-spawn-prompt {
+  width: min(420px, 86vw);
+  padding: 14px 16px 12px;
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: var(--ide-float-shadow);
+}
+
+.vad-spawn-prompt-refs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.vad-spawn-prompt-thumb {
+  width: 48px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--ide-line);
+}
+
+.vad-spawn-prompt-add {
+  display: inline-flex;
+  width: 48px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px dashed color-mix(in srgb, var(--muted) 42%, transparent);
+  border-radius: 8px;
+  color: var(--muted);
+}
+
+.vad-spawn-prompt-textarea {
+  width: 100%;
+  min-height: 88px;
+  resize: none;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 13.5px;
+  line-height: 1.55;
+  outline: none;
+}
+
+.vad-spawn-prompt-textarea::placeholder {
+  color: color-mix(in srgb, var(--muted) 88%, transparent);
+}
+
+.vad-spawn-prompt-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.vad-canvas-dock-menu {
+  border-color: var(--ide-line);
+  border-radius: 10px;
+  background: var(--ide-float-bg);
+  box-shadow: var(--ide-float-shadow);
+}
+
+.dark .vad-canvas-dock-menu {
+  background: var(--ide-float-bg);
+}
+
+.vad-canvas-dock-menu-item:hover:not(:disabled) {
+  background: var(--ide-fill);
+}
+
+.vad-canvas-dock-menu-item--active {
+  background: var(--ide-fill-hover);
+  color: var(--foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vad-ide-topbar-home,
+  .vad-ide-topbar-icon,
+  .vad-ide-topbar-primary,
+  .vad-canvas-island-btn,
+  .vad-canvas-empty-cta,
+  .vad-canvas-appearance-preview {
+    transition: none;
+  }
+
+  .vad-canvas-empty-cta:hover {
+    transform: none;
+  }
+}
+
+/* ── 画布文本卡片 / 引用节点生成 ── */
+
+.vad-cite-port {
+  position: absolute;
+  z-index: 20;
+  display: grid;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  place-items: center;
+  transform: translateY(-50%);
+  border: 1.5px solid var(--ide-line);
+  border-radius: 999px;
+  background: var(--ide-float-bg);
+  color: var(--foreground);
+  box-shadow: var(--ide-float-shadow);
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.vad-cite-port:hover {
+  background: var(--ide-fill, var(--surface-muted));
+}
+
+.vad-cite-port:active {
+  cursor: grabbing;
+}
+
+.vad-cite-drag-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 69;
+  pointer-events: none;
+}
+
+.vad-cite-drag-ghost {
+  position: fixed;
+  width: 168px;
+  height: 92px;
+  transform: translateY(-50%);
+  border: 1.5px dashed var(--ide-line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--ide-float-bg) 78%, transparent);
+  box-shadow: var(--ide-float-shadow);
+}
+
+.vad-cite-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  pointer-events: none;
+}
+
+.vad-cite-curve {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  color: var(--muted-strong);
+  overflow: visible;
+}
+
+.vad-cite-menu {
+  position: fixed;
+  z-index: 81;
+  width: 276px;
+  padding: 10px 8px 8px;
+  border: 1px solid var(--ide-line);
+  border-radius: 16px;
+  background: var(--ide-float-bg);
+  box-shadow: var(--ide-float-shadow);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  pointer-events: auto;
+}
+
+.vad-cite-menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 10px;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.vad-cite-menu-head button {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted-strong);
+  cursor: pointer;
+}
+
+.vad-cite-menu-head button:hover {
+  background: var(--ide-fill);
+  color: var(--foreground);
+}
+
+.vad-cite-menu-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vad-cite-menu-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
+}
+
+.vad-cite-menu-item:hover {
+  background: var(--ide-fill);
+}
+
+.vad-cite-menu-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--ide-fill);
+  color: var(--muted-strong);
+}
+
+.vad-cite-menu-item:hover .vad-cite-menu-icon {
+  color: var(--foreground);
+}
+
+.vad-cite-menu-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vad-cite-menu-copy strong {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.vad-cite-menu-copy em {
+  color: var(--muted-strong);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.vad-text-note {
+  font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+}
+
+.vad-text-note-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.vad-text-note-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.vad-text-note-remove {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-strong);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.vad-text-note-remove:hover {
+  background: var(--ide-fill);
+  color: var(--foreground);
+}
+
+.vad-text-note-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.vad-text-note-chip,
+.vad-text-note-kind-btn {
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--ide-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-strong);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.vad-text-note-chip--on,
+.vad-text-note-kind-btn.is-active {
+  background: var(--foreground);
+  border-color: transparent;
+  color: var(--background);
+}
+
+.vad-text-note-title,
+.vad-text-note-title-static {
+  margin: 0 0 6px;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+}
+
+.vad-text-note-title {
+  width: 100%;
+  outline: none;
+}
+
+.vad-text-note-body,
+.vad-text-note-body-static {
+  flex: 1;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 12px;
+  line-height: 1.55;
+  resize: none;
+  outline: none;
+}
+
+.vad-text-note-body-static {
+  overflow: hidden;
+  color: var(--muted-strong);
+  white-space: pre-wrap;
+}

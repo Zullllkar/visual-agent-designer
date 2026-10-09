@@ -35,7 +35,8 @@ export interface ToolResult {
 }
 
 /** 工具风险等级 */
-export type RiskLevel = "safe" | "moderate" | "destructive";
+export type RiskLevel = "safe" | "moderate" | "destructive" | "external";
+export type ConfirmationPolicy = "auto" | "session" | "always";
 
 export interface AgentTool {
   name: string;
@@ -59,4 +60,7 @@ export interface AgentTool {
   idempotencyKey?: (args: Record<string, unknown>) => string;
   /** 执行超时（毫秒），超时后自动取消 */
   timeoutMs?: number;
+  /** Optional canonical UI contract overrides for legacy tools. */
+  displayLabel?: string;
+  confirmationPolicy?: ConfirmationPolicy;
 }

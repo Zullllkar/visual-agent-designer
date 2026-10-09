@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   composerRefIdForAsset,
+  referenceFromAsset,
   upsertComposerReference,
 } from "./composer-refs";
 import type { ReferenceAsset } from "@/lib/project/assets-schema";
@@ -49,5 +50,18 @@ describe("upsertComposerReference", () => {
 
   it("uses stable asset-derived ids", () => {
     expect(composerRefIdForAsset("abc")).toBe("from-asset-abc");
+  });
+
+  it("builds a composer chip from a canvas asset", () => {
+    const next = referenceFromAsset({
+      id: "shot-1",
+      prompt: "夜间市集",
+      src: "data:image/png;base64,xx",
+      width: 800,
+      height: 600,
+    });
+    expect(next.id).toBe("from-asset-shot-1");
+    expect(next.notes).toBe("from-asset:shot-1");
+    expect(next.label).toContain("夜间");
   });
 });

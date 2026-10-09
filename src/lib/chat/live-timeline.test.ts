@@ -36,6 +36,35 @@ describe("buildChatTimeline", () => {
     });
   });
 
+  it("puts a per-task checklist in the thread and checks steps off as tools finish", () => {
+    const events: ChatLiveEvent[] = [
+      {
+        type: "tool_call",
+        data: { id: "tool-1", name: "generate_brief", args: {} },
+        at: 100,
+      },
+      {
+        type: "tool_result",
+        data: { id: "tool-1", name: "generate_brief", ok: true, summary: "brief ready" },
+        at: 180,
+      },
+      {
+        type: "tool_call",
+        data: { id: "tool-2", name: "generate_images", args: {} },
+        at: 220,
+      },
+    ];
+
+    const plan = buildChatTimeline([], events, true).find((item) => item.kind === "agent_plan");
+
+    expect(plan?.kind).toBe("agent_plan");
+    if (plan?.kind !== "agent_plan") return;
+    expect(plan.steps.map((step) => ({ id: step.id, status: step.status }))).toEqual([
+      { id: "tool-1", status: "done" },
+      { id: "tool-2", status: "running" },
+    ]);
+  });
+
   it("dedupes repeated error events", () => {
     const events: ChatLiveEvent[] = [
       { type: "run.failed", data: { error: "Provider failed" }, at: 100 },
@@ -84,8 +113,8 @@ describe("buildChatTimeline", () => {
       status: "running",
       counts: { tools: 1, jobs: 1 },
     });
-    expect(turns[0].items.map((item) => item.kind)).toEqual(["tool", "job"]);
-    expect(turns[0].items[1]).toMatchObject({
+    expect(turns[0].items.map((item) => item.kind)).toEqual(["agent_plan", "tool", "job"]);
+    expect(turns[0].items[2]).toMatchObject({
       kind: "job",
       toolCallId: "tool-1",
     });
@@ -117,6 +146,7 @@ describe("buildChatTimeline", () => {
     const turns = buildChatTimelineTurns(messages, events, true);
     expect(turns[0].items.map((item) => item.kind)).toEqual([
       "thought",
+      "agent_plan",
       "tool",
       "assistant",
     ]);
@@ -175,6 +205,7 @@ describe("buildChatTimeline", () => {
     const turns = buildChatTimelineTurns(messages, events, true);
     expect(turns[0].items.map((item) => item.kind)).toEqual([
       "pipeline_logs",
+      "agent_plan",
       "tool",
       "pipeline_logs",
     ]);
@@ -183,7 +214,7 @@ describe("buildChatTimeline", () => {
       kind: "pipeline_logs",
       entries: [{ id: "l1" }, { id: "l2" }],
     });
-    const secondGroup = turns[0].items[2];
+    const secondGroup = turns[0].items[3];
     expect(secondGroup).toMatchObject({
       kind: "pipeline_logs",
       entries: [{ id: "l3" }],
@@ -364,6 +395,126 @@ describe("buildChatTimeline", () => {
     );
     expect(String(item && "args" in item ? item.args?.prompt : "")).not.toContain(
       "normal assistant text"
+    );
+  });
+
+  it("keeps a single generate_images approval card when two confirms arrive", () => {
+    const timeline = buildChatTimeline(
+      [],
+      [
+        {
+          id: "confirm-a",
+          type: "tool.confirm",
+          data: {
+            runId: "run-image",
+            approvalId: "run-image:generate_images:first",
+            toolName: "generate_images",
+            args: { prompt: "Dark theme OmniTab home", count: 1 },
+          },
+          at: 1200,
+        },
+        {
+          id: "confirm-b",
+          type: "tool.confirm",
+          data: {
+            runId: "run-image",
+            approvalId: "run-image:generate_images:second",
+            toolName: "generate_images",
+            args: { prompt: "Dark theme OmniTab home", count: 1 },
+          },
+          at: 1210,
+        },
+        {
+          id: "confirm-c",
+          type: "image_generation.confirm",
+          data: {
+            runId: "run-image",
+            prompt: "Dark theme OmniTab home",
+            count: 1,
+            width: 1024,
+            height: 1024,
+          },
+          at: 1220,
+        },
+      ],
+      false
+    );
+
+    const cards = timeline.filter(
+      (entry) => entry.kind === "tool_confirm" || entry.kind === "image_confirm"
+    );
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({
+      kind: "tool_confirm",
+      toolName: "generate_images",
+      approvalId: "run-image:generate_images:second",
+    });
+  });
+
+  it("replaces a stale generate_images card after a failed retry instead of stacking three", () => {
+    const timeline = buildChatTimeline(
+      [],
+      [
+        {
+          id: "confirm-1",
+          type: "tool.confirm",
+          data: {
+            runId: "run-a",
+            approvalId: "run-a:generate_images",
+            toolName: "generate_images",
+            args: { prompt: "High-fidelity UI mockup dark theme", count: 1 },
+          },
+          at: 1200,
+        },
+        {
+          id: "err-1",
+          type: "error",
+          data: {
+            message: "当前项目已有 Agent 任务正在执行，请先停止或等待完成。",
+            code: "RUN_IN_PROGRESS",
+          },
+          at: 1300,
+        },
+        {
+          id: "confirm-2",
+          type: "tool.confirm",
+          data: {
+            runId: "run-b",
+            approvalId: "run-b:generate_images",
+            toolName: "generate_images",
+            args: {
+              prompt: "ONLY the color and light change: convert to a dark palette",
+              count: 1,
+            },
+          },
+          at: 1400,
+        },
+        {
+          id: "confirm-3",
+          type: "image_generation.confirm",
+          data: {
+            runId: "run-c",
+            prompt: "thumbnail display area with the same number of thumbnails",
+            count: 1,
+            width: 1024,
+            height: 1024,
+          },
+          at: 1500,
+        },
+      ],
+      false
+    );
+
+    const cards = timeline.filter(
+      (entry) => entry.kind === "tool_confirm" || entry.kind === "image_confirm"
+    );
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({
+      kind: "tool_confirm",
+      approvalId: "run-b:generate_images",
+    });
+    expect(String(cards[0] && "args" in cards[0] ? cards[0].args?.prompt : "")).toContain(
+      "dark palette"
     );
   });
 

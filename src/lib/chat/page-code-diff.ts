@@ -9,6 +9,7 @@ import type { CodeDiffEventData } from "@/lib/agents/chat-schema";
 import type { CanvasPage } from "@/lib/canvas/schema";
 import type { ImageAsset } from "@/lib/project/assets-schema";
 import { guessLanguage, truncateForDiff } from "./code-diff";
+import { displayAssetTitle } from "@/lib/project/asset-title";
 
 export function pageLayoutCodeDiff(
   page: CanvasPage,
@@ -45,6 +46,7 @@ export function assetCodeDiff(
       JSON.stringify(
         {
           id: asset.id,
+          title: displayAssetTitle(asset),
           model: asset.model,
           prompt: asset.prompt?.slice(0, 240),
           size: `${asset.width}×${asset.height}`,
@@ -53,7 +55,7 @@ export function assetCodeDiff(
         2
       )
     ),
-    summary: `生成位图：${asset.id}`,
+    summary: `生成位图：${displayAssetTitle(asset)}`,
     toolCallId,
     diffId: nanoid(6),
   };

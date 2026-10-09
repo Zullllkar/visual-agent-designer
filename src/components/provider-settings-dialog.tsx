@@ -251,38 +251,75 @@ export function ProviderSettingsDialog({
   const agentReady = validLlm && imgConfigured;
   const valid = agentReady;
   const showAgentWarning = !agentReady;
+  const panel = variant === "panel";
+  const selectClass = panel
+    ? "vad-settings-select vad-settings-select--fill"
+    : "mt-1.5 w-full rounded-xl border app-border app-surface px-3 py-2 text-xs font-medium app-strong";
 
   const form = (
     <div
       className={
-        variant === "panel" ? "space-y-5" : "max-h-[70vh] overflow-y-auto mt-4 pr-1 space-y-5"
+        panel ? "vad-settings-models-form" : "max-h-[70vh] overflow-y-auto mt-4 pr-1 space-y-5"
       }
     >
-      {showAgentWarning ? (
-        <div className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
-          <AlertCircle className="size-4 shrink-0 text-amber-600" />
-          <div>
-            <p className="font-semibold">Agent 模式未就绪</p>
-            <p className="mt-0.5 leading-relaxed text-amber-800/90">
-              请配置真实 LLM 与生图 API。未配置时生成/对话将返回 400 错误。 开发调试可设置环境变量{" "}
-              <code className="rounded bg-amber-100 px-1">VAD_ALLOW_MOCK_DEV=true</code>。
-            </p>
+      {panel ? (
+        <div className="vad-models-overview">
+          <div className={`vad-models-tile${validLlm ? " is-ready" : ""}`}>
+            <ProviderLogo provider={activeLlmPreset.id} />
+            <div className="vad-models-tile-copy">
+              <small>大语言模型</small>
+              <strong>{activeLlmPreset.label}</strong>
+              <code>{model || "未选择模型"}</code>
+            </div>
+            <span className={`vad-settings-badge${validLlm ? " vad-settings-badge--ok" : " vad-settings-badge--warn"}`}>
+              {validLlm ? "已配置" : "待配置"}
+            </span>
+          </div>
+          <div className={`vad-models-tile${imgConfigured ? " is-ready" : ""}`}>
+            <ProviderLogo provider={activeImgPreset.id} />
+            <div className="vad-models-tile-copy">
+              <small>图像生成</small>
+              <strong>{activeImgPreset.label}</strong>
+              <code>{imgModel || "未选择模型"}</code>
+            </div>
+            <span className={`vad-settings-badge${imgConfigured ? " vad-settings-badge--ok" : " vad-settings-badge--warn"}`}>
+              {imgConfigured ? "已配置" : "待配置"}
+            </span>
           </div>
         </div>
-      ) : agentReady ? (
+      ) : null}
+      {showAgentWarning ? (
+        <div className={variant === "panel" ? "vad-settings-note is-warn" : "flex gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900"}>
+          {variant === "panel" ? null : <AlertCircle className="size-4 shrink-0 text-amber-600" />}
+          <div>
+            <strong>Agent 模式未就绪</strong>
+            {variant === "panel" ? (
+              <p>
+                请配置真实 LLM 与生图 API。未配置时生成或对话会失败。开发调试可设置{" "}
+                <code>VAD_ALLOW_MOCK_DEV=true</code>。
+              </p>
+            ) : (
+              <p className="mt-0.5 leading-relaxed text-amber-800/90">
+                请配置真实 LLM 与生图 API。未配置时生成/对话将返回 400 错误。 开发调试可设置环境变量{" "}
+              <code className="rounded bg-amber-100 px-1">VAD_ALLOW_MOCK_DEV=true</code>。
+              </p>
+            )}
+          </div>
+        </div>
+      ) : agentReady && !panel ? (
         <div className="flex gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs text-emerald-900">
           <Check className="size-4 shrink-0 text-emerald-600" />
           <p>
-            <span className="font-semibold">Agent 模式已就绪</span>
+            <strong>Agent 模式已就绪</strong>
             ：LLM 负责编排与设计推理，生图模型负责 UI 位图资产。
           </p>
         </div>
       ) : null}
-      <DaemonStatusHint />
+      {panel ? null : <DaemonStatusHint />}
 
       <div>
-        <h3 className="mb-2.5 text-[10px] font-bold uppercase tracking-wider app-subtle">
-          ① 大语言模型 LLM Provider
+        <h3 className={variant === "panel" ? "vad-settings-group" : "mb-2.5 text-[10px] font-bold uppercase tracking-wider app-subtle"}>
+          {variant === "panel" ? "大语言模型" : "① 大语言模型 LLM Provider"}
         </h3>
 
         <div className="space-y-4">
@@ -294,30 +331,45 @@ export function ProviderSettingsDialog({
               </div>
               <small>{LLM_PRESETS.length} 个连接器</small>
             </div>
-            <div className="vad-provider-grid mt-3">
-              {LLM_PRESETS.map((preset) => (
-                <ProviderCard
-                  key={preset.id}
-                  active={presetId === preset.id}
-                  name={preset.label}
-                  company={preset.company}
-                  description={preset.description}
-                  badge={preset.badge}
-                  icon={<ProviderLogo provider={preset.id} />}
-                  onClick={() => choosePreset(preset.id)}
-                />
-              ))}
+            <div className={panel ? "vad-provider-chips" : "vad-provider-grid mt-3"}>
+              {LLM_PRESETS.map((preset) =>
+                panel ? (
+                  <ProviderChip
+                    key={preset.id}
+                    active={presetId === preset.id}
+                    name={preset.label}
+                    badge={preset.badge}
+                    icon={<ProviderLogo provider={preset.id} compact />}
+                    onClick={() => choosePreset(preset.id)}
+                  />
+                ) : (
+                  <ProviderCard
+                    key={preset.id}
+                    active={presetId === preset.id}
+                    name={preset.label}
+                    company={preset.company}
+                    description={preset.description}
+                    badge={preset.badge}
+                    icon={<ProviderLogo provider={preset.id} />}
+                    onClick={() => choosePreset(preset.id)}
+                  />
+                ),
+              )}
             </div>
           </div>
 
           <div className="vad-provider-config-panel">
-            <div className="flex items-center gap-2 border-b app-border pb-3">
+            <div className="vad-provider-config-lead">
               <ProviderLogo provider={activeLlmPreset.id} compact />
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-bold app-strong">{activeLlmPreset.label} 连接配置</p>
-                <p className="truncate text-[10px] app-subtle">{activeLlmPreset.description}</p>
+                <p className={panel ? "vad-provider-config-head" : "text-xs font-bold app-strong"}>
+                  {activeLlmPreset.label} 连接配置
+                </p>
+                <p className={panel ? "vad-provider-hint" : "truncate text-[10px] app-subtle"}>
+                  {activeLlmPreset.description}
+                </p>
               </div>
-              <Network className="size-4 app-subtle" />
+              {panel ? null : <Network className="size-4 app-subtle" />}
             </div>
             {kind === "openai-compatible" || kind === "anthropic" || kind === "gemini" ? (
               <Field
@@ -352,88 +404,126 @@ export function ProviderSettingsDialog({
                 </button>
               }
             />
-            <div>
-              <span className="vad-provider-field-label">推荐模型</span>
-              <select
-                value={llmModelInCatalog ? model : "__custom__"}
-                onChange={(event) => {
-                  if (event.target.value !== "__custom__") setModel(event.target.value);
-                }}
-                className="vad-provider-select"
-              >
-                {activeLlmPreset.models.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label} — {option.note}
-                  </option>
-                ))}
-                <option value="__custom__">自定义 Model ID</option>
-              </select>
+            <div className={panel ? "vad-provider-field-grid" : "contents"}>
+              <div>
+                <span className="vad-provider-field-label">推荐模型</span>
+                <select
+                  value={llmModelInCatalog ? model : "__custom__"}
+                  onChange={(event) => {
+                    if (event.target.value !== "__custom__") setModel(event.target.value);
+                  }}
+                  className="vad-provider-select"
+                >
+                  {activeLlmPreset.models.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label} — {option.note}
+                    </option>
+                  ))}
+                  <option value="__custom__">自定义 Model ID</option>
+                </select>
+              </div>
+              <Field
+                label="Model ID（可手动覆盖）"
+                value={model}
+                onChange={setModel}
+                placeholder={activeLlmPreset.modelHint}
+                mono
+                icon={<Cpu className="size-3.5" />}
+              />
             </div>
-            <Field
-              label="Model ID（可手动覆盖）"
-              value={model}
-              onChange={setModel}
-              placeholder={activeLlmPreset.modelHint}
-              mono
-              icon={<Cpu className="size-3.5" />}
-            />
           </div>
 
-          <label className="mt-2 flex cursor-pointer items-start gap-3 rounded-2xl border app-border bg-[var(--surface-muted)] p-3.5 hover:bg-[var(--surface-muted)] transition">
-            <input
-              type="checkbox"
-              checked={visionCritic}
-              onChange={(e) => setVisionCritic(e.target.checked)}
-              className="mt-0.5 size-4 rounded-md app-border text-[var(--primary)] focus:ring-[var(--primary)]"
-            />
-            <div className="flex-1">
-              <div className="text-xs font-bold app-strong">启用多模态 Vision Critic</div>
-              <p className="mt-1 text-[10px] leading-relaxed app-subtle font-medium">
-                将每页渲染为高保真 PNG 截图喂给视觉模型评审，捕捉单纯 JSON
-                层无法识别的重叠、截断或对比度缺陷（要求大模型原生支持多模态识图）。
-              </p>
+          {panel ? (
+            <div className="vad-settings-list">
+              <div className="vad-settings-row">
+                <div className="vad-settings-copy">
+                  <strong>Vision Critic</strong>
+                  <p>
+                    把页面渲染成截图交给视觉模型评审，捕捉 JSON 里看不出的重叠、截断和对比度问题。需要模型支持识图。
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={visionCritic}
+                  aria-label="启用多模态 Vision Critic"
+                  className={"vad-settings-switch" + (visionCritic ? " is-on" : "")}
+                  onClick={() => setVisionCritic((value) => !value)}
+                />
+              </div>
             </div>
-          </label>
+          ) : (
+            <label className="mt-2 flex cursor-pointer items-start gap-3 rounded-2xl border app-border bg-[var(--surface-muted)] p-3.5 hover:bg-[var(--surface-muted)] transition">
+              <input
+                type="checkbox"
+                checked={visionCritic}
+                onChange={(e) => setVisionCritic(e.target.checked)}
+                className="mt-0.5 size-4 rounded-md app-border text-[var(--primary)] focus:ring-[var(--primary)]"
+              />
+              <div className="flex-1">
+                <div className="text-xs font-bold app-strong">启用多模态 Vision Critic</div>
+                <p className="mt-1 text-[10px] leading-relaxed app-subtle font-medium">
+                  将每页渲染为高保真 PNG 截图喂给视觉模型评审，捕捉单纯 JSON
+                  层无法识别的重叠、截断或对比度缺陷（要求大模型原生支持多模态识图）。
+                </p>
+              </div>
+            </label>
+          )}
         </div>
       </div>
 
       <div>
-        <h3 className="mb-2.5 text-[10px] font-bold uppercase tracking-wider app-subtle">
-          ② 图像生成模型 Image Provider
+        <h3 className={variant === "panel" ? "vad-settings-group" : "mb-2.5 text-[10px] font-bold uppercase tracking-wider app-subtle"}>
+          {variant === "panel" ? "图像生成" : "② 图像生成模型 Image Provider"}
         </h3>
         <div className="mt-3.5 space-y-4">
           <div>
             <div className="vad-provider-section-heading">
               <div>
                 <span>视觉引擎</span>
-                <strong>选择图像提供商</strong>
+                <strong>选择大模型提供商</strong>
               </div>
               <small>{IMAGE_PROVIDER_CATALOG.length} 个连接器</small>
             </div>
-            <div className="vad-provider-grid mt-3">
-              {IMAGE_PROVIDER_CATALOG.map((preset) => (
-                <ProviderCard
-                  key={preset.id}
-                  active={imgPresetId === preset.id}
-                  name={preset.label}
-                  company={preset.company}
-                  description={preset.description}
-                  badge={preset.badge}
-                  icon={<ProviderLogo provider={preset.id} />}
-                  onClick={() => chooseImgPreset(preset.id)}
-                />
-              ))}
+            <div className={panel ? "vad-provider-chips" : "vad-provider-grid mt-3"}>
+              {IMAGE_PROVIDER_CATALOG.map((preset) =>
+                panel ? (
+                  <ProviderChip
+                    key={preset.id}
+                    active={imgPresetId === preset.id}
+                    name={preset.label}
+                    badge={preset.badge}
+                    icon={<ProviderLogo provider={preset.id} compact />}
+                    onClick={() => chooseImgPreset(preset.id)}
+                  />
+                ) : (
+                  <ProviderCard
+                    key={preset.id}
+                    active={imgPresetId === preset.id}
+                    name={preset.label}
+                    company={preset.company}
+                    description={preset.description}
+                    badge={preset.badge}
+                    icon={<ProviderLogo provider={preset.id} />}
+                    onClick={() => chooseImgPreset(preset.id)}
+                  />
+                ),
+              )}
             </div>
           </div>
 
           <div className="vad-provider-config-panel">
-            <div className="flex items-center gap-2 border-b app-border pb-3">
+            <div className="vad-provider-config-lead">
               <ProviderLogo provider={activeImgPreset.id} compact />
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-bold app-strong">{activeImgPreset.label} 连接配置</p>
-                <p className="truncate text-[10px] app-subtle">{activeImgPreset.description}</p>
+                <p className={panel ? "vad-provider-config-head" : "text-xs font-bold app-strong"}>
+                  {activeImgPreset.label} 连接配置
+                </p>
+                <p className={panel ? "vad-provider-hint" : "truncate text-[10px] app-subtle"}>
+                  {activeImgPreset.description}
+                </p>
               </div>
-              <ImageIcon className="size-4 app-subtle" />
+              {panel ? null : <ImageIcon className="size-4 app-subtle" />}
             </div>
 
             <Field
@@ -443,7 +533,7 @@ export function ProviderSettingsDialog({
               placeholder={activeImgPreset.baseURLPlaceholder}
               mono
             />
-            <p className="-mt-2 text-[10px] leading-relaxed app-subtle font-medium">
+            <p className={panel ? "vad-provider-hint" : "-mt-2 text-[10px] leading-relaxed app-subtle font-medium"}>
               {activeImgPreset.baseURLHint}
             </p>
             <Field
@@ -470,46 +560,52 @@ export function ProviderSettingsDialog({
                 </button>
               }
             />
-            <div>
-              <span className="text-xs font-bold app-subtle">推荐模型</span>
-              <select
-                value={imgModelInCatalog ? imgModel : "__custom__"}
-                aria-label="生图模型快速选择"
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (v !== "__custom__") setImgModel(v);
-                }}
-                className="mt-1.5 w-full rounded-xl border app-border app-surface px-3 py-2 text-xs font-medium app-strong"
-              >
-                {imgModelOptions.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.label}
+            <div className={panel ? "vad-provider-field-grid" : "contents"}>
+              <div>
+                <span className={panel ? "vad-provider-field-label" : "text-xs font-bold app-subtle"}>
+                  推荐模型
+                </span>
+                <select
+                  value={imgModelInCatalog ? imgModel : "__custom__"}
+                  aria-label="生图模型快速选择"
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v !== "__custom__") setImgModel(v);
+                  }}
+                  className={panel ? "vad-provider-select" : selectClass}
+                >
+                  {imgModelOptions.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
                     {m.note ? ` — ${m.note}` : ""}
-                  </option>
-                ))}
-                {!imgModelInCatalog && imgModel ? (
-                  <option value="__custom__">自定义: {imgModel}</option>
-                ) : (
-                  <option value="__custom__">自定义模型 ID…</option>
-                )}
-              </select>
-            </div>
-            <Field
+                    </option>
+                  ))}
+                  {!imgModelInCatalog && imgModel ? (
+                    <option value="__custom__">自定义: {imgModel}</option>
+                  ) : (
+                    <option value="__custom__">自定义模型 ID…</option>
+                  )}
+                </select>
+              </div>
+              <Field
               label="Model ID（可手动覆盖）"
-              value={imgModel}
-              onChange={setImgModel}
-              placeholder={activeImgPreset.modelHint}
-              mono
-            />
+                value={imgModel}
+                onChange={setImgModel}
+                placeholder={activeImgPreset.modelHint}
+                mono
+              />
+            </div>
             {imgKind === "openai-compatible" && isGptImageModel(imgModel) ? (
               <div className="grid gap-3 sm:grid-cols-3">
                 <div>
-                  <span className="text-xs font-bold app-subtle">Quality</span>
+                  <span className={panel ? "vad-provider-field-label" : "text-xs font-bold app-subtle"}>
+                    Quality
+                  </span>
                   <select
                     value={imgQuality}
                     aria-label="gpt-image 渲染质量"
                     onChange={(e) => setImgQuality(e.target.value as OpenAIImageQuality)}
-                    className="mt-1.5 w-full rounded-xl border app-border app-surface px-3 py-2 text-xs font-medium app-strong"
+                    className={panel ? "vad-provider-select" : selectClass}
                   >
                     <option value="auto">auto</option>
                     <option value="low">low</option>
@@ -518,12 +614,14 @@ export function ProviderSettingsDialog({
                   </select>
                 </div>
                 <div>
-                  <span className="text-xs font-bold app-subtle">Output Format</span>
+                  <span className={panel ? "vad-provider-field-label" : "text-xs font-bold app-subtle"}>
+                    Output Format
+                  </span>
                   <select
                     value={imgOutputFormat}
                     aria-label="gpt-image 输出格式"
                     onChange={(e) => setImgOutputFormat(e.target.value as OpenAIImageOutputFormat)}
-                    className="mt-1.5 w-full rounded-xl border app-border app-surface px-3 py-2 text-xs font-medium app-strong"
+                    className={panel ? "vad-provider-select" : selectClass}
                   >
                     <option value="png">png</option>
                     <option value="jpeg">jpeg</option>
@@ -531,12 +629,14 @@ export function ProviderSettingsDialog({
                   </select>
                 </div>
                 <div>
-                  <span className="text-xs font-bold app-subtle">Background</span>
+                  <span className={panel ? "vad-provider-field-label" : "text-xs font-bold app-subtle"}>
+                    Background
+                  </span>
                   <select
                     value={imgBackground}
                     aria-label="gpt-image 背景模式"
                     onChange={(e) => setImgBackground(e.target.value as OpenAIImageBackground)}
-                    className="mt-1.5 w-full rounded-xl border app-border app-surface px-3 py-2 text-xs font-medium app-strong"
+                    className={panel ? "vad-provider-select" : selectClass}
                   >
                     <option value="auto">auto</option>
                     <option value="opaque">opaque</option>
@@ -546,13 +646,13 @@ export function ProviderSettingsDialog({
                   </select>
                 </div>
                 {/^gpt-image-2/i.test(imgModel) ? (
-                  <p className="sm:col-span-3 text-[10px] text-amber-600 font-medium">
+                  <p className={panel ? "vad-provider-hint sm:col-span-3" : "sm:col-span-3 text-[10px] text-amber-600 font-medium"}>
                     gpt-image-2 不支持 transparent 背景，已自动省略该参数。
                   </p>
                 ) : null}
               </div>
             ) : null}
-            <p className="text-[10px] leading-relaxed app-subtle font-medium">
+            <p className={panel ? "vad-provider-hint" : "text-[10px] leading-relaxed app-subtle font-medium"}>
               {imgKind === "gemini-image"
                 ? "Gemini generateContent + responseModalities IMAGE → inlineData Base64。"
                 : imgKind === "replicate"
@@ -564,54 +664,99 @@ export function ProviderSettingsDialog({
       </div>
 
       <div>
-        <h3 className="mb-2.5 text-[10px] font-bold uppercase tracking-wider app-subtle">
-          ③ Content Agent 文案偏好
+        <h3 className={panel ? "vad-settings-group" : "mb-2.5 text-[10px] font-bold uppercase tracking-wider app-subtle"}>
+          {panel ? "文案偏好" : "③ Content Agent 文案偏好"}
         </h3>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div>
-            <span className="text-xs font-bold app-subtle">语调</span>
-            <select
-              value={contentTone}
-              onChange={(e) => setContentTone(e.target.value as ContentTone)}
-              className="mt-1.5 w-full rounded-xl border app-border app-surface px-3 py-2 text-xs font-medium app-strong"
-            >
-              {CONTENT_TONE_OPTIONS.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+        {panel ? (
+          <div className="vad-settings-list">
+            <div className="vad-settings-row">
+              <div className="vad-settings-copy">
+                <strong>语调</strong>
+                <p>影响 Brief、视觉方向和 Agent 回复的口气。</p>
+              </div>
+              <select
+                value={contentTone}
+                onChange={(e) => setContentTone(e.target.value as ContentTone)}
+                className="vad-settings-select"
+                aria-label="文案语调"
+              >
+                {CONTENT_TONE_OPTIONS.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="vad-settings-row">
+              <div className="vad-settings-copy">
+                <strong>语言</strong>
+                <p>界面文案与生图 prompt 会尽量跟随这个语言。</p>
+              </div>
+              <select
+                value={contentLocale}
+                onChange={(e) => setContentLocale(e.target.value as ContentLocale)}
+                className="vad-settings-select"
+                aria-label="文案语言"
+              >
+                {CONTENT_LOCALE_OPTIONS.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
-          <div>
-            <span className="text-xs font-bold app-subtle">语言</span>
-            <select
-              value={contentLocale}
-              onChange={(e) => setContentLocale(e.target.value as ContentLocale)}
-              className="mt-1.5 w-full rounded-xl border app-border app-surface px-3 py-2 text-xs font-medium app-strong"
-            >
-              {CONTENT_LOCALE_OPTIONS.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <p className="mt-2 text-[10px] leading-relaxed app-subtle font-medium">
-          影响 Brief / 视觉方向文案与 Agent 回复语言；生图 prompt 会尽量跟随此偏好。
-        </p>
+        ) : (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <span className="text-xs font-bold app-subtle">语调</span>
+                <select
+                  value={contentTone}
+                  onChange={(e) => setContentTone(e.target.value as ContentTone)}
+                  className={selectClass}
+                >
+                  {CONTENT_TONE_OPTIONS.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <span className="text-xs font-bold app-subtle">语言</span>
+                <select
+                  value={contentLocale}
+                  onChange={(e) => setContentLocale(e.target.value as ContentLocale)}
+                  className={selectClass}
+                >
+                  {CONTENT_LOCALE_OPTIONS.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <p className="mt-2 text-[10px] leading-relaxed app-subtle font-medium">
+              影响 Brief / 视觉方向文案与 Agent 回复语言；生图 prompt 会尽量跟随此偏好。
+            </p>
+          </>
+        )}
       </div>
 
       {testResult ? (
         <div
           className={
-            "flex items-start gap-2.5 rounded-2xl border px-4 py-3.5 text-xs leading-relaxed font-semibold " +
-            (testResult.ok
-              ? "border-emerald-100 bg-emerald-50/40 text-emerald-800"
-              : "border-red-100 bg-red-50/40 text-red-800")
+            variant === "panel"
+              ? "vad-settings-note" + (testResult.ok ? " is-ok" : " is-danger")
+              : "flex items-start gap-2.5 rounded-2xl border px-4 py-3.5 text-xs leading-relaxed font-semibold " +
+                (testResult.ok
+                  ? "border-emerald-100 bg-emerald-50/40 text-emerald-800"
+                  : "border-red-100 bg-red-50/40 text-red-800")
           }
         >
-          {testResult.ok ? (
+          {variant === "panel" ? null : testResult.ok ? (
             <Check className="mt-0.5 size-4 shrink-0 text-emerald-600" />
           ) : (
             <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-600" />
@@ -624,36 +769,48 @@ export function ProviderSettingsDialog({
         </div>
       ) : null}
 
-      <div className="flex items-center justify-between gap-3 border-t app-border pt-4">
+      <div className={variant === "panel" ? "vad-settings-footer" : "flex items-center justify-between gap-3 border-t app-border pt-4"}>
         <button
           type="button"
           onClick={clear}
-          className="text-xs font-bold app-subtle transition hover:text-[var(--foreground)]"
+          className={
+            variant === "panel"
+              ? "vad-settings-btn vad-settings-btn--ghost"
+              : "text-xs font-bold app-subtle transition hover:text-[var(--foreground)]"
+          }
         >
           重置为默认
         </button>
-        <div className="flex gap-2.5">
+        <div className={variant === "panel" ? "vad-settings-actions" : "flex gap-2.5"}>
           <button
             type="button"
             onClick={test}
             disabled={!valid || testing}
-            className="inline-flex h-10 items-center gap-2 rounded-2xl border app-border app-surface px-4 text-xs font-bold app-strong transition hover:bg-[var(--surface-muted)] disabled:opacity-50"
+            className={
+              variant === "panel"
+                ? "vad-settings-btn"
+                : "inline-flex h-10 items-center gap-2 rounded-2xl border app-border app-surface px-4 text-xs font-bold app-strong transition hover:bg-[var(--surface-muted)] disabled:opacity-50"
+            }
           >
-            {testing ? <Loader2 className="size-3.5 animate-spin app-subtle" /> : null}
+            {testing ? <Loader2 className="size-3.5 animate-spin" /> : null}
             测试连通
           </button>
           <button
             type="button"
             onClick={save}
             disabled={!valid}
-            className="inline-flex h-10 items-center rounded-2xl app-primary px-5 text-xs font-bold shadow-md transition disabled:opacity-50"
+            className={
+              variant === "panel"
+                ? "vad-settings-btn vad-settings-btn--primary"
+                : "inline-flex h-10 items-center rounded-2xl app-primary px-5 text-xs font-bold shadow-md transition disabled:opacity-50"
+            }
           >
             {saved ? "已保存" : "保存配置"}
           </button>
         </div>
       </div>
 
-      <p className="mt-4 text-[10px] leading-relaxed app-subtle font-medium">
+      <p className={variant === "panel" ? "vad-settings-fineprint" : "mt-4 text-[10px] leading-relaxed app-subtle font-medium"}>
         API Key 仅本地保存在当前浏览器的 localStorage 中，所有请求转发均直接通过本机的 Next API
         代理完成，100% 绝对不会外传。若想彻底抹除本地存储，请点击「重置为默认」或在浏览器
         Application 存储面板中清空。
@@ -805,6 +962,34 @@ function configToForm(cfg: ProviderConfig) {
     apiKey: "",
     model: LLM_PRESETS[0].models[0]?.id ?? "",
   };
+}
+
+function ProviderChip({
+  active,
+  name,
+  badge,
+  icon,
+  onClick,
+}: {
+  active: boolean;
+  name: string;
+  badge: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`vad-provider-chip${active ? " is-active" : ""}`}
+    >
+      {icon}
+      <span className="vad-provider-chip-name">{name}</span>
+      <span className="vad-provider-chip-badge">{badge}</span>
+      {active ? <Check className="vad-provider-chip-check" aria-hidden /> : null}
+    </button>
+  );
 }
 
 function ProviderCard({

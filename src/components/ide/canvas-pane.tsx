@@ -27,7 +27,7 @@ const TldrawCanvas = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="grid h-full place-items-center bg-[var(--surface-muted)] text-xs text-[var(--muted)]">
+      <div className="grid h-full place-items-center bg-[var(--background)] text-xs text-[var(--muted)]">
         <span className="animate-pulse font-medium tracking-wide">正在加载画布…</span>
       </div>
     ),
@@ -60,13 +60,21 @@ export function CanvasPane({
   const syncRevision = useMemo(() => {
     const assets = project?.assets ?? [];
     const refs = project?.references ?? [];
+    const notes = project?.canvasNotes ?? [];
     // 故意不含 updatedAt / canvasSnapshot：仅 snapshot 落盘时不应触发全量 sync
     const assetSig = assets
       .map((a) => `${a.id}:${a.status ?? ""}:${a.src ? "1" : "0"}`)
       .join("|");
     const refSig = refs.map((r) => r.id).join("|");
-    return `${project?.id ?? ""}:${assets.length}:${refs.length}:${project?.pages?.length ?? 0}:${assetSig}:${refSig}`;
-  }, [project?.id, project?.assets, project?.references, project?.pages?.length]);
+    const noteSig = notes.map((n) => n.id).join("|");
+    return `${project?.id ?? ""}:${assets.length}:${refs.length}:${notes.length}:${project?.pages?.length ?? 0}:${assetSig}:${refSig}:${noteSig}`;
+  }, [
+    project?.id,
+    project?.assets,
+    project?.references,
+    project?.canvasNotes,
+    project?.pages?.length,
+  ]);
 
   return (
     <div className="relative h-full w-full">

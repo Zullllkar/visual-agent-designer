@@ -22,6 +22,7 @@ import {
 } from "./pending-assets";
 import { groundPromptToCitedReferences } from "./reference-images";
 import { resolveReferenceImagesForModel } from "./resolve-reference-images";
+import { deriveAssetTitle } from "@/lib/project/asset-title";
 
 export interface ImageExecutorResult {
   pages: CanvasPage[];
@@ -168,10 +169,21 @@ export const ImageExecutorAgent: Agent<
         });
         const durationMs = Date.now() - t0;
 
+        const pendingId = pendingAssetId(task.pageId, task.nodeId, batchId);
+        const pending = liveAssets.find((item) => item.id === pendingId);
         const assetId = nanoid(10);
         const asset: ImageAsset = {
           id: assetId,
+          title:
+            pending?.title ||
+            deriveAssetTitle({
+              title: task.title,
+              prompt: fullPrompt,
+              role: task.role,
+              copyPlan: task.copyPlan,
+            }),
           prompt: fullPrompt,
+          copyPlan: task.copyPlan,
           src: gen.imageUrl,
           width: task.width,
           height: task.height,
@@ -185,11 +197,12 @@ export const ImageExecutorAgent: Agent<
           usedInPages: isStandalone ? [] : [task.pageId],
           source: referenceImages.length > 0 ? "edited" : "generated",
           tags: task.role ? [task.role] : undefined,
+          role: task.role,
         };
 
         liveAssets = mergeAssetAfterGenerate(
           liveAssets,
-          pendingAssetId(task.pageId, task.nodeId, batchId),
+          pendingId,
           asset
         );
 
@@ -210,6 +223,18 @@ export const ImageExecutorAgent: Agent<
           }
         }
         succeeded++;
+        const { noteImageGeneration } = await import("@/lib/generation/ledger-store");
+        await noteImageGeneration(ctx.projectId, {
+          model: gen.model,
+          prompt: fullPrompt,
+          width: task.width,
+          height: task.height,
+          referenceImages,
+          seed: gen.seed,
+          durationMs,
+          status: "succeeded",
+          assetId,
+        });
         logger?.success(
           "image_task",
           isStandalone ? `完成独立素材 ${task.nodeId}` : `完成 ${task.pageId}`,
@@ -237,6 +262,16 @@ export const ImageExecutorAgent: Agent<
           return;
         }
         failed++;
+        const { noteImageGeneration } = await import("@/lib/generation/ledger-store");
+        await noteImageGeneration(ctx.projectId, {
+          model: "unknown",
+          prompt: fullPrompt,
+          width: task.width,
+          height: task.height,
+          referenceImages,
+          status: "failed",
+          error: e instanceof Error ? e.message : String(e),
+        });
         liveAssets = markPendingAsset(
           liveAssets,
           pendingAssetId(task.pageId, task.nodeId, batchId),

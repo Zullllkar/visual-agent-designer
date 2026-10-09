@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 const { loadWindowState, saveWindowState, DEFAULT_BOUNDS } = require("./window-state.cjs") as {
   loadWindowState: (
     file: string,
-    workArea?: { width: number; height: number }
+    workArea?: { x?: number; y?: number; width: number; height: number }
   ) => {
     x?: number;
     y?: number;
@@ -80,5 +80,19 @@ describe("loadWindowState", () => {
     expect(state.width).toBe(DEFAULT_BOUNDS.width);
     expect(state.height).toBe(DEFAULT_BOUNDS.height);
     expect(state.isMaximized).toBe(true);
+  });
+
+  it("clamps a window restored from a disconnected monitor into the work area", () => {
+    const file = tempStateFile();
+    fs.writeFileSync(
+      file,
+      `${JSON.stringify({ x: -4200, y: -1800, width: 1280, height: 800, isMaximized: false })}\n`,
+      "utf8"
+    );
+    const state = loadWindowState(file, { x: 0, y: 0, width: 1920, height: 1040 });
+    expect(state.x).toBeGreaterThanOrEqual(-1200);
+    expect(state.y).toBeGreaterThanOrEqual(-720);
+    expect(state.x).toBeLessThan(1920);
+    expect(state.y).toBeLessThan(1040);
   });
 });

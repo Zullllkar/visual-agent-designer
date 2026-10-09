@@ -19,7 +19,11 @@ async function fetchSkillCatalog(): Promise<SkillCatalogResponse> {
         if (!response.ok) {
           throw new Error(`Skill catalog request failed: ${response.status}`);
         }
-        return (await response.json()) as SkillCatalogResponse;
+        const text = await response.text();
+        if (!text.trim()) {
+          throw new Error("Skill catalog request returned empty JSON");
+        }
+        return JSON.parse(text) as SkillCatalogResponse;
       })
       .then((catalog) => {
         cached = catalog;

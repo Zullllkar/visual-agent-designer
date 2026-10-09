@@ -61,6 +61,10 @@ const TOOL_COST_ESTIMATES: Record<string, { perCallUsd: number; perMsUsd?: numbe
   generate_video: { perCallUsd: 0.15, perMsUsd: 0.000002 },
   generate_brief: { perCallUsd: 0.01, perMsUsd: 0.0000005 },
   plan_design_direction: { perCallUsd: 0.01, perMsUsd: 0.0000005 },
+  review_project: { perCallUsd: 0.002 },
+  plan_assets: { perCallUsd: 0.005 },
+  repair_project: { perCallUsd: 0.005 },
+  restore_project_revision: { perCallUsd: 0.001 },
   export_handoff: { perCallUsd: 0.005 },
   /** 基础拆解费；实际常按槽数叠加，见 estimateMaterializeCostUsd */
   materialize_mockup: { perCallUsd: 0.02, perMsUsd: 0.000002 },

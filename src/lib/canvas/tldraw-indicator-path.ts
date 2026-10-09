@@ -22,7 +22,7 @@ const proto = ShapeUtil.prototype as ShapeUtil & {
 };
 
 proto.getIndicatorPath = function getIndicatorPath(shape: TLShape) {
-  return fallbackIndicatorPath(shape);
+  return fallbackIndicatorPath(shape as unknown as { props?: { w?: number; h?: number } });
 };
 
 export function ensureShapeUtilIndicatorPath(Util: {
@@ -30,7 +30,7 @@ export function ensureShapeUtilIndicatorPath(Util: {
 }) {
   if (typeof Util.prototype.getIndicatorPath !== "function") {
     Util.prototype.getIndicatorPath = function getIndicatorPath(shape: TLShape) {
-      return fallbackIndicatorPath(shape);
+        return fallbackIndicatorPath(shape as unknown as { props?: { w?: number; h?: number } });
     };
   }
 }
@@ -44,7 +44,7 @@ export function guardEditorIndicatorPath(editor: {
       getIndicatorPath?: (s: TLShape) => Path2D | undefined;
     };
     if (util && typeof util.getIndicatorPath !== "function") {
-      util.getIndicatorPath = fallbackIndicatorPath;
+      util.getIndicatorPath = (shape: TLShape) => fallbackIndicatorPath(shape as unknown as { props?: { w?: number; h?: number } });
     }
     return util;
   }) as typeof editor.getShapeUtil;

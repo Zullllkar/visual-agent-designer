@@ -302,7 +302,7 @@ async function tryNativeToolPlan(
     calls.push({
       id: nanoid(8),
       name: parsedName.data,
-      args: enrichToolArgs(parsedName.data, tc.arguments, cleanText, ref, project),
+      args: enrichToolArgs(parsedName.data, tc.arguments ?? {}, cleanText, ref, project),
     });
   }
 
@@ -375,7 +375,7 @@ async function tryLlmJsonPlan(
     .map((item) => ({
       id: nanoid(8),
       name: item.name as ToolCall["name"],
-      args: enrichToolArgs(item.name, item.args, cleanText, ref, project),
+      args: enrichToolArgs(item.name, item.args ?? {}, cleanText, ref, project),
     }));
 
   if (calls.length === 0) {
@@ -394,11 +394,11 @@ async function tryLlmJsonPlan(
 
 function enrichToolArgs(
   name: OrchestratorToolName,
-  args: Record<string, unknown> | undefined,
+  args: Record<string, unknown>,
   cleanText: string,
   ref: ReturnType<typeof parsePageReference>,
   project: ProjectFile | null
-): Record<string, unknown> | undefined {
+): Record<string, unknown> {
   void project;
   const base = { ...args };
   if (name === "generate_brief" && !base.idea) {
@@ -460,7 +460,7 @@ function enrichToolArgs(
   if (name === "critique_pages" && ref.pageId) {
     base.focusPageId = ref.pageId;
   }
-  return Object.keys(base).length > 0 ? base : undefined;
+  return base;
 }
 
 function summarizeProjectState(project: ProjectFile | null) {
@@ -766,7 +766,7 @@ function tool(
   name: ToolCall["name"],
   args?: Record<string, unknown>
 ): ToolCall {
-  return { id: nanoid(8), name, args };
+  return { id: nanoid(8), name, args: args ?? {} };
 }
 
 function isVisualGenerationRequest(text: string): boolean {

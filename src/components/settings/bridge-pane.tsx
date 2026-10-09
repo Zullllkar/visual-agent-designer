@@ -9,6 +9,7 @@
 
 import { Check, Copy, ExternalLink, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { AgentLogo } from "@/components/brand/agent-logo";
 import {
   BRIDGE_AGENT_LABELS,
   type BridgeAgentInfo,
@@ -77,9 +78,9 @@ export function BridgePane() {
 
   if (loading && !status) {
     return (
-      <p className="flex items-center gap-2 text-xs app-subtle">
+      <p className="vad-settings-status">
         <Loader2 className="size-3.5 animate-spin" />
-        正在读取 Bridge 状态…
+        正在读取连接状态…
       </p>
     );
   }
@@ -107,7 +108,9 @@ export function BridgePane() {
           <strong>MCP 端点</strong>
           <p>
             Cursor / Claude Code / Codex 通过这个地址实时读取当前项目的设计稿、Layout IR 与 token。
-            {status.authEnabled ? " 已启用 Bearer token 校验，只接受本机请求。" : " 当前未启用 token（VAD_BRIDGE_AUTH=off）。"}
+            {status.authEnabled
+              ? " 已启用 Bearer token 校验，只接受本机请求。"
+              : " 当前未启用 token（VAD_BRIDGE_AUTH=off）。"}
           </p>
         </div>
         <button
@@ -131,13 +134,13 @@ export function BridgePane() {
         </div>
         <button
           type="button"
-          className="vad-settings-btn"
+          role="switch"
+          aria-checked={status.autoApproveAssets}
+          aria-label="自动批准素材请求"
+          className={`vad-settings-switch${status.autoApproveAssets ? " is-on" : ""}`}
           onClick={() => void toggleAutoApprove()}
           disabled={busy === "auto-approve"}
-        >
-          {busy === "auto-approve" ? <Loader2 className="size-3.5 animate-spin" /> : null}
-          {status.autoApproveAssets ? "已开启" : "已关闭"}
-        </button>
+        />
       </div>
 
       <div className="vad-settings-row">
@@ -146,67 +149,61 @@ export function BridgePane() {
           <p>
             {active.active
               ? `coding agent 省略 project 参数时默认读取：${active.projectId}`
-              : active.hint ?? "没有打开中的项目。打开一个项目画布后，agent 侧才能自动定位。"}
+              : (active.hint ?? "没有打开中的项目。打开一个项目画布后，agent 侧才能自动定位。")}
           </p>
         </div>
-        <span className="app-subtle text-xs">{active.active ? "活跃" : "空闲"}</span>
+        <span className={`vad-settings-badge${active.active ? " vad-settings-badge--ok" : ""}`}>
+          {active.active ? "活跃" : "空闲"}
+        </span>
       </div>
 
-      <div className="vad-settings-group flex items-center justify-between">
+      <div className="vad-settings-group">
         <span>接入 coding agent</span>
         <button
           type="button"
-          className="vad-settings-btn"
+          className="vad-settings-btn vad-settings-btn--ghost"
           onClick={() => void refreshAgents()}
           disabled={agentsLoading}
         >
-          {agentsLoading ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+          {agentsLoading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
           重新检测
         </button>
       </div>
 
-      {AGENT_ORDER.map((slug) => {
-        const agent = agents?.find((a) => a.slug === slug);
-        const client = status.clients.find((c) => c.slug === slug);
-        return (
-          <AgentRow
-            key={slug}
-            slug={slug}
-            agent={agent}
-            loading={agentsLoading && !agent}
-            lastConnectedAt={client?.lastSeenAt ?? agent?.lastConnectedAt}
-            busy={busy}
-            copied={copied}
-            onInstall={() => void run(slug, "install")}
-            onUninstall={() => void run(slug, "uninstall")}
-            onDeeplink={slug === "cursor" ? () => openDeeplink(status.cursorDeeplink) : undefined}
-            onCopyCommand={() =>
-              void copyToClipboard(status.commands[slug]).then(() => flashCopied(`cmd:${slug}`))
-            }
-          />
-        );
-      })}
+      <div className="vad-agent-list">
+        {AGENT_ORDER.map((slug) => {
+          const agent = agents?.find((a) => a.slug === slug);
+          const client = status.clients.find((c) => c.slug === slug);
+          return (
+            <AgentRow
+              key={slug}
+              slug={slug}
+              agent={agent}
+              loading={agentsLoading && !agent}
+              lastConnectedAt={client?.lastSeenAt ?? agent?.lastConnectedAt}
+              busy={busy}
+              copied={copied}
+              onInstall={() => void run(slug, "install")}
+              onUninstall={() => void run(slug, "uninstall")}
+              onDeeplink={slug === "cursor" ? () => openDeeplink(status.cursorDeeplink) : undefined}
+              onCopyCommand={() =>
+                void copyToClipboard(status.commands[slug]).then(() => flashCopied(`cmd:${slug}`))
+              }
+            />
+          );
+        })}
+      </div>
 
       {lastResult ? (
-        <div
-          className={
-            "mt-3 rounded-lg border px-3 py-2 text-xs " +
-            (lastResult.ok
-              ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300"
-              : "border-red-500/30 bg-red-500/5 text-red-700 dark:text-red-300")
-          }
-        >
-          <p className="font-medium">
-            {BRIDGE_AGENT_LABELS[lastResult.slug]} · {lastResult.action === "install" ? "安装" : "移除"}
+        <div className={`vad-settings-note${lastResult.ok ? " is-ok" : " is-danger"}`}>
+          <strong>
+            {BRIDGE_AGENT_LABELS[lastResult.slug]} ·{" "}
+            {lastResult.action === "install" ? "安装" : "移除"}
             {lastResult.ok ? "成功" : "失败"}
-          </p>
-          <p className="mt-0.5 break-all opacity-90">{lastResult.message}</p>
-          {lastResult.command ? (
-            <code className="mt-1 block whitespace-pre-wrap break-all opacity-80">{lastResult.command}</code>
-          ) : null}
-          {lastResult.stderr ? (
-            <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all opacity-70">{lastResult.stderr}</pre>
-          ) : null}
+          </strong>
+          <p>{lastResult.message}</p>
+          {lastResult.command ? <code>{lastResult.command}</code> : null}
+          {lastResult.stderr ? <pre className="vad-settings-code">{lastResult.stderr}</pre> : null}
         </div>
       ) : null}
 
@@ -216,7 +213,9 @@ export function BridgePane() {
           <strong>只支持 stdio 的宿主</strong>
           <p>
             用 <code>node cli.js mcp</code> 作为 stdio MCP 服务，它会把请求转发到上面的 HTTP 端点。
-            {info?.vadRoot ? "桌面端需要传 --root 指到数据目录。" : "浏览器调试模式下在仓库根目录运行即可。"}
+            {info?.vadRoot
+              ? "桌面端需要传 --root 指到数据目录。"
+              : "浏览器调试模式下在仓库根目录运行即可。"}
           </p>
         </div>
         <button
@@ -230,7 +229,7 @@ export function BridgePane() {
           复制配置
         </button>
       </div>
-      <pre className="vad-settings-path whitespace-pre-wrap">{stdioSnippet(info?.vadRoot)}</pre>
+      <pre className="vad-settings-code">{stdioSnippet(info?.vadRoot)}</pre>
     </>
   );
 }
@@ -271,7 +270,7 @@ function AgentRow({
     badges.push(
       appInstalled || installed
         ? { text: installed ? `CLI ${agent?.cli?.version ?? ""}`.trim() : "IDE 已安装", tone: "ok" }
-        : { text: "未检测到 Cursor", tone: "warn" }
+        : { text: "未检测到 Cursor", tone: "warn" },
     );
   } else {
     badges.push(
@@ -280,65 +279,66 @@ function AgentRow({
         : { text: "CLI 未安装", tone: "warn" }
     );
   }
-  if (!loading) badges.push(registered ? { text: "已注册", tone: "ok" } : { text: "未注册", tone: "muted" });
-  if (lastConnectedAt) badges.push({ text: `最近连接 ${relativeTime(lastConnectedAt)}`, tone: "ok" });
+  if (!loading)
+    badges.push(registered ? { text: "已注册", tone: "ok" } : { text: "未注册", tone: "muted" });
+  if (lastConnectedAt)
+    badges.push({ text: `最近连接 ${relativeTime(lastConnectedAt)}`, tone: "ok" });
 
   return (
-    <div className="vad-settings-row">
+    <div className={`vad-agent-card${registered ? " is-registered" : ""}`}>
+      <AgentLogo agent={slug} className="vad-agent-card-logo" />
       <div className="vad-settings-copy">
-        <strong className="flex flex-wrap items-center gap-1.5">
+        <strong className="vad-settings-card-title">
           {label}
           {badges.map((b) => (
             <span
               key={b.text}
-              className={
-                "rounded-full border px-1.5 py-px text-[10px] font-normal " +
-                (b.tone === "ok"
-                  ? "border-emerald-500/30 text-emerald-700 dark:text-emerald-300"
+              className={`vad-settings-badge${
+                b.tone === "ok"
+                  ? " vad-settings-badge--ok"
                   : b.tone === "warn"
-                    ? "border-amber-500/30 text-amber-700 dark:text-amber-300"
-                    : "app-border app-subtle")
-              }
+                    ? " vad-settings-badge--warn"
+                    : ""
+              }`}
             >
               {b.text}
             </span>
           ))}
         </strong>
-        <p>
-          {AGENT_HINT[slug]}
-          {agent?.registration?.configPath ? ` 配置：${agent.registration.configPath}` : ""}
-        </p>
+        <p>{AGENT_HINT[slug]}</p>
+        {agent?.registration?.configPath ? (
+          <code className="vad-settings-inline-path">{agent.registration.configPath}</code>
+        ) : null}
       </div>
-      <div className="flex flex-wrap items-center justify-end gap-1.5">
+      <div className="vad-settings-actions">
         {onDeeplink ? (
           <button type="button" className="vad-settings-btn" onClick={onDeeplink}>
-            <ExternalLink className="size-3.5" />
-            在 Cursor 中安装
+            <ExternalLink />在 Cursor 中安装
           </button>
         ) : null}
         <button
           type="button"
-          className="vad-settings-btn"
+          className="vad-settings-btn vad-settings-btn--primary"
           onClick={onInstall}
           disabled={Boolean(busy)}
           title={slug === "cursor" ? "直接写入 ~/.cursor/mcp.json" : undefined}
         >
-          {installing ? <Loader2 className="size-3.5 animate-spin" /> : null}
+          {installing ? <Loader2 className="animate-spin" /> : null}
           {slug === "cursor" ? "写入配置" : registered ? "重新注册" : "一键注册"}
         </button>
         <button type="button" className="vad-settings-btn" onClick={onCopyCommand}>
-          {copied === `cmd:${slug}` ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-          复制
+          {copied === `cmd:${slug}` ? <Check /> : <Copy />}
+          复制命令
         </button>
         {registered ? (
           <button
             type="button"
-            className="vad-settings-btn"
+            className="vad-settings-btn vad-settings-btn--quiet vad-settings-btn--danger"
             onClick={onUninstall}
             disabled={Boolean(busy)}
             aria-label={`移除 ${label} 注册`}
           >
-            {removing ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+            {removing ? <Loader2 className="animate-spin" /> : <Trash2 />}
           </button>
         ) : null}
       </div>

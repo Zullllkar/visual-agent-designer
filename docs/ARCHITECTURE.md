@@ -38,7 +38,7 @@ Next.js Custom Server (server.ts)
 
 ## Agent 架构（新）
 
-### Chat 模式（LangGraph Agent）
+### Chat 模式（正式运行时：LangGraph Agent）
 
 ```txt
 用户消息 → WebSocket → LangGraph ReAct Agent
@@ -49,6 +49,22 @@ Next.js Custom Server (server.ts)
   → 结果回传 LLM → 决定下一步
   → 循环直到 LLM 说"完成"（maxIterations=10）
 ```
+
+LangGraph Agent 是唯一正式的顶层协调器。固定设计流水线只作为 LLM
+不可用时的内部 fallback；专业化 Agent Coordinator 只能通过
+`delegate_task` 作为有边界的子任务执行，不再作为第二个产品入口。
+
+一次用户请求建模为一个 Turn：
+
+```txt
+Turn
+├── Agent Run
+├── Tool Calls
+└── Background Jobs
+```
+
+阶段状态统一为：Discovery → Brief → Direction → Asset Plan → Generation
+→ Review → Refinement → Handoff。
 
 ### 一键生成模式（保留）
 

@@ -20,6 +20,7 @@ export interface UpsertProjectOptions {
 }
 
 export type DiskSyncStatus = "idle" | "saving" | "saved" | "error";
+export interface ProjectConflict { projectId: string; localRevision?: number; remoteRevision?: number; detectedAt: number; }
 
 function finalizeProjectAssets(project: ProjectFile): ProjectFile {
   const assets = absorbIntoEmptySpawnSlots(project.assets ?? []);
@@ -43,7 +44,10 @@ function mergeProjectAssets(
 interface ProjectStoreState {
   projects: Record<string, ProjectFile>;
   diskSync: Record<string, DiskSyncStatus>;
+  conflicts: Record<string, ProjectConflict>;
   getDiskSync: (id: string) => DiskSyncStatus;
+  getConflict: (id: string) => ProjectConflict | undefined;
+  clearConflict: (id: string) => void;
   upsert: (project: ProjectFile, options?: UpsertProjectOptions) => void;
   reloadFromDisk: (id: string) => Promise<ProjectFile | null>;
   remove: (id: string) => void;
@@ -57,7 +61,10 @@ export const useProjectStore = create<ProjectStoreState>()(
     (set, getState) => ({
       projects: {},
       diskSync: {},
+      conflicts: {},
       getDiskSync: (id) => getState().diskSync[id] ?? "idle",
+      getConflict: (id) => getState().conflicts[id],
+      clearConflict: (id) => set((s) => { const conflicts = { ...s.conflicts }; delete conflicts[id]; return { conflicts }; }),
       upsert: (project, options) => {
         const nextProject = mergeProjectAssets(getState().projects[project.id], project);
         set((s) => ({
@@ -133,6 +140,9 @@ export const useProjectStore = create<ProjectStoreState>()(
               projects: { ...s.projects, [id]: disk },
             }));
             return disk;
+          }
+          if ((disk.revision ?? 0) > (existing.revision ?? 0) && disk.updatedAt !== existing.updatedAt) {
+            set((s) => ({ conflicts: { ...s.conflicts, [id]: { projectId: id, localRevision: existing.revision, remoteRevision: disk.revision, detectedAt: Date.now() } } }));
           }
           const merged = mergeProjectWithDisk(existing, disk);
           if (merged !== existing) {

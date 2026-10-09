@@ -1,10 +1,11 @@
 /**
- * 灏?Chat 娑堟伅 + SSE 瀹炴椂浜嬩欢鍚堝苟涓?Cursor 椋庢牸鏃堕棿绾?
+ * 将 Chat 消息 + SSE 实时事件合并为 Cursor 风格时间线
  * --------------------------------------------------------------
- * @author锛歸angjunhua
+ * @author：wangjunhua
  */
 
 import type { ChatMessage, ToolCall } from "@/lib/agents/chat-schema";
+import { toolContract } from "@/lib/agents/tool-contract";
 import {
   extractChatInlineAnswerText,
   isChatInlineTool,
@@ -72,6 +73,7 @@ export type TimelineItem =
       kind: "job";
       id: string;
       jobId: string;
+      turnId?: string;
       jobType: string;
       batchId?: string;
       toolCallId?: string;
@@ -184,9 +186,12 @@ export type TimelineItem =
       approvalId?: string;
       toolName: string;
       toolCallId?: string;
-      riskLevel: "safe" | "moderate" | "destructive";
+      riskLevel: "safe" | "moderate" | "destructive" | "external";
       args?: Record<string, unknown>;
       reason: string;
+      model?: string;
+      estimatedSeconds?: number;
+      affectedAssets?: string[];
       confirmed: boolean;
     };
 
@@ -206,7 +211,7 @@ export interface TimelineTurn {
   };
 }
 
-const TOOL_LABEL: Record<ToolCall["name"], string> = {
+const TOOL_LABEL: Record<string, string> = {
   generate_brief: "Analyze brief",
   plan_architecture: "Skip architecture",
   plan_design_direction: "Define visual direction",
@@ -240,7 +245,7 @@ const TOOL_LABEL: Record<ToolCall["name"], string> = {
 };
 
 export function toolDisplayLabel(name: ToolCall["name"]): string {
-  return TOOL_LABEL[name] ?? name;
+  return toolContract(name)?.label ?? TOOL_LABEL[name] ?? name;
 }
 
 function normalizeTimelineText(text: string): string {
@@ -262,10 +267,10 @@ function chunkThinking(text: string, maxLen = 48): string[] {
   return parts;
 }
 
-/** 鏈嶅姟绔彲鎶婇暱 thinking 鎷嗘垚澶氬抚锛屼究浜庢祦寮忓睍绀?*/
+/** 服务端可把长 thinking 拆成多帧，便于流式展示 */
 export function emitThinkingChunks(thinking: string): { text: string }[] {
   if (thinking.length <= 120) return [{ text: thinking }];
-  const byLine = thinking.split(/(?<=[銆傦紒锛焅n])/);
+  const byLine = thinking.split(/(?<=[。！？\n])/);
   const out: { text: string }[] = [];
   for (const line of byLine) {
     if (!line) continue;
@@ -277,7 +282,7 @@ export function emitThinkingChunks(thinking: string): { text: string }[] {
 }
 
 /**
- * 鍘嗗彶娑堟伅 鈫?鏃堕棿绾挎潯鐩紙涓嶅惈鏈疆鏈惤搴撶殑 live 浜嬩欢锛?
+ * 历史消息 → 时间线条目（不含本轮未落库的 live 事件）
  */
 export function messagesToTimeline(messages: ChatMessage[]): TimelineItem[] {
   const items: TimelineItem[] = [];
@@ -356,7 +361,7 @@ export function messagesToTimeline(messages: ChatMessage[]): TimelineItem[] {
 }
 
 /**
- * 鍦ㄥ巻鍙叉椂闂寸嚎鏈熬鍚堝苟鏈疆 SSE 浜嬩欢锛堟祦寮忚繘琛屼腑锛?
+ * 在历史时间线末尾合并本轮 SSE 事件（流式进行中）
  */
 export function appendLiveEvents(
   base: TimelineItem[],
@@ -403,6 +408,58 @@ export function appendLiveEvents(
       return step;
     });
     items[planIdx] = { ...plan, steps };
+  };
+  const ensurePlanStep = (
+    toolId: string,
+    toolName: ToolCall["name"],
+    at: number,
+    args: Record<string, unknown> | undefined,
+    eventId: string
+  ) => {
+    const planIdx = activePlanId
+      ? items.findIndex((x) => x.kind === "agent_plan" && x.id === activePlanId)
+      : -1;
+    if (planIdx < 0 || items[planIdx].kind !== "agent_plan") {
+      const id = `agent-plan-${eventId}`;
+      activePlanId = id;
+      items.push({
+        kind: "agent_plan",
+        id,
+        steps: [
+          {
+            id: toolId,
+            name: toolName,
+            label: toolDisplayLabel(toolName),
+            status: "running",
+            startedAt: at,
+            args,
+          },
+        ],
+      });
+      return;
+    }
+    const plan = items[planIdx] as Extract<TimelineItem, { kind: "agent_plan" }>;
+    const alreadyListed = plan.steps.some(
+      (step) =>
+        step.id === toolId ||
+        (step.name === toolName && step.status === "waiting")
+    );
+    if (!alreadyListed) {
+      items[planIdx] = {
+        ...plan,
+        steps: [
+          ...plan.steps,
+          {
+            id: toolId,
+            name: toolName,
+            label: toolDisplayLabel(toolName),
+            status: "waiting",
+            args,
+          },
+        ],
+      };
+    }
+    updatePlanStep(toolId, toolName, { status: "running", startedAt: at, args });
   };
   const ensureThought = (at: number, eventId: string): string => {
     const existing = [...thoughtIds.entries()].find(([, tid]) => {
@@ -524,6 +581,7 @@ export function appendLiveEvents(
     } else if (ev.type.startsWith("job.")) {
       const data = ev.data as {
         jobId?: string;
+        turnId?: string;
         jobType?: string;
         batchId?: string;
         toolCallId?: string;
@@ -565,6 +623,7 @@ export function appendLiveEvents(
         kind: "job",
         id,
         jobId: data.jobId,
+        turnId: data.turnId ?? previous?.turnId,
         jobType: data.jobType ?? previous?.jobType ?? "custom",
         batchId: data.batchId ?? previous?.batchId,
         toolCallId: data.toolCallId ?? previous?.toolCallId,
@@ -597,18 +656,10 @@ export function appendLiveEvents(
       };
       // Chat-inline：不展示 ToolBlock，等 tool_result 提升为助手正文
       if (isChatInlineTool(d.name)) {
-        updatePlanStep(d.id, d.name, {
-          status: "running",
-          startedAt: ev.at,
-          args: d.args,
-        });
+        ensurePlanStep(d.id, d.name, ev.at, d.args, eventId);
         continue;
       }
-      updatePlanStep(d.id, d.name, {
-        status: "running",
-        startedAt: ev.at,
-        args: d.args,
-      });
+      ensurePlanStep(d.id, d.name, ev.at, d.args, eventId);
       if (items.some((x) => x.kind === "tool" && x.id === d.id)) continue;
       const toolItem: TimelineItem = {
         kind: "tool",
@@ -669,7 +720,7 @@ export function appendLiveEvents(
         const durationMs = previousTool ? ev.at - previousTool.startedAt : undefined;
         if (idx >= 0) items.splice(idx, 1);
         updatePlanStep(d.id, completedToolName, {
-          status: "done",
+          status: "waiting",
           summary: "Waiting for user approval before image generation.",
           durationMs,
         });
@@ -758,7 +809,7 @@ export function appendLiveEvents(
       items.push({
         kind: "error",
         id: `err-${eventId}`,
-        message: String((ev.data as { message?: string })?.message ?? "鏈煡閿欒"),
+        message: String((ev.data as { message?: string })?.message ?? "未知错误"),
       });
     } else if (ev.type === "pipeline_log") {
       const entry = ev.data as PipelineLogEntry;
@@ -805,7 +856,7 @@ export function appendLiveEvents(
         items.push({
           kind: "direction",
           id: `direction-${eventId}`,
-          title: d.title ?? "瑙嗚鏂瑰悜纭",
+          title: d.title ?? "视觉方向确认",
           summary: d.summary,
           tone: d.tone,
           palette: d.palette,
@@ -815,6 +866,7 @@ export function appendLiveEvents(
         });
       }
     } else if (ev.type === "image_generation.confirm") {
+      if (items.some(isImageApprovalCard)) continue;
       const d = ev.data as {
         title?: string;
         prompt?: string;
@@ -855,14 +907,20 @@ export function appendLiveEvents(
         approvalId?: string;
         toolName?: string;
         toolCallId?: string;
-        riskLevel?: "safe" | "moderate" | "destructive";
+        riskLevel?: "safe" | "moderate" | "destructive" | "external";
         args?: Record<string, unknown>;
         reason?: string;
+        model?: string;
+        estimatedSeconds?: number;
+        affectedAssets?: string[];
       };
       if (d.toolName) {
         if (isSafeReadOnlyToolConfirmation(d.toolName, d.args)) {
           continue;
         }
+        const isImageTool =
+          d.toolName === "generate_images" ||
+          d.toolName === "generate_image_variants";
         const approvalKey = d.approvalId ?? `${d.runId ?? ""}:${d.toolName}`;
         if (
           (d.approvalId &&
@@ -871,6 +929,11 @@ export function appendLiveEvents(
           visibleApprovalKeys.has(approvalKey)
         ) {
           continue;
+        }
+        if (isImageTool) {
+          for (let i = items.length - 1; i >= 0; i--) {
+            if (isImageApprovalCard(items[i])) items.splice(i, 1);
+          }
         }
         visibleApprovalKeys.add(approvalKey);
         const safeArgs = sanitizeToolConfirmArgs(d.toolName, d.args);
@@ -885,6 +948,9 @@ export function appendLiveEvents(
           riskLevel: d.riskLevel ?? "moderate",
           args: safeArgs,
           reason: d.reason ?? "该工具执行前需要确认。",
+          model: d.model,
+          estimatedSeconds: d.estimatedSeconds,
+          affectedAssets: d.affectedAssets,
           confirmed: false,
         });
       }
@@ -917,7 +983,7 @@ export function appendLiveEvents(
     }
   }
 
-  // 鍏抽棴杩涜涓殑 thought 娴?
+  // 关闭进行中的 thought 流
   for (const item of items) {
     if (item.kind === "thought" && item.streaming && !isStreaming) {
       item.streaming = false;
@@ -933,6 +999,7 @@ export function appendLiveEvents(
       const existingIdx = items.findIndex((x) => x.id === assistantId);
       if (existingIdx >= 0) items.splice(existingIdx, 1);
       if (
+        !items.some(isImageApprovalCard) &&
         !items.some(
           (x) =>
             x.kind === "image_confirm" &&
@@ -1014,6 +1081,41 @@ function normalizeErrorMessage(message: string): string {
   return message.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+function isImageApprovalCard(item: TimelineItem): boolean {
+  if (item.kind === "image_confirm") return true;
+  return (
+    item.kind === "tool_confirm" &&
+    (item.toolName === "generate_images" || item.toolName === "generate_image_variants")
+  );
+}
+
+function preferImageApprovalCard(current: TimelineItem, next: TimelineItem): TimelineItem {
+  const currentTool = current.kind === "tool_confirm";
+  const nextTool = next.kind === "tool_confirm";
+  if (nextTool && !currentTool) return next;
+  if (currentTool && !nextTool) return current;
+  if (currentTool && nextTool) {
+    if (next.approvalId && !current.approvalId) return next;
+    if (current.approvalId && !next.approvalId) return current;
+    return next;
+  }
+  return next;
+}
+
+/** 一次生图只保留一张确认卡，避免 live + restored 叠两张、点生成却打不到 Job。 */
+function dedupeImageApprovalCards(items: TimelineItem[]): TimelineItem[] {
+  const cards = items.filter(isImageApprovalCard);
+  if (cards.length <= 1) return items;
+  const winner = cards.reduce(preferImageApprovalCard);
+  let placed = false;
+  return items.filter((item) => {
+    if (!isImageApprovalCard(item)) return true;
+    if (placed) return false;
+    placed = true;
+    return true;
+  }).map((item) => (isImageApprovalCard(item) ? winner : item));
+}
+
 function dedupeTimelineErrors(items: TimelineItem[]): TimelineItem[] {
   const seen = new Set<string>();
   const result: TimelineItem[] = [];
@@ -1046,8 +1148,11 @@ export function buildChatTimeline(
   isStreaming: boolean
 ): TimelineItem[] {
   const base = messagesToTimeline(messages);
-  if (liveEvents.length === 0) return dedupeTimelineErrors(groupCurrentTurn(base));
-  return dedupeTimelineErrors(groupCurrentTurn(appendLiveEvents(base, liveEvents, isStreaming)));
+  const items =
+    liveEvents.length === 0
+      ? groupCurrentTurn(base)
+      : groupCurrentTurn(appendLiveEvents(base, liveEvents, isStreaming));
+  return dedupeImageApprovalCards(dedupeTimelineErrors(items));
 }
 
 export function buildChatTimelineTurns(
@@ -1056,8 +1161,10 @@ export function buildChatTimelineTurns(
   isStreaming: boolean
 ): TimelineTurn[] {
   const base = messagesToTimeline(messages);
-  const timeline = dedupeTimelineErrors(
-    liveEvents.length === 0 ? base : appendLiveEvents(base, liveEvents, isStreaming)
+  const timeline = dedupeImageApprovalCards(
+    dedupeTimelineErrors(
+      liveEvents.length === 0 ? base : appendLiveEvents(base, liveEvents, isStreaming)
+    )
   );
   return groupTimelineTurns(timeline, isStreaming);
 }
@@ -1293,16 +1400,24 @@ function imageConfirmationFromToolResult(value: unknown):
         ? nested
         : null;
   if (!payload) return null;
+  const args = isRecord(payload.args) ? payload.args : null;
   const prompts = Array.isArray(payload.prompts)
     ? payload.prompts
         .filter((p): p is string => typeof p === "string")
         .map((p) => p.trim())
         .filter(Boolean)
-    : undefined;
+    : Array.isArray(args?.prompts)
+      ? args.prompts
+          .filter((p): p is string => typeof p === "string")
+          .map((p) => p.trim())
+          .filter(Boolean)
+      : undefined;
   const prompt =
     (typeof payload.prompt === "string" && payload.prompt.trim()
       ? payload.prompt.trim()
-      : prompts?.[0]) ?? "";
+      : typeof args?.prompt === "string" && args.prompt.trim()
+        ? args.prompt.trim()
+        : prompts?.[0]) ?? "";
   if (!prompt) return null;
   return {
     kind: "image_confirm",

@@ -16,16 +16,30 @@ export function CanvasFocusListener() {
 
   useEffect(() => {
     if (!focusTarget || focusToken === 0) return;
-    // 作品板只聚焦 image-asset（canvas-page 已废弃）
-    if (focusTarget.kind !== "asset") return;
 
     const hit = editor.getCurrentPageShapes().find((s) => {
+      if (focusTarget.kind === "note") {
+        if ((s.type as string) !== "text-note") return false;
+        return (
+          (s as unknown as { props: { noteId: string } }).props.noteId ===
+          focusTarget.id
+        );
+      }
+      if (focusTarget.kind !== "asset") return false;
       if ((s.type as string) !== "image-asset") return false;
       const props = (s as unknown as { props: { assetId: string } }).props;
       return props.assetId === focusTarget.id;
     });
 
     if (!hit) return;
+
+    if (focusTarget.kind === "note") {
+      const bounds = editor.getShapePageBounds(hit.id);
+      if (bounds) {
+        editor.zoomToBounds(bounds, { animation: { duration: 280 } });
+      }
+      return;
+    }
 
     editor.select(hit.id);
     editor.zoomToSelection({ animation: { duration: 280 } });

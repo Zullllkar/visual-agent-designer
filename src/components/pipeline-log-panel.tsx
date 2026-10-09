@@ -1,10 +1,8 @@
 "use client";
 
 /**
- * 流水线执行日志面板
  * --------------------------------------------------------------
  * 展示 SSE 实时日志或历史 JSONL 记录。
- *
  * @author：wangjunhua
  */
 
@@ -81,7 +79,7 @@ export function PipelineLogPanel({
         {entries.length === 0 ? (
           <p className={tone === "panel" ? "text-[var(--muted)]" : "text-zinc-500"}>
             等待日志…
-          </p>
+           </p>
         ) : (
           entries.map((e) => (
             <div key={e.id} className="mb-1.5 flex gap-2">

@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
-import { join } from "node:path";
-import { VAD_PROJECTS_DIR } from "@/lib/vad/paths";
+import { isAbsolute, join, relative, resolve } from "node:path";
+import { projectDir } from "@/lib/vad/paths";
 
 function safeSegment(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]/g, "");
@@ -30,7 +30,12 @@ export async function GET(
       return new Response("Not Found", { status: 404 });
     }
 
-    const filePath = join(VAD_PROJECTS_DIR, safeProjectId, subFolder, safeFilename);
+    const root = resolve(projectDir(safeProjectId));
+    const filePath = resolve(join(root, subFolder, safeFilename));
+    const rel = relative(root, filePath);
+    if (!rel || rel.startsWith("..") || isAbsolute(rel)) {
+      return new Response("Forbidden", { status: 403 });
+    }
     const buffer = await fs.readFile(filePath);
     return new Response(buffer, {
       headers: {

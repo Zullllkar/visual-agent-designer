@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   bindCommandToWaitingRun,
   matchWaitingApproval,
+  resumeBlockedImageApproval,
   resumeWaitingImageApproval,
   rewriteMissingToolApproval,
 } from "./missing-run-fallback";
@@ -93,6 +94,37 @@ describe("matchWaitingApproval", () => {
     expect(bound.approvalId).toBe("live-run:generate_images:abc");
   });
 
+  it("turns a new agent.run into tool.approve when generate_images is already waiting", () => {
+    const resumed = resumeBlockedImageApproval(
+      {
+        action: "agent.run",
+        projectId: "p1",
+        prompt: "ONLY the color and light change: convert to a dark palette",
+        count: 1,
+        threadId: "thread-1",
+      } as WsCommand,
+      waiting,
+    );
+    expect(resumed?.action).toBe("tool.approve");
+    expect(resumed?.runId).toBe("live-run");
+    expect(resumed?.approvalId).toBe("live-run:generate_images:abc");
+    expect(resumed?.toolArgs?.prompt).toContain("dark palette");
+  });
+
+  it("does not swallow a new chat turn that is not an image approval", () => {
+    expect(
+      resumeBlockedImageApproval(
+        {
+          action: "agent.run",
+          projectId: "p1",
+          prompt: "改成横版海报，不要再生这一张",
+          threadId: "thread-1",
+        } as WsCommand,
+        waiting,
+      )
+    ).toBeNull();
+  });
+
   it("turns agent.approve into tool.approve on the live waiting run", () => {
     const resumed = resumeWaitingImageApproval(
       {
@@ -109,5 +141,42 @@ describe("matchWaitingApproval", () => {
     expect(resumed?.approvalId).toBe("live-run:generate_images:abc");
     expect(resumed?.toolArgs?.prompt).toBe("A login page matching the attached reference");
     expect(resumed?.toolArgs?.confirmed).toBe(true);
+  });
+
+  it("resumes generate_images even if the parent run is still marked running", () => {
+    const running = {
+      ...waiting,
+      status: "running",
+      lastHeartbeatAt: Date.now(),
+    };
+    expect(
+      matchWaitingApproval([running], {
+        projectId: "p1",
+        approvalId: "live-run:generate_images:abc",
+      })?.runId,
+    ).toBe("live-run");
+
+    const resumed = resumeBlockedImageApproval(
+      {
+        action: "agent.approve",
+        projectId: "p1",
+        prompt: "小红书竖版封面",
+        count: 1,
+        threadId: "thread-1",
+      } as WsCommand,
+      running,
+    );
+    expect(resumed?.action).toBe("tool.approve");
+    expect(resumed?.runId).toBe("live-run");
+    expect(resumed?.toolArgs?.confirmed).toBe(true);
+  });
+
+  it("does not treat a busy generation without pending approval as resumable", () => {
+    expect(
+      matchWaitingApproval(
+        [{ runId: "busy", projectId: "p1", status: "running" }],
+        { projectId: "p1" },
+      ),
+    ).toBeUndefined();
   });
 });

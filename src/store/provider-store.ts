@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { ProviderConfig } from "@/lib/providers/registry";
+import { createBrowserJsonStorage } from "@/lib/storage/idb-storage";
 
 /**
  * Provider 配置 store（localStorage 持久化）
@@ -43,7 +44,7 @@ export const useProviderStore = create<ProviderStoreState>()(
     {
       name: "vad.providers.v2",
       skipHydration: true,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => createBrowserJsonStorage()),
       partialize: (s) => ({ config: s.config }),
     },
   ),

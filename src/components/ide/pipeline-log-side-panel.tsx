@@ -70,7 +70,7 @@ export function PipelineLogSidePanel({
               <p className="text-[13px] font-medium tracking-[-0.02em]">还没有执行日志</p>
               <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--muted)]">
                 Agent 跑生图或导出时，步骤会记在这里。
-              </p>
+                </p>
             </div>
           </div>
         ) : (

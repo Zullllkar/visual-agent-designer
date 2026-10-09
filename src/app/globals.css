@@ -3,30 +3,28 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /**
- * Vibeboard · Lovart Canvas Studio 设计令牌
- * 亮色默认：冷奶油纸桌面 + 陶土 accent
- * 深色：同一套陶土夜间工作台（与首页共用 token）
- * @author：wangjunhua
+ * Vibeboard · Canvas Studio 设计令牌
+ * 亮色：铝灰桌面 + 纯白面板 + 墨色按钮
+ * 深色：近黑窗框 + 浅色按钮
  */
 
 :root {
-  /* 冷奶油纸 · 编辑型 OSS 工作台 */
-  --background: #f1efe8;
-  --foreground: #1a1916;
-  --surface: #fafaf7;
-  --surface-muted: #e9e7e0;
-  --surface-elevated: #fafaf7;
-  --border: rgba(26, 25, 22, 0.1);
-  --muted: #5c5850;
-  --muted-strong: #2c2a26;
-  --primary: #c96b5c;
-  --primary-strong: #aa5145;
-  --primary-soft: rgba(201, 107, 92, 0.12);
-  --accent: #c96b5c;
-  --success: #5f6648;
-  --danger: #b94b43;
-  --shadow-soft: 0 8px 22px -18px rgba(26, 25, 22, 0.22);
-  --shadow-elevated: 0 14px 34px -22px rgba(26, 25, 22, 0.26);
+  --background: #edeef1;
+  --foreground: #141416;
+  --surface: #ffffff;
+  --surface-muted: #e2e4e9;
+  --surface-elevated: #ffffff;
+  --border: #e2e4e9;
+  --muted: #5c616b;
+  --muted-strong: #2a2c33;
+  --primary: #141416;
+  --primary-strong: #000000;
+  --primary-soft: rgba(20, 20, 22, 0.08);
+  --accent: #141416;
+  --success: #16a34a;
+  --danger: #dc2626;
+  --shadow-soft: 0 1px 2px rgba(24, 24, 28, 0.05), 0 2px 8px rgba(24, 24, 28, 0.05);
+  --shadow-elevated: 0 8px 30px rgba(24, 24, 28, 0.1);
   --shadow-glow:
     0 0 0 1px color-mix(in srgb, var(--primary) 28%, transparent),
     0 0 0 4px color-mix(in srgb, var(--primary) 10%, transparent);
@@ -34,7 +32,7 @@
   --radius-md: 0.25rem;
   --radius-lg: 0.3rem;
   --radius-xl: 0.35rem;
-  --vad-accent-fg-on: #fafaf7;
+  --vad-accent-fg-on: #ffffff;
   color-scheme: light;
   --scrollbar-size: 6px;
   --scrollbar-thumb: color-mix(in srgb, var(--foreground) 22%, transparent);
@@ -62,28 +60,27 @@ html.vad-theme-booting * {
 }
 
 html.dark {
-  --background: #161412;
-  --foreground: #f1efe8;
-  --surface: #1e1c19;
-  --surface-muted: #25221e;
-  --surface-elevated: #2c2924;
-  --border: rgba(241, 239, 232, 0.1);
-  --muted: #9a958c;
-  --muted-strong: #d4cfc6;
-  --primary: #d4897a;
-  --primary-strong: #e09a8c;
-  --primary-soft: rgba(201, 107, 92, 0.2);
-  --accent: #d4897a;
-  --success: #a3ab86;
-  --danger: #e07a72;
-  --shadow-soft: 0 0 0 1px rgba(241, 239, 232, 0.04), 0 1px 0 rgba(0, 0, 0, 0.35);
+  --background: #0e0f12;
+  --foreground: #f2f3f5;
+  --surface: #17181d;
+  --surface-muted: #202228;
+  --surface-elevated: #24262c;
+  --border: #2a2c33;
+  --muted: #9aa0aa;
+  --muted-strong: #d5d7dc;
+  --primary: #f2f3f5;
+  --primary-strong: #ffffff;
+  --primary-soft: rgba(242, 243, 245, 0.12);
+  --accent: #f2f3f5;
+  --success: #4ade80;
+  --danger: #f87171;
+  --shadow-soft: 0 0 0 1px rgba(232, 234, 239, 0.06), 0 1px 0 rgba(0, 0, 0, 0.35);
   --shadow-elevated:
-    0 0 0 1px rgba(241, 239, 232, 0.06), 0 4px 14px rgba(0, 0, 0, 0.38),
-    0 16px 44px rgba(0, 0, 0, 0.48);
+    0 0 0 1px rgba(232, 234, 239, 0.08), 0 8px 30px rgba(0, 0, 0, 0.45);
   --shadow-glow:
     0 0 0 1px color-mix(in srgb, var(--primary) 40%, transparent),
     0 0 0 4px color-mix(in srgb, var(--primary) 14%, transparent);
-  --vad-accent-fg-on: #161412;
+  --vad-accent-fg-on: #0e0f12;
   color-scheme: dark;
 }
 
@@ -466,7 +463,7 @@ pre,
   background: linear-gradient(
     120deg,
     var(--primary) 0%,
-    color-mix(in srgb, var(--primary) 70%, #e7c4b8) 100%
+    color-mix(in srgb, var(--primary) 70%, #f2f3f5) 100%
   );
   -webkit-background-clip: text;
   background-clip: text;
@@ -477,7 +474,7 @@ pre,
   background: linear-gradient(
     120deg,
     var(--primary) 0%,
-    color-mix(in srgb, var(--primary) 65%, #f1efe8) 100%
+    color-mix(in srgb, var(--primary) 65%, #f2f3f5) 100%
   );
   -webkit-background-clip: text;
   background-clip: text;
@@ -1744,8 +1741,8 @@ html.dark .bg-slate-100 {
 /* ── IDE 无限画布（Canvas Studio 桌面） ── */
 
 .vad-ide-canvas {
-  --vad-canvas-dot: rgba(24, 24, 28, 0.08);
-  background: linear-gradient(180deg, #f2f3f5 0%, #eef0f3 100%);
+  --vad-canvas-dot: color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: var(--background);
 }
 
 html.dark .vad-ide-canvas {
@@ -1753,14 +1750,29 @@ html.dark .vad-ide-canvas {
   background: var(--background);
 }
 
-.vad-ide-canvas-grid {
+.vad-ide-canvas-grid--dots {
   background-image: radial-gradient(circle at center, var(--vad-canvas-dot) 1px, transparent 1px);
   background-size: 20px 20px;
 }
 
+.vad-ide-canvas-grid--lines {
+  background-image:
+    linear-gradient(var(--vad-canvas-dot) 1px, transparent 1px),
+    linear-gradient(90deg, var(--vad-canvas-dot) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.vad-ide-canvas,
+.vad-canvas-surface {
+  --tl-color-background: var(--background);
+}
+
 .vad-canvas-surface .tl-container,
-.vad-canvas-surface .tl-background {
+.vad-canvas-surface .tl-background,
+.vad-canvas-surface .tl-background__wrapper,
+.vad-canvas-surface .tl-canvas {
   background: transparent !important;
+  background-color: transparent !important;
 }
 
 .vad-canvas-surface .tl-selection__fg {
@@ -2064,6 +2076,61 @@ html.dark .vad-ide-canvas {
   border-color: color-mix(in srgb, var(--primary) 38%, var(--border));
   background: var(--surface);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+.vad-spawn-prompt {
+  width: min(420px, 86vw);
+  padding: 14px 16px 12px;
+  border-radius: 20px;
+  background: var(--surface);
+}
+
+.vad-spawn-prompt-refs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.vad-spawn-prompt-thumb {
+  width: 48px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.vad-spawn-prompt-add {
+  display: inline-flex;
+  width: 48px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px dashed color-mix(in srgb, var(--muted) 42%, transparent);
+  border-radius: 8px;
+  color: var(--muted);
+}
+
+.vad-spawn-prompt-textarea {
+  width: 100%;
+  min-height: 88px;
+  resize: none;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 13.5px;
+  line-height: 1.55;
+  outline: none;
+}
+
+.vad-spawn-prompt-textarea::placeholder {
+  color: color-mix(in srgb, var(--muted) 88%, transparent);
+}
+
+.vad-spawn-prompt-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
 }
 
 .vad-canvas-dock-menu {
@@ -2874,7 +2941,7 @@ html.dark .vad-ide-canvas {
 
 .vad-agent-send--ready {
   background: var(--primary);
-  color: #fff;
+  color: var(--vad-accent-fg-on);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.22) inset,
     0 2px 8px color-mix(in srgb, var(--primary) 35%, transparent);
@@ -4075,7 +4142,7 @@ html.dark .vad-ide-canvas {
   }
 }
 
-/* 暗色侧栏：与首页同一套陶土夜间 token，不再单独走冷石墨 */
+/* 暗色侧栏：与首页同一套石墨面板 */
 .dark .vad-agent-panel {
   background: var(--surface);
   border-left-color: var(--border);
@@ -4129,27 +4196,11 @@ html.dark .vad-ide-canvas {
   box-shadow: none;
 }
 
-/* ── 冷奶油纸视觉覆盖：对应 design-systems/landing.html 与 canvas.html ── */
+/* ── 全站表面：跟设计令牌走，不再铺纸纹 ── */
 
 body {
   background: var(--background);
   font-family: var(--font-sans);
-}
-
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  pointer-events: none;
-  opacity: 0.18;
-  mix-blend-mode: multiply;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23grain)' opacity='.18'/%3E%3C/svg%3E");
-}
-
-html.dark body::before {
-  opacity: 0.2;
-  mix-blend-mode: overlay;
 }
 
 .app-header {
@@ -4201,7 +4252,7 @@ html.dark body::before {
   position: absolute;
   top: 1.35rem;
   left: max(1.5rem, calc((100% - 70rem) / 2));
-  color: var(--faint, #8a8680);
+  color: var(--faint, #6b7180);
   font-family: var(--font-mono);
   font-size: 0.62rem;
   letter-spacing: 0.06em;
@@ -4368,10 +4419,10 @@ html.dark body::before {
   background: var(--primary);
 }
 
-/* 工作台：让真正的 IDE 贴近参考 Canvas 的纸面桌面与编辑器比例 */
+/* 工作台：画布底跟随页面 token，不单独铺一层色 */
 .vad-ide-canvas {
-  --vad-canvas-dot: rgba(26, 25, 22, 0.11);
-  background: #f4f2ec;
+  --vad-canvas-dot: color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: var(--background);
 }
 
 html.dark .vad-ide-canvas {
@@ -5526,7 +5577,7 @@ html.dark .vad-ide-canvas {
   margin-top: 1.375rem;
   border-top: 1px solid var(--border);
   padding-top: 1rem;
-  color: var(--faint, #8a8680);
+  color: var(--faint, #6b7180);
   font-family: var(--font-mono);
   font-size: 0.66rem;
   line-height: 1.5;
@@ -5667,7 +5718,7 @@ html.dark .vad-ide-canvas {
 }
 
 .landing-stages li span {
-  color: var(--faint, #8a8680);
+  color: var(--faint, #6b7180);
   font-family: var(--font-mono);
   font-size: 0.7rem;
 }
@@ -5685,7 +5736,7 @@ html.dark .vad-ide-canvas {
 
 .landing-stack-line {
   margin-top: 1.125rem;
-  color: var(--faint, #8a8680);
+  color: var(--faint, #6b7180);
   font-family: var(--font-mono);
   font-size: 0.69rem;
 }
@@ -5763,7 +5814,7 @@ html.dark .vad-ide-canvas {
   flex-wrap: wrap;
   gap: 0.5rem 1.125rem;
   margin-top: 1.125rem;
-  color: var(--faint, #8a8680);
+  color: var(--faint, #6b7180);
   font-family: var(--font-mono);
   font-size: 0.69rem;
 }
@@ -5799,7 +5850,7 @@ html.dark .vad-ide-canvas {
 }
 
 .landing-oss-links small {
-  color: var(--faint, #8a8680);
+  color: var(--faint, #6b7180);
   font-family: var(--font-mono);
   font-size: 0.66rem;
   font-weight: 500;
@@ -5830,7 +5881,7 @@ html.dark .vad-ide-canvas {
   border-top: 1px solid var(--border);
   padding-top: 1.5rem;
   padding-bottom: 3rem;
-  color: var(--faint, #8a8680);
+  color: var(--faint, #6b7180);
   font-size: 0.78rem;
 }
 
@@ -6389,6 +6440,47 @@ html.dark .vad-ide-canvas {
   height: 0.92rem;
 }
 
+.vad-provider-logo.is-mark {
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+}
+
+.vad-provider-logo.is-mark svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.composer-model-marks {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.composer-model-letter {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--foreground) 8%, var(--surface));
+  color: var(--foreground);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.studio-tool-chip .vad-provider-logo svg,
+.vad-agent-model-btn .vad-provider-logo svg {
+  width: 14px;
+  height: 14px;
+  color: var(--brand-color);
+}
+
 .vad-provider-card-badge {
   border-radius: 999px;
   background: var(--surface-muted);
@@ -6442,6 +6534,14 @@ html.dark .vad-ide-canvas {
   padding: 1rem;
 }
 
+.vad-provider-config-lead {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
 .vad-provider-field-label {
   margin-bottom: 0.38rem;
   color: var(--muted);
@@ -6456,15 +6556,18 @@ html.dark .vad-ide-canvas {
 }
 .vad-provider-input-wrap input,
 .vad-provider-select {
+  box-sizing: border-box;
   width: 100%;
+  height: 2.45rem;
   min-height: 2.45rem;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
-  padding: 0.58rem 2.45rem 0.58rem 0.75rem;
+  padding: 0 2.45rem 0 0.75rem;
   color: var(--foreground);
   font-size: 0.75rem;
   font-weight: 550;
+  line-height: calc(2.45rem - 2px);
   outline: none;
   transition:
     border-color 0.16s ease,
@@ -6577,9 +6680,9 @@ html.vad-desktop .app-page.min-h-screen {
   align-items: center;
   gap: 0.5rem;
   padding: 0 0.65rem;
-  background: var(--surface);
+  background: var(--background);
   color: var(--foreground);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid transparent;
   -webkit-app-region: drag;
   app-region: drag;
   user-select: none;
@@ -6589,9 +6692,6 @@ html.vad-desktop-mac .desktop-titlebar {
   padding-left: 78px;
 }
 
-.desktop-titlebar-left,
-.desktop-titlebar-center,
-.desktop-titlebar-actions,
 .desktop-titlebar [data-no-drag] {
   -webkit-app-region: no-drag;
   app-region: no-drag;
@@ -6727,8 +6827,8 @@ html.vad-desktop-mac .desktop-titlebar {
   gap: 0.15rem;
   height: var(--vad-statusbar-h);
   padding: 0 0.7rem;
-  border-top: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface) 88%, var(--background));
+  border-top: 1px solid transparent;
+  background: var(--background);
   color: var(--muted);
   font-size: 11px;
   line-height: 1;
@@ -6797,4 +6897,98 @@ html.vad-desktop-mac .desktop-titlebar {
 .vad-mark {
   display: block;
   flex-shrink: 0;
+}
+
+/* Agent sidebar visual refinement: calm hierarchy, soft depth, and clear state accents. */
+.vad-agent-panel {
+  isolation: isolate;
+  background:
+    radial-gradient(120% 28% at 50% 0%, color-mix(in srgb, var(--primary-soft) 42%, transparent), transparent 72%),
+    var(--surface);
+}
+
+.vad-agent-header {
+  height: 3.15rem;
+  padding-inline: 0.7rem;
+  background: color-mix(in srgb, var(--surface) 92%, var(--background));
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.vad-agent-scroll {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, transparent), transparent 88px);
+}
+
+.vad-agent-msg-user {
+  border: 1px solid color-mix(in srgb, var(--primary) 16%, var(--border));
+  background: color-mix(in srgb, var(--primary-soft) 54%, var(--surface));
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.dark .vad-agent-msg-user {
+  border-color: color-mix(in srgb, var(--primary) 24%, var(--border));
+  background: color-mix(in srgb, var(--primary-soft) 58%, var(--surface));
+}
+
+.vad-agent-msg-assistant {
+  padding-inline: 0.2rem;
+}
+
+.vad-agent-tool {
+  border-color: color-mix(in srgb, var(--border) 88%, transparent);
+  background: color-mix(in srgb, var(--surface-elevated) 34%, var(--surface));
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent);
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.vad-agent-tool:hover {
+  border-color: color-mix(in srgb, var(--primary) 24%, var(--border));
+  background: color-mix(in srgb, var(--primary-soft) 18%, var(--surface));
+}
+
+.vad-agent-tool--running {
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 9%, transparent), 0 8px 20px color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.vad-agent-composer-wrap {
+  padding: 0.65rem 0.8rem 0.9rem;
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--surface) 96%, var(--background)) 32%);
+}
+
+.vad-agent-composer {
+  border-radius: 15px;
+  box-shadow: var(--shadow-soft), 0 0 0 1px color-mix(in srgb, var(--border) 50%, transparent) inset;
+}
+
+.vad-agent-composer:focus-within {
+  box-shadow: var(--shadow-soft), 0 0 0 1px color-mix(in srgb, var(--primary) 32%, transparent) inset, 0 0 0 3px color-mix(in srgb, var(--primary) 9%, transparent);
+}
+
+.vad-agent-run-strip {
+  border-bottom-color: color-mix(in srgb, var(--primary) 20%, var(--border));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--primary-soft) 64%, var(--surface)), color-mix(in srgb, var(--surface-muted) 46%, transparent));
+}
+
+.vad-agent-queue {
+  border: 1px solid color-mix(in srgb, var(--primary) 20%, var(--border));
+  background: color-mix(in srgb, var(--primary-soft) 44%, var(--surface));
+}
+
+.vad-agent-suggest {
+  background: color-mix(in srgb, var(--surface) 88%, var(--surface-muted));
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--foreground) 3%, transparent);
+}
+
+@media (max-width: 760px) {
+  .vad-agent-header {
+    height: 3rem;
+  }
+
+  .vad-agent-composer-wrap {
+    padding-inline: 0.55rem;
+  }
+
+  .vad-agent-msg-user {
+    margin-left: 0.75rem;
+  }
 }

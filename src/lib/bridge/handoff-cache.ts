@@ -16,6 +16,7 @@ import {
 } from "@/lib/handoff/select-assets";
 import type { HandoffArtifact, HandoffTarget } from "@/lib/handoff/types";
 import type { ProjectFile } from "@/lib/project/schema";
+import { recordDesignSnapshot } from "./snapshot-store";
 
 export interface HandoffFileEntry {
   path: string;
@@ -63,6 +64,9 @@ export async function getBuiltHandoff(
   const key = `${project.id}:${signature(project, target)}`;
   const hit = cache.get(key);
   if (hit) return hit;
+
+  // 新版本第一次被拉取 = coding agent 将要照着做的版本，记快照供后续 diff
+  void recordDesignSnapshot(project).catch(() => undefined);
 
   const exportProject = projectWithSelectedAssets(
     project,

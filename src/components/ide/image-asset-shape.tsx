@@ -1,4 +1,5 @@
 "use client";
+import { createShapeId, type RecordProps, type TLBaseShape } from "@/lib/tldraw-compat";
 
 /**
  * ImageAsset Shape — Lovart 式直出图（图即 shape，无垫衬画框）
@@ -7,19 +8,17 @@
  */
 
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Trash2, Image as ImageIcon, Plus } from "lucide-react";
+import { Trash2, Image as ImageIcon } from "lucide-react";
 import {
-  Group2d,
+  BaseBoxShapeUtil,
   HTMLContainer,
   Rectangle2d,
-  ShapeUtil,
   T,
-  createShapeId,
+  resizeBox,
   useEditor,
   useValue,
   type Geometry2d,
-  type RecordProps,
-  type TLBaseShape,
+  type TLResizeInfo,
 } from "tldraw";
 import { useProjectStore } from "@/store/project-store";
 import { useCanvasSelectionStore } from "@/store/canvas-selection-store";
@@ -31,14 +30,12 @@ import {
   type MarkRegion,
 } from "@/store/asset-mark-store";
 import { displaySizeForImageAsset } from "@/lib/canvas/board-layout";
-import {
-  canSpawnChildFrom,
-  isEmptySpawnSlot,
-  spawnChildAsset,
-} from "@/lib/canvas/spawn-child-asset";
+import { shouldApplyNaturalImageSize } from "@/lib/canvas/generating-placeholder";
+import { isEmptySpawnSlot, shouldShowSpawnSlotLoading } from "@/lib/canvas/spawn-child-asset";
 import { useCanvasChromePalette } from "@/lib/canvas/use-canvas-chrome";
 import { discardAssetsInProject } from "@/lib/project/discard-assets";
 import { GeneratingArtworkFace } from "@/components/generating-artwork-face";
+import { ImplementationBadge } from "./implementation-badge";
 
 /** Lovart 式：图即 shape，轻圆角，无垫衬画框 */
 const PHOTO_RADIUS = 12;
@@ -65,11 +62,10 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: "已取消",
 };
 
-// @ts-expect-error TLShape union does not include custom shapes by design
-export class ImageAssetShapeUtil extends ShapeUtil<ImageAssetShape> {
-  static override type = "image-asset" as const;
+export class ImageAssetShapeUtil extends BaseBoxShapeUtil<ImageAssetShape> {
+  static type = "image-asset" as any;
 
-  static override props: RecordProps<ImageAssetShape> = {
+  static props: RecordProps<ImageAssetShape> = {
     w: T.number,
     h: T.number,
     assetId: T.string,
@@ -78,7 +74,7 @@ export class ImageAssetShapeUtil extends ShapeUtil<ImageAssetShape> {
     status: T.string,
   };
 
-  override getDefaultProps(): ImageAssetShape["props"] {
+  getDefaultProps(): ImageAssetShape["props"] {
     return {
       w: 200,
       h: 200,
@@ -89,40 +85,37 @@ export class ImageAssetShapeUtil extends ShapeUtil<ImageAssetShape> {
     };
   }
 
-  override getGeometry(shape: ImageAssetShape): Geometry2d {
-    const w = shape.props.w;
-    const h = shape.props.h;
-    const plusHit = new Rectangle2d({
-      x: w + 4,
-      y: Math.max(0, h / 2 - 18),
-      width: 40,
-      height: 36,
+  getGeometry(shape: ImageAssetShape): Geometry2d {
+    return new Rectangle2d({
+      width: shape.props.w,
+      height: shape.props.h,
       isFilled: true,
-      excludeFromShapeBounds: true,
-    });
-    return new Group2d({
-      children: [
-        new Rectangle2d({
-          width: w,
-          height: h,
-          isFilled: true,
-        }),
-        plusHit,
-      ],
     });
   }
 
-  override canResize = () => true;
-  override canEditInReadonly = () => false;
-  override hideRotateHandle = () => true;
-  override canBind = () => false;
-  override canDuplicate = () => false;
+  canResize = () => true;
+  isAspectRatioLocked = () => true;
+  canEditInReadonly = () => false;
+  hideRotateHandle = () => true;
+  canBind = () => false;
+  canDuplicate = () => false;
+  canDelete = () => true;
 
-  override component(shape: ImageAssetShape) {
+  onResize(shape: ImageAssetShape, info: TLResizeInfo<ImageAssetShape>) {
+    return resizeBox(shape, info);
+  }
+
+  // override onDoubleClick: custom double-click behavior for the asset shape
+  onDoubleClick(shape: ImageAssetShape) {
+    this.editor.select(shape.id);
+    this.editor.zoomToSelection({ animation: { duration: 220 } });
+  }
+
+  component(shape: ImageAssetShape) {
     return <ImageAssetShapeView shape={shape} />;
   }
 
-  override getIndicatorPath(shape: ImageAssetShape): Path2D | undefined {
+  getIndicatorPath(shape: ImageAssetShape): Path2D | undefined {
     if (typeof Path2D === "undefined") return undefined;
     const r = PHOTO_RADIUS;
     const w = shape.props.w;
@@ -194,30 +187,20 @@ function ImageAssetShapeView({ shape }: { shape: ImageAssetShape }) {
   const isFailed = statusKey === "failed" || statusKey === "cancelled";
   const isEmptySlot = asset ? isEmptySpawnSlot(asset) : !src;
   const agentRunBusy = useCanvasUiStore((s) => s.agentRunBusy);
-  /** 同家族有生图占位时，空子节点也显示 loading（避免干等丑卡片） */
-  const hasRelatedGenerating = useProjectStore((s) => {
-    if (!asset) return false;
-    const assets = s.projects[shape.props.projectId]?.assets ?? [];
-    return assets.some((a) => {
-      if ((a.status ?? "candidate") !== "generating") return false;
-      if (a.id === asset.id) return true;
-      if (a.parentAssetId === asset.id) return true;
-      if (asset.parentAssetId && a.parentAssetId === asset.parentAssetId) {
-        return true;
-      }
-      if (asset.parentAssetId && a.id === asset.parentAssetId) return true;
-      return false;
-    });
-  });
-  // 变体 / 侧栏生图也会写 generating 占位；空派生卡仅在同家族 generating 或 agent 忙时转圈
+  const imageJobBusy = useCanvasUiStore((s) => s.imageJobBusy);
+  const relatedAssets = useProjectStore(
+    (s) => s.projects[shape.props.projectId]?.assets ?? []
+  );
   const showLoading =
     isGenerating ||
-    (isEmptySlot &&
-      (hasRelatedGenerating || (agentRunBusy && Boolean(asset?.parentAssetId))));
-  const canRemovePlaceholder = isFailed || showLoading;
+    shouldShowSpawnSlotLoading({
+      asset,
+      assets: relatedAssets,
+      agentRunBusy,
+      imageJobBusy,
+    });
+  const canRemovePlaceholder = isFailed || showLoading || isEmptySlot;
   const showStatusChip = showLoading || isFailed;
-  const showSpawnPlus =
-    isSelected && !isMarkTarget && !showLoading && canSpawnChildFrom(asset);
   const statusStyle =
     c.status[
       (showLoading ? "generating" : statusKey) as keyof typeof c.status
@@ -244,7 +227,18 @@ function ImageAssetShapeView({ shape }: { shape: ImageAssetShape }) {
 
   const fitShapeToNaturalSize = useCallback(
     (naturalW: number, naturalH: number) => {
-      if (naturalW < 2 || naturalH < 2 || !src) return;
+      if (
+        !shouldApplyNaturalImageSize({
+          src,
+          naturalWidth: naturalW,
+          naturalHeight: naturalH,
+          currentWidth: asset?.width,
+          currentHeight: asset?.height,
+        }) ||
+        !src
+      ) {
+        return;
+      }
       const key = `${shape.id}:${src.slice(0, 64)}:${naturalW}x${naturalH}`;
       if (fittedNaturalKeyRef.current === key) return;
 
@@ -260,10 +254,10 @@ function ImageAssetShapeView({ shape }: { shape: ImageAssetShape }) {
       }
 
       fittedNaturalKeyRef.current = key;
-      editor.updateShapes([
+    editor.updateShapes([
         {
           id: shape.id,
-          type: "image-asset",
+          type: "image-asset" as any,
           props: { w, h },
         },
       ]);
@@ -378,41 +372,6 @@ function ImageAssetShapeView({ shape }: { shape: ImageAssetShape }) {
     upsertProject,
   ]);
 
-  const spawnChild = useCallback(() => {
-    const parent = asset;
-    if (!parent || !canSpawnChildFrom(parent)) return;
-    const project =
-      useProjectStore.getState().projects[shape.props.projectId];
-    if (!project) return;
-    const result = spawnChildAsset(project, parent.id);
-    if (!result) return;
-    upsertProject(result.project);
-    useCanvasUiStore.getState().offerComposerRef({
-      id: `from-asset-${parent.id}`,
-      label: (parent.prompt || "参考图").slice(0, 40),
-      src: parent.src,
-      width: parent.width || 1024,
-      height: parent.height || 1024,
-      source: "upload",
-      createdAt: new Date().toISOString(),
-      notes: `from-asset:${parent.id}`,
-    });
-    const childId = result.child.id;
-    window.setTimeout(() => {
-      const childShape = editor.getCurrentPageShapes().find((s) => {
-        if ((s.type as string) !== "image-asset") return false;
-        return (
-          (s as unknown as { props: { assetId: string } }).props.assetId ===
-          childId
-        );
-      });
-      if (childShape) {
-        editor.select(childShape.id);
-        editor.zoomToSelection({ animation: { duration: 180 } });
-      }
-    }, 180);
-  }, [asset, editor, shape.props.projectId, upsertProject]);
-
   return (
     <HTMLContainer
       id={shape.id}
@@ -425,11 +384,6 @@ function ImageAssetShapeView({ shape }: { shape: ImageAssetShape }) {
         (isDimmed ? " vad-artwork-photo--dimmed" : "") +
         (isEmptySlot ? " vad-artwork-photo--empty" : "")
       }
-      onDoubleClick={(event) => {
-        event.stopPropagation();
-        editor.select(shape.id);
-        editor.zoomToSelection({ animation: { duration: 220 } });
-      }}
       style={{
         width: shape.props.w,
         height: shape.props.h,
@@ -439,7 +393,7 @@ function ImageAssetShapeView({ shape }: { shape: ImageAssetShape }) {
         borderRadius: PHOTO_RADIUS,
         overflow: "visible",
         background: c.surfaceMuted,
-        border: isEmptySlot ? `1.5px dashed ${c.border}` : "none",
+        border: isEmptySlot && !showLoading ? `1.5px dashed ${c.border}` : "none",
         boxShadow: isMarkTarget
           ? `0 0 0 2px #EF4444, ${c.cardShadow}`
           : isSelected
@@ -447,7 +401,7 @@ function ImageAssetShapeView({ shape }: { shape: ImageAssetShape }) {
             : isEmptySlot
               ? "none"
               : c.cardShadow,
-        pointerEvents: "all",
+        pointerEvents: "none",
         opacity: isFailed ? 0.78 : 1,
       }}
     >
@@ -467,6 +421,7 @@ function ImageAssetShapeView({ shape }: { shape: ImageAssetShape }) {
           borderRadius: PHOTO_RADIUS,
           cursor: isMarking ? "crosshair" : undefined,
           touchAction: isMarking ? "none" : undefined,
+          pointerEvents: isMarking ? "all" : "none",
         }}
       >
         {showLoading ? (
@@ -570,10 +525,12 @@ function ImageAssetShapeView({ shape }: { shape: ImageAssetShape }) {
             onPointerDown={(event) => {
               event.stopPropagation();
               event.preventDefault();
+              editor.markEventAsHandled(event);
             }}
-            onClick={(event) => {
+            onPointerUp={(event) => {
               event.stopPropagation();
               event.preventDefault();
+              editor.markEventAsHandled(event);
               removeAsset();
             }}
             style={{
@@ -589,6 +546,7 @@ function ImageAssetShapeView({ shape }: { shape: ImageAssetShape }) {
               background: "rgba(15,15,18,0.72)",
               color: "#FECACA",
               cursor: "pointer",
+              pointerEvents: "auto",
             }}
             aria-label="移除占位"
             title="移除"
@@ -664,45 +622,10 @@ function ImageAssetShapeView({ shape }: { shape: ImageAssetShape }) {
               : (STATUS_LABEL[statusKey] ?? statusKey)}
           </div>
         ) : null}
+        {!showLoading && !isFailed && asset?.source !== "materialized" ? (
+          <ImplementationBadge projectId={shape.props.projectId} assetId={shape.props.assetId} />
+        ) : null}
       </div>
-      {showSpawnPlus ? (
-        <button
-          type="button"
-          className="vad-artwork-spawn-plus"
-          aria-label="添加图片节点"
-          title="添加图片节点"
-          onPointerDown={(event) => {
-            event.stopPropagation();
-            event.preventDefault();
-          }}
-          onClick={(event) => {
-            event.stopPropagation();
-            event.preventDefault();
-            spawnChild();
-          }}
-          style={{
-            position: "absolute",
-            left: "100%",
-            top: "50%",
-            marginLeft: 10,
-            transform: "translateY(-50%)",
-            width: 28,
-            height: 28,
-            display: "grid",
-            placeItems: "center",
-            borderRadius: 999,
-            border: `1.5px solid ${c.border}`,
-            background: c.surface,
-            color: c.text,
-            boxShadow: c.cardShadow,
-            cursor: "pointer",
-            zIndex: 5,
-            pointerEvents: "all",
-          }}
-        >
-          <Plus size={16} strokeWidth={2} />
-        </button>
-      ) : null}
     </HTMLContainer>
   );
 }
@@ -733,4 +656,3 @@ export function makeImageAssetShape(
     },
   };
 }
-

@@ -21,7 +21,6 @@ import "@/lib/canvas/tldraw-indicator-path";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { nanoid } from "nanoid";
 import {
   Tldraw,
   useEditor,
@@ -40,8 +39,10 @@ import {
   Redo2,
   Rows2,
   Spline,
+  Type,
   Undo2,
 } from "lucide-react";
+import { isCanvasGridVisible } from "@/lib/canvas/grid-style";
 import { useCanvasUiStore } from "@/store/canvas-ui-store";
 import type { CanvasSnapshot, ProjectFile } from "@/lib/project/schema";
 import { CanvasPageShapeUtil } from "./canvas-page-shape";
@@ -50,6 +51,8 @@ import {
   ReferenceCardShapeUtil,
   makeReferenceCardShape,
 } from "./reference-card-shape";
+import { TextNoteShapeUtil, makeTextNoteShape } from "./text-note-shape";
+import { CiteSpawnMenu, CitePortOverlay } from "./cite-spawn-menu";
 import { FlowArrowShapeUtil } from "./flow-arrow-shape";
 import {
   AssetLinkShapeUtil,
@@ -78,13 +81,28 @@ import { resolveTargetId } from "@/lib/targets/resolve";
 import { CanvasSelectionBridge } from "./canvas-selection-bridge";
 import { CanvasArtworkStrip } from "./canvas-artwork-strip";
 import { CanvasFailedCleanup } from "./canvas-failed-cleanup";
+import { CanvasAppearanceMenu } from "./canvas-appearance-menu";
 import { SelectionFloatingBar } from "./selection-floating-bar";
 import { useCanvasSelectionStore } from "@/store/canvas-selection-store";
 import { useCanvasBoardStore } from "@/store/canvas-board-store";
 import { useProjectStore } from "@/store/project-store";
-import type { ReferenceAsset } from "@/lib/project/assets-schema";
 import { computeBoardLayout, displaySizeForImageAsset, buildAssetFamilies, PARENT_CHILD_GAP } from "@/lib/canvas/board-layout";
+import {
+  applyUploadedImageToProject,
+  buildUploadedImageAsset,
+  isCanvasImageFile,
+} from "@/lib/project/canvas-image-upload";
+import {
+  TEXT_NOTE_DEFAULT_H,
+  TEXT_NOTE_DEFAULT_W,
+  noteKindLabel,
+  persistCanvasNoteLayout,
+  placeCitedNode,
+  spawnStandaloneNote,
+} from "@/lib/canvas/canvas-notes";
 import { isCanvasVisibleAsset, isCanvasVisibleReference } from "@/lib/project/asset-visibility";
+import { discardAssetsInProject } from "@/lib/project/discard-assets";
+import { imageAssetIdsFromRemovedRecords } from "@/lib/canvas/discard-removed-image-shapes";
 import {
   ensureShapeUtilIndicatorPath,
   guardEditorIndicatorPath,
@@ -109,6 +127,7 @@ const SHAPE_UTILS = [
   CanvasPageShapeUtil,
   ImageAssetShapeUtil,
   ReferenceCardShapeUtil,
+  TextNoteShapeUtil,
   FlowArrowShapeUtil,
   AssetLinkShapeUtil,
   FamilyBoardShapeUtil,
@@ -120,6 +139,10 @@ const SHAPE_UTILS = [
 for (const Util of SHAPE_UTILS) {
   ensureShapeUtilIndicatorPath(Util);
 }
+
+const TLDRAW_COMPONENTS = {
+  InFrontOfTheCanvas: CitePortOverlay,
+};
 
 export function TldrawCanvas({
   project,
@@ -188,6 +211,32 @@ export function TldrawCanvas({
         { scope: "document" }
       );
 
+      const stopUserDeleteListen = editor.store.listen(
+        (entry) => {
+          if (syncingRef.current) return;
+          const ids = imageAssetIdsFromRemovedRecords(
+            (entry.changes?.removed ?? {}) as Record<
+              string,
+              {
+                typeName?: string;
+                type?: string;
+                props?: { assetId?: unknown };
+              }
+            >
+          );
+          if (ids.length === 0) return;
+          const live = projectRef.current;
+          if (!live) return;
+          const latest =
+            useProjectStore.getState().projects[live.id] ?? live;
+          const next = discardAssetsInProject(latest, ids);
+          if (next === latest) return;
+          projectRef.current = next;
+          useProjectStore.getState().upsert(next);
+        },
+        { scope: "document", source: "user" }
+      );
+
       const cleanup = () => {
         if (saveTimerRef.current !== null) {
           window.clearTimeout(saveTimerRef.current);
@@ -195,6 +244,7 @@ export function TldrawCanvas({
         }
         saveCanvasSnapshot(editor, projectRef.current, lastSnapshotJsonRef);
         stopStoreListen();
+        stopUserDeleteListen();
         useCanvasSelectionStore.getState().clear();
         if (editorRef.current === editor) {
           editorRef.current = null;
@@ -321,15 +371,15 @@ export function TldrawCanvas({
     ? `vad-canvas-v3-${project.id}`
     : "vad-canvas-v3-empty";
 
-  // ── C4: ImagePane 拖入候选图 → 转 page 内 image node ─────────────
+  // ── 本地图片拖入画布：落成可引用的 image-asset（捕获阶段抢在 tldraw 之前）
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    // 必须 preventDefault 才能触发 onDrop
     const hasVadAsset = e.dataTransfer.types.includes("application/x-vad-asset");
-    const hasImageFile = Array.from(e.dataTransfer.items).some(
-      (item) => item.kind === "file" && item.type.startsWith("image/")
+    const hasFile = Array.from(e.dataTransfer.items).some(
+      (item) => item.kind === "file"
     );
-    if (hasVadAsset || hasImageFile) {
+    if (hasVadAsset || hasFile) {
       e.preventDefault();
+      e.stopPropagation();
       e.dataTransfer.dropEffect = "copy";
     }
   }, []);
@@ -344,17 +394,55 @@ export function TldrawCanvas({
     const screenPoint = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     const pagePoint = editor.screenToPage(screenPoint);
 
-    const imageFile = Array.from(e.dataTransfer.files).find((file) =>
-      file.type.startsWith("image/")
+    const imageFiles = Array.from(e.dataTransfer.files).filter((file) =>
+      isCanvasImageFile(file)
     );
-    if (imageFile) {
+    if (imageFiles.length > 0) {
       e.preventDefault();
-      const reference = await fileToReferenceAsset(imageFile);
-      const nextProject: ProjectFile = {
-        ...proj,
-        references: [...(proj.references ?? []), reference],
-        updatedAt: new Date().toISOString(),
-      };
+      e.stopPropagation();
+      const latest =
+        useProjectStore.getState().projects[proj.id] ?? proj;
+      let nextProject = latest;
+      let cursorX = pagePoint.x;
+      let lastShapeId: ReturnType<typeof makeImageAssetShape>["id"] | undefined;
+      for (const imageFile of imageFiles) {
+        const src = await readFileAsDataUrl(imageFile);
+        const size = await readImageSize(src);
+        const asset = buildUploadedImageAsset({
+          fileName: imageFile.name,
+          src,
+          width: size.width,
+          height: size.height,
+        });
+        nextProject = applyUploadedImageToProject(nextProject, asset);
+        const { w } = displaySizeForImageAsset(asset.width, asset.height);
+        const existing = editor.getCurrentPageShapes().find((s) => {
+          if ((s.type as string) !== "image-asset") return false;
+          return (
+            (s as unknown as { props: { assetId: string } }).props.assetId ===
+            asset.id
+          );
+        });
+        if (!existing) {
+          const shape = makeImageAssetShape(
+            asset.id,
+            proj.id,
+            asset.prompt,
+            asset.status ?? "candidate",
+            asset.width,
+            asset.height,
+            cursorX,
+            pagePoint.y
+          );
+          editor.createShapes(
+            [shape] as unknown as Parameters<typeof editor.createShapes>[0]
+          );
+          lastShapeId = shape.id;
+        }
+        cursorX += w + 24;
+      }
+      projectRef.current = nextProject;
+      if (lastShapeId) editor.select(lastShapeId);
       useProjectStore.getState().upsert(nextProject);
       return;
     }
@@ -403,6 +491,8 @@ export function TldrawCanvas({
   return (
     <div
       className="vad-canvas-surface relative h-full w-full"
+      onDragOverCapture={handleDragOver}
+      onDropCapture={handleDrop}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
@@ -411,11 +501,13 @@ export function TldrawCanvas({
         shapeUtils={SHAPE_UTILS}
         onMount={handleMount}
         hideUi
+        components={TLDRAW_COMPONENTS}
         {...(process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY
           ? { licenseKey: process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY }
           : {})}
       >
-        <CanvasToolbar />
+        <CanvasToolbar projectId={project?.id} />
+        <CiteSpawnMenu />
         <SelectionFloatingBar
           onPrompt={onPrompt}
           onRunPrompt={onRunPrompt}
@@ -444,8 +536,9 @@ const CANVAS_TOOLS = [
   { id: "draw", label: "画笔 · 自由标注 (D)", Icon: Pencil },
 ] as const;
 
-function CanvasToolbar() {
+function CanvasToolbar({ projectId }: { projectId?: string }) {
   const editor = useEditor();
+  const upsertProject = useProjectStore((s) => s.upsert);
   const currentTool = useValue(
     "current tool",
     () => editor.getCurrentToolId(),
@@ -455,7 +548,7 @@ function CanvasToolbar() {
   const canRedo = useValue("can redo", () => editor.getCanRedo(), [editor]);
 
   return (
-    <div className="vad-canvas-toolbar absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 items-center gap-0.5 p-1.5">
+    <div className="vad-canvas-toolbar absolute bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-0.5 p-1.5">
       {CANVAS_TOOLS.map(({ id, label, Icon }) => (
         <button
           key={id}
@@ -477,6 +570,26 @@ function CanvasToolbar() {
 
       <button
         type="button"
+        data-tip="文本卡片 · 脚本 / 文案 / 规则"
+        aria-label="撤销"
+        onClick={() => {
+          if (!projectId) return;
+          const project = useProjectStore.getState().projects[projectId];
+          if (!project) return;
+          const vp = editor.getViewportPageBounds();
+          const x = vp.x + vp.w / 2 - TEXT_NOTE_DEFAULT_W / 2;
+          const y = vp.y + vp.h / 2 - TEXT_NOTE_DEFAULT_H / 2;
+          upsertProject(spawnStandaloneNote(project, { kind: "note", x, y }).project);
+        }}
+        className="vad-canvas-toolbar-btn grid size-9 place-items-center transition-colors duration-150"
+      >
+        <Type className="size-4" />
+      </button>
+
+      <span className="vad-canvas-toolbar-divider" aria-hidden />
+
+      <button
+        type="button"
         data-tip="撤销 (Ctrl+Z)"
         aria-label="撤销"
         disabled={!canUndo}
@@ -488,13 +601,17 @@ function CanvasToolbar() {
       <button
         type="button"
         data-tip="重做 (Ctrl+Shift+Z)"
-        aria-label="重做"
+        aria-label="撤销"
         disabled={!canRedo}
         onClick={() => editor.redo()}
         className="vad-canvas-toolbar-btn grid size-9 place-items-center transition-colors duration-150 disabled:cursor-default disabled:opacity-35"
       >
         <Redo2 className="size-4" />
       </button>
+
+      <span className="vad-canvas-toolbar-divider" aria-hidden />
+
+      <CanvasAppearanceMenu />
     </div>
   );
 }
@@ -510,10 +627,11 @@ function CanvasViewChrome() {
     () => editor.getSelectedShapeIds().length,
     [editor]
   );
-  const showGrid = useCanvasUiStore((s) => s.showCanvasGrid);
+  const canvasGridStyle = useCanvasUiStore((s) => s.canvasGridStyle);
   const toggleGrid = useCanvasUiStore((s) => s.toggleCanvasGrid);
   const showMinimap = useCanvasUiStore((s) => s.showCanvasMinimap);
   const toggleMinimap = useCanvasUiStore((s) => s.toggleCanvasMinimap);
+  const gridOn = isCanvasGridVisible(canvasGridStyle);
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
   const [slotEl, setSlotEl] = useState<HTMLElement | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -540,7 +658,7 @@ function CanvasViewChrome() {
           type="button"
           data-tip="缩放至全部内容"
           data-tip-bottom=""
-          aria-label="缩放至全部内容"
+        aria-label="撤销"
           onClick={() => editor.zoomToFit({ animation: { duration: 180 } })}
           className="vad-canvas-view-btn"
         >
@@ -551,9 +669,9 @@ function CanvasViewChrome() {
 
         <button
           type="button"
-          data-tip="缩小"
+          data-tip="缩放至全部内容"
           data-tip-bottom=""
-          aria-label="缩小"
+        aria-label="撤销"
           onClick={() =>
             editor.zoomOut(center(), { animation: { duration: 120 } })
           }
@@ -615,9 +733,9 @@ function CanvasViewChrome() {
 
         <button
           type="button"
-          data-tip="放大"
+          data-tip="缩放至全部内容"
           data-tip-bottom=""
-          aria-label="放大"
+        aria-label="撤销"
           onClick={() =>
             editor.zoomIn(center(), { animation: { duration: 120 } })
           }
@@ -630,14 +748,14 @@ function CanvasViewChrome() {
 
         <button
           type="button"
-          data-tip={showGrid ? "隐藏网格" : "显示网格"}
+          data-tip={gridOn ? "隐藏网格" : "显示网格"}
           data-tip-bottom=""
-          aria-label={showGrid ? "隐藏网格" : "显示网格"}
-          aria-pressed={showGrid}
+          aria-label={gridOn ? "隐藏网格" : "显示网格"}
+          aria-pressed={gridOn}
           onClick={toggleGrid}
           className={
             "vad-canvas-view-btn" +
-            (showGrid ? " vad-canvas-view-btn--active" : "")
+            (gridOn ? " vad-canvas-view-btn--active" : "")
           }
         >
           <Grid2x2 className="size-3.5" />
@@ -664,7 +782,7 @@ function CanvasViewChrome() {
           type="button"
           data-tip={showMinimap ? "隐藏小地图" : "显示小地图"}
           data-tip-bottom=""
-          aria-label="小地图"
+          aria-label={showMinimap ? "隐藏小地图" : "显示小地图"}
           aria-pressed={showMinimap}
           onClick={toggleMinimap}
           className={
@@ -716,6 +834,7 @@ function syncProjectToEditor(
       .filter(isCanvasVisibleReference)
       .map((r) => r.id)
   );
+  const noteIds = new Set((project.canvasNotes ?? []).map((n) => n.id));
 
   // 网页结构框 / 页间箭头 / 旧交付卡：一律清除
   const stale = customShapes
@@ -737,10 +856,19 @@ function syncProjectToEditor(
         const props = (s as unknown as { props: { referenceId: string } }).props;
         return !referenceIds.has(props.referenceId);
       }
+      if (type === "text-note") {
+        const props = (s as unknown as { props: { noteId: string } }).props;
+        return !noteIds.has(props.noteId);
+      }
       if (type === "asset-link") {
         const props = (
-          s as unknown as { props: { fromAssetId: string; toAssetId: string } }
+          s as unknown as {
+            props: { fromAssetId: string; toAssetId: string; toNoteId?: string };
+          }
         ).props;
+        if (props.toNoteId) {
+          return !assetIds.has(props.fromAssetId) || !noteIds.has(props.toNoteId);
+        }
         return (
           !assetIds.has(props.fromAssetId) || !assetIds.has(props.toAssetId)
         );
@@ -809,18 +937,24 @@ function syncProjectToEditor(
 
     // 新派生卡（变体/框选重绘/+ 空节点）落在父素材右侧；多子纵向错开
     if (!existing && !force && asset.parentAssetId) {
-      const parent = placedMeta.get(asset.parentAssetId);
-      if (parent) {
-        const siblingIndex = [...placedMeta.keys()].filter((id) => {
-          if (id === asset.parentAssetId) return false;
-          const sib = activeAssets.find((a) => a.id === id);
-          return sib?.parentAssetId === asset.parentAssetId;
-        }).length;
-        const childH =
-          board.assetById[asset.id]?.h ??
-          displaySizeForImageAsset(asset.width, asset.height).h;
-        ax = parent.x + parent.w + PARENT_GAP;
-        ay = parent.y + siblingIndex * (childH + 24);
+      const primed = useCanvasUiStore.getState().takeSpawnPoint();
+      if (primed) {
+        ax = primed.x;
+        ay = primed.y;
+      } else {
+        const parent = placedMeta.get(asset.parentAssetId);
+        if (parent) {
+          const siblingIndex = [...placedMeta.keys()].filter((id) => {
+            if (id === asset.parentAssetId) return false;
+            const sib = activeAssets.find((a) => a.id === id);
+            return sib?.parentAssetId === asset.parentAssetId;
+          }).length;
+          const childH =
+            board.assetById[asset.id]?.h ??
+            displaySizeForImageAsset(asset.width, asset.height).h;
+          ax = parent.x + parent.w + PARENT_GAP;
+          ay = parent.y + siblingIndex * (childH + 24);
+        }
       }
     }
 
@@ -887,6 +1021,7 @@ function syncProjectToEditor(
     }
   });
 
+  syncCanvasNotes(editor, project, placedMeta, force);
   syncAssetLinks(editor, project);
   syncFamilyBoards(editor, project);
   restackCanvasLayers(editor);
@@ -898,28 +1033,113 @@ function syncProjectToEditor(
   }
 }
 
+function syncCanvasNotes(
+  editor: Editor,
+  project: ProjectFile,
+  placedMeta: Map<string, { x: number; y: number; w: number }>,
+  force: boolean
+) {
+  const notes = project.canvasNotes ?? [];
+  const shapes = editor.getCurrentPageShapes();
+  const existingById = new Map(
+    shapes
+      .filter((s) => (s.type as string) === "text-note")
+      .map((s) => [
+        (s as unknown as { props: { noteId: string } }).props.noteId,
+        s,
+      ])
+  );
+
+  notes.forEach((note) => {
+    const existing = existingById.get(note.id);
+    let ax = force ? (note.x ?? 0) : (existing?.x ?? note.x ?? 0);
+    let ay = force ? (note.y ?? 0) : (existing?.y ?? note.y ?? 0);
+    if (!existing && note.parentAssetId) {
+      const parent = placedMeta.get(note.parentAssetId);
+      if (parent) {
+        const siblingIndex = notes.filter(
+          (item) =>
+            item.parentAssetId === note.parentAssetId &&
+            item.createdAt < note.createdAt
+        ).length;
+        const pos = placeCitedNode(
+          { ...parent, h: parent.w },
+          siblingIndex,
+          note.h ?? TEXT_NOTE_DEFAULT_H
+        );
+        ax = note.x ?? pos.x;
+        ay = note.y ?? pos.y;
+      }
+    }
+    const next = makeTextNoteShape({
+      noteId: note.id,
+      projectId: project.id,
+      x: ax,
+      y: ay,
+      w: existing
+        ? (existing as unknown as { props: { w: number } }).props.w
+        : (note.w ?? TEXT_NOTE_DEFAULT_W),
+      h: existing
+        ? (existing as unknown as { props: { h: number } }).props.h
+        : (note.h ?? TEXT_NOTE_DEFAULT_H),
+    });
+    if (existing) {
+      updateCustomShapes(editor, [
+        {
+          id: existing.id,
+          type: "text-note",
+          x: ax,
+          y: ay,
+          props: next.props,
+        },
+      ]);
+    } else {
+      createCustomShapes(editor, [next]);
+    }
+  });
+}
+
 /** 按 parentAssetId 维护父图 → 子素材连线 */
 function syncAssetLinks(editor: Editor, project: ProjectFile) {
   const assets = (project.assets ?? []).filter(isCanvasVisibleAsset);
   const byId = new Map(assets.map((a) => [a.id, a]));
   const shapes = editor.getCurrentPageShapes();
   const assetBoxes = new Map<string, LinkEndpointBox>();
+  const noteBoxes = new Map<string, LinkEndpointBox>();
   for (const shape of shapes) {
-    if ((shape.type as string) !== "image-asset") continue;
-    const props = shape as unknown as {
-      props: { assetId: string; w: number; h: number };
-    };
-    assetBoxes.set(props.props.assetId, {
-      x: shape.x,
-      y: shape.y,
-      w: props.props.w,
-      h: props.props.h,
-    });
+    const type = shape.type as string;
+    if (type === "image-asset") {
+      const props = shape as unknown as {
+        props: { assetId: string; w: number; h: number };
+      };
+      assetBoxes.set(props.props.assetId, {
+        x: shape.x,
+        y: shape.y,
+        w: props.props.w,
+        h: props.props.h,
+      });
+    }
+    if (type === "text-note") {
+      const props = shape as unknown as {
+        props: { noteId: string; w: number; h: number };
+      };
+      noteBoxes.set(props.props.noteId, {
+        x: shape.x,
+        y: shape.y,
+        w: props.props.w,
+        h: props.props.h,
+      });
+    }
   }
 
   const desired = new Map<
     string,
-    { fromAssetId: string; toAssetId: string; label: string }
+    {
+      fromAssetId: string;
+      toAssetId: string;
+      toNoteId?: string;
+      label: string;
+    }
   >();
   for (const child of assets) {
     const parentId = child.parentAssetId;
@@ -931,6 +1151,16 @@ function syncAssetLinks(editor: Editor, project: ProjectFile) {
       label: linkLabelForAsset(child),
     });
   }
+  for (const note of project.canvasNotes ?? []) {
+    if (!note.parentAssetId || !assetBoxes.has(note.parentAssetId)) continue;
+    if (!noteBoxes.has(note.id)) continue;
+    desired.set(`${note.parentAssetId}→note:${note.id}`, {
+      fromAssetId: note.parentAssetId,
+      toAssetId: "",
+      toNoteId: note.id,
+      label: noteKindLabel(note.kind),
+    });
+  }
 
   const existingLinks = shapes.filter(
     (s) => (s.type as string) === "asset-link"
@@ -938,17 +1168,27 @@ function syncAssetLinks(editor: Editor, project: ProjectFile) {
   const existingByKey = new Map<string, (typeof shapes)[number]>();
   for (const link of existingLinks) {
     const props = (
-      link as unknown as { props: { fromAssetId: string; toAssetId: string } }
+      link as unknown as {
+        props: { fromAssetId: string; toAssetId: string; toNoteId?: string };
+      }
     ).props;
-    existingByKey.set(`${props.fromAssetId}→${props.toAssetId}`, link);
+    const key = props.toNoteId
+      ? `${props.fromAssetId}→note:${props.toNoteId}`
+      : `${props.fromAssetId}→${props.toAssetId}`;
+    existingByKey.set(key, link);
   }
 
   const toDelete = existingLinks
     .filter((link) => {
       const props = (
-        link as unknown as { props: { fromAssetId: string; toAssetId: string } }
+        link as unknown as {
+          props: { fromAssetId: string; toAssetId: string; toNoteId?: string };
+        }
       ).props;
-      return !desired.has(`${props.fromAssetId}→${props.toAssetId}`);
+      const key = props.toNoteId
+        ? `${props.fromAssetId}→note:${props.toNoteId}`
+        : `${props.fromAssetId}→${props.toAssetId}`;
+      return !desired.has(key);
     })
     .map((l) => l.id);
   if (toDelete.length) editor.deleteShapes(toDelete);
@@ -965,10 +1205,13 @@ function syncAssetLinks(editor: Editor, project: ProjectFile) {
 
   for (const [key, edge] of desired) {
     const from = assetBoxes.get(edge.fromAssetId)!;
-    const to = assetBoxes.get(edge.toAssetId)!;
+    const to = edge.toNoteId
+      ? noteBoxes.get(edge.toNoteId)!
+      : assetBoxes.get(edge.toAssetId)!;
     const next = makeAssetLinkShape({
       fromAssetId: edge.fromAssetId,
       toAssetId: edge.toAssetId,
+      toNoteId: edge.toNoteId,
       label: edge.label,
       from,
       to,
@@ -1138,7 +1381,7 @@ function restackCanvasLayers(editor: Editor) {
   const contentIds = shapes
     .filter((s) => {
       const type = s.type as string;
-      return type === "image-asset" || type === "reference-card";
+      return type === "image-asset" || type === "reference-card" || type === "text-note";
     })
     .map((s) => s.id);
 
@@ -1267,6 +1510,7 @@ function zoomToBoardPrimary(editor: Editor, project: ProjectFile) {
       const props = (s as unknown as { props: { referenceId: string } }).props;
       return referenceIdSet.has(props.referenceId);
     }
+    if (type === "text-note") return true;
     return false;
   });
 
@@ -1332,11 +1576,21 @@ function restoreCanvasSnapshot(
     }
     if (type === "asset-link") {
       const fromId = (
-        shape as { props?: { fromAssetId?: string; toAssetId?: string } }
+        shape as { props?: { fromAssetId?: string; toAssetId?: string; toNoteId?: string } }
       ).props?.fromAssetId;
+      const toNoteId = (
+        shape as { props?: { toNoteId?: string } }
+      ).props?.toNoteId;
       const toId = (
-        shape as { props?: { fromAssetId?: string; toAssetId?: string } }
+        shape as { props?: { toAssetId?: string } }
       ).props?.toAssetId;
+      if (toNoteId) {
+        return Boolean(
+          fromId &&
+            visibleAssetIds.has(fromId) &&
+            (project?.canvasNotes ?? []).some((n) => n.id === toNoteId)
+        );
+      }
       return Boolean(
         fromId &&
           toId &&
@@ -1398,10 +1652,23 @@ function saveCanvasSnapshot(
           ).props.referenceId;
           return visibleReferenceIds.has(referenceId);
         }
+        if (type === "text-note") {
+          const noteId = (shape as unknown as { props: { noteId: string } }).props
+            .noteId;
+          return (latestForSnap.canvasNotes ?? []).some((n) => n.id === noteId);
+        }
         if (type === "asset-link") {
           const props = shape as unknown as {
-            props: { fromAssetId: string; toAssetId: string };
+            props: { fromAssetId: string; toAssetId: string; toNoteId?: string };
           };
+          if (props.props.toNoteId) {
+            return (
+              visibleAssetIds.has(props.props.fromAssetId) &&
+              (latestForSnap.canvasNotes ?? []).some(
+                (n) => n.id === props.props.toNoteId
+              )
+            );
+          }
           return (
             visibleAssetIds.has(props.props.fromAssetId) &&
             visibleAssetIds.has(props.props.toAssetId)
@@ -1427,6 +1694,17 @@ function saveCanvasSnapshot(
     ...latestForSnap,
     updatedAt: snapshot.updatedAt,
     canvasSnapshot: snapshot,
+    canvasNotes: persistCanvasNoteLayout(
+      latestForSnap.canvasNotes,
+      editor.getCurrentPageShapes().map((shape) => ({
+        type: String(shape.type),
+        x: shape.x,
+        y: shape.y,
+        props: (shape as unknown as {
+          props: { noteId?: string; w?: number; h?: number };
+        }).props,
+      }))
+    ),
   });
 }
 
@@ -1435,6 +1713,7 @@ function isVadShapeType(type: string): boolean {
     type === "canvas-page" ||
     type === "image-asset" ||
     type === "reference-card" ||
+    type === "text-note" ||
     type === "flow-arrow" ||
     type === "asset-link" ||
     type === "family-board" ||
@@ -1458,6 +1737,7 @@ function collectDuplicateVadShapeIds(
   const bestAsset = new Map<string, Entry>();
   const bestRef = new Map<string, Entry>();
   const bestBoard = new Map<string, Entry>();
+  const bestNote = new Map<string, Entry>();
   const drop: Entry["id"][] = [];
 
   for (const shape of shapes) {
@@ -1505,6 +1785,25 @@ function collectDuplicateVadShapeIds(
       continue;
     }
 
+    if (type === "text-note") {
+      const noteId = (shape as unknown as { props: { noteId: string } }).props
+        .noteId;
+      if (!noteId) {
+        drop.push(shape.id);
+        continue;
+      }
+      const prev = bestNote.get(noteId);
+      if (!prev) {
+        bestNote.set(noteId, { id: shape.id, area });
+      } else if (area > prev.area) {
+        drop.push(prev.id);
+        bestNote.set(noteId, { id: shape.id, area });
+      } else {
+        drop.push(shape.id);
+      }
+      continue;
+    }
+
     if (type === "family-board") {
       const rootId = (
         shape as unknown as { props: { rootAssetId: string } }
@@ -1546,20 +1845,6 @@ function updateCustomShapes(
   editor.updateShapes(
     shapes as unknown as Parameters<typeof editor.updateShapes>[0]
   );
-}
-
-async function fileToReferenceAsset(file: File): Promise<ReferenceAsset> {
-  const src = await readFileAsDataUrl(file);
-  const size = await readImageSize(src);
-  return {
-    id: nanoid(),
-    label: file.name || "Uploaded reference",
-    src,
-    width: size.width,
-    height: size.height,
-    source: "upload",
-    createdAt: new Date().toISOString(),
-  };
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {

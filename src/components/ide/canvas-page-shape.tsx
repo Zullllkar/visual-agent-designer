@@ -1,4 +1,5 @@
 "use client";
+import { createShapeId, type RecordProps, type TLBaseShape } from "@/lib/tldraw-compat";
 
 /**
  * CanvasPage Shape (B2)
@@ -19,9 +20,6 @@ import {
   Rectangle2d,
   ShapeUtil,
   T,
-  createShapeId,
-  type RecordProps,
-  type TLBaseShape,
 } from "tldraw";
 import { CanvasSvg } from "@/lib/canvas/svg-renderer";
 import type { CanvasNode, CanvasPage } from "@/lib/canvas/schema";
@@ -43,14 +41,12 @@ export type CanvasPageShape = TLBaseShape<
   }
 >;
 
-// tldraw 5.x 的 ShapeUtil generic 约束是 `Shape extends TLShape`，而 TLShape
-// 是内置 shape 的 union（不包含自定义 shape）。官方文档示例同样在此处需要
-// 一个 ts-expect-error。运行期一切正常。
-// @ts-expect-error TLShape union does not include custom shapes by design
+// tldraw 5.x 的 ShapeUtil generic 约束是 `Shape extends TLShape`；当前类型
+// 环境可正常接收这里的自定义 shape，不再需要 ts-expect-error。
 export class CanvasPageShapeUtil extends ShapeUtil<CanvasPageShape> {
-  static override type = "canvas-page" as const;
+  static type = "canvas-page" as any;
 
-  static override props: RecordProps<CanvasPageShape> = {
+  static props: RecordProps<CanvasPageShape> = {
     w: T.number,
     h: T.number,
     pageId: T.string,
@@ -58,7 +54,7 @@ export class CanvasPageShapeUtil extends ShapeUtil<CanvasPageShape> {
     serializedPage: T.string,
   };
 
-  override getDefaultProps(): CanvasPageShape["props"] {
+  getDefaultProps(): CanvasPageShape["props"] {
     return {
       w: 390,
       h: 844,
@@ -74,7 +70,7 @@ export class CanvasPageShapeUtil extends ShapeUtil<CanvasPageShape> {
   }
 
   /** 几何：一个矩形（填充=true 让点击命中整个内部） */
-  override getGeometry(shape: CanvasPageShape): Rectangle2d {
+  getGeometry(shape: CanvasPageShape): Rectangle2d {
     const { w, h } = this.getActualDimensions(shape);
     return new Rectangle2d({
       width: w,
@@ -84,12 +80,12 @@ export class CanvasPageShapeUtil extends ShapeUtil<CanvasPageShape> {
   }
 
   // 选择 / 可编辑性控制（只读展示为主，允许拖拽）
-  override canResize = () => false;
-  override canEditInReadonly = () => false;
-  override hideRotateHandle = () => true;
-  override canBind = () => false;
+  canResize = () => false;
+  canEditInReadonly = () => false;
+  hideRotateHandle = () => true;
+  canBind = () => false;
 
-  override component(shape: CanvasPageShape) {
+  component(shape: CanvasPageShape) {
     return <CanvasPageShapeComponent shape={shape} />;
   }
 
@@ -98,7 +94,7 @@ export class CanvasPageShapeUtil extends ShapeUtil<CanvasPageShape> {
    * 检查 typeof Path2D 防止 SSR / 服务端意外调用（本 shape util
    * 只在 client 使用，但加条防御不亏）。
    */
-  override getIndicatorPath(shape: CanvasPageShape): Path2D | undefined {
+  getIndicatorPath(shape: CanvasPageShape): Path2D | undefined {
     if (typeof Path2D === "undefined") return undefined;
     const { w, h } = this.getActualDimensions(shape);
     const r = CARD_RADIUS;

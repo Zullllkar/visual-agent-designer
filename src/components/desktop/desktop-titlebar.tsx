@@ -49,7 +49,7 @@ export function DesktopTitlebar() {
         window.vadDesktop?.window("maximize");
       }}
     >
-      <div className="desktop-titlebar-left" data-no-drag>
+      <div className="desktop-titlebar-left">
         <Link href="/" className="desktop-titlebar-logo" title="回到首页">
           <VadMark size={18} />
           <span>Vibeboard</span>
@@ -60,6 +60,7 @@ export function DesktopTitlebar() {
               key={item.id}
               type="button"
               className="desktop-titlebar-menu"
+              data-no-drag
               onClick={(event) => popup(item.id, event)}
             >
               {item.label}
@@ -70,10 +71,9 @@ export function DesktopTitlebar() {
 
       <div
         className="desktop-titlebar-center"
-        {...(!atHome ? { "data-no-drag": true } : {})}
       >
         {!atHome ? (
-          <Link href={projectId ? `/projects/${projectId}` : "/"} className="desktop-titlebar-doc">
+          <Link href={projectId ? `/projects/${projectId}` : "/"} className="desktop-titlebar-doc" data-no-drag>
             <span className="desktop-titlebar-title">{title}</span>
             {targetLabel ? (
               <span className="desktop-titlebar-target">{targetLabel}</span>
@@ -82,10 +82,11 @@ export function DesktopTitlebar() {
         ) : null}
       </div>
 
-      <div className="desktop-titlebar-actions" data-no-drag>
+      <div className="desktop-titlebar-actions">
         <button
           type="button"
           className="desktop-titlebar-icon"
+          data-no-drag
           aria-label="打开设置"
           onClick={() => openSettings()}
         >

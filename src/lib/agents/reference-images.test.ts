@@ -3,6 +3,7 @@ import {
   appendReferenceStyleHint,
   collectProjectReferenceImages,
   groundPromptToCitedReferences,
+  resolveCitedVisualAsset,
 } from "./reference-images";
 import type { ProjectFile } from "@/lib/project/schema";
 import { parsePageReference } from "./orchestrator-planner";
@@ -133,6 +134,160 @@ describe("collectProjectReferenceImages", () => {
     expect(collected.srcs).toEqual(["/api/assets/p1/assets/xoptr9m4W3.png"]);
     expect(collected.parentAssetId).toBe("xoptr9m4W3");
     expect(collected.exclusive).toBe(true);
+  });
+
+  it("uses the connected parent when citing an empty spawned child, not the latest generated image", () => {
+    const project = {
+      ...projectWithRefs([
+        {
+          id: "from-asset-latest",
+          label: "last.png",
+          src: "data:image/png;base64,last",
+          createdAt: "2026-09-17T08:00:00.000Z",
+        },
+      ]),
+      assets: [
+        {
+          id: "parent-shop",
+          prompt: "夜市摊位",
+          src: "data:image/png;base64,parent",
+          width: 1024,
+          height: 1024,
+          model: "test",
+          createdAt: "2026-09-17T04:00:00.000Z",
+          status: "candidate" as const,
+        },
+        {
+          id: "empty-child",
+          prompt: "",
+          src: "",
+          width: 1024,
+          height: 1024,
+          model: "test",
+          createdAt: "2026-09-17T07:00:00.000Z",
+          status: "candidate" as const,
+          parentAssetId: "parent-shop",
+        },
+        {
+          id: "latest-gen",
+          prompt: "另一张最新图",
+          src: "data:image/png;base64,last",
+          width: 1024,
+          height: 1024,
+          model: "test",
+          createdAt: "2026-09-17T08:00:00.000Z",
+          status: "candidate" as const,
+        },
+      ],
+    } as ProjectFile;
+    const collected = collectProjectReferenceImages(project, {
+      preferIds: ["empty-child"],
+    });
+    expect(collected.ids).toEqual(["parent-shop"]);
+    expect(collected.srcs).toEqual(["data:image/png;base64,parent"]);
+    expect(collected.parentAssetId).toBe("parent-shop");
+    expect(collected.exclusive).toBe(true);
+  });
+
+  it("keeps the connected parent as the reference even when the derived child already has an image", () => {
+    const project = {
+      ...projectWithRefs([]),
+      assets: [
+        {
+          id: "parent-shop",
+          prompt: "夜市摊位",
+          src: "data:image/png;base64,parent",
+          width: 1024,
+          height: 1024,
+          model: "test",
+          createdAt: "2026-09-17T04:00:00.000Z",
+          status: "candidate" as const,
+        },
+        {
+          id: "derived-child",
+          prompt: "提高对比度",
+          src: "data:image/png;base64,child",
+          width: 1024,
+          height: 1024,
+          model: "test",
+          createdAt: "2026-09-17T07:00:00.000Z",
+          status: "candidate" as const,
+          parentAssetId: "parent-shop",
+        },
+      ],
+    } as ProjectFile;
+    const collected = collectProjectReferenceImages(project, {
+      preferIds: ["derived-child"],
+    });
+    expect(collected.ids).toEqual(["parent-shop"]);
+    expect(collected.srcs).toEqual(["data:image/png;base64,parent"]);
+    expect(collected.parentAssetId).toBe("parent-shop");
+    expect(collected.exclusive).toBe(true);
+  });
+});
+
+describe("resolveCitedVisualAsset", () => {
+  it("walks from an empty child to the connected parent", () => {
+    const project = {
+      ...projectWithRefs([]),
+      assets: [
+        {
+          id: "parent-shop",
+          prompt: "夜市摊位",
+          src: "data:image/png;base64,parent",
+          width: 1024,
+          height: 1024,
+          model: "test",
+          createdAt: "2026-09-17T04:00:00.000Z",
+          status: "candidate" as const,
+        },
+        {
+          id: "empty-child",
+          prompt: "",
+          src: "",
+          width: 1024,
+          height: 1024,
+          model: "test",
+          createdAt: "2026-09-17T07:00:00.000Z",
+          status: "candidate" as const,
+          parentAssetId: "parent-shop",
+        },
+      ],
+    } as ProjectFile;
+    expect(resolveCitedVisualAsset(project, "empty-child")?.id).toBe("parent-shop");
+    expect(resolveCitedVisualAsset(project, "from-asset-empty-child")?.id).toBe(
+      "parent-shop"
+    );
+  });
+
+  it("prefers the linked parent over a derived child's own image", () => {
+    const project = {
+      ...projectWithRefs([]),
+      assets: [
+        {
+          id: "parent-shop",
+          prompt: "夜市摊位",
+          src: "data:image/png;base64,parent",
+          width: 1024,
+          height: 1024,
+          model: "test",
+          createdAt: "2026-09-17T04:00:00.000Z",
+          status: "candidate" as const,
+        },
+        {
+          id: "derived-child",
+          prompt: "提高对比度",
+          src: "data:image/png;base64,child",
+          width: 1024,
+          height: 1024,
+          model: "test",
+          createdAt: "2026-09-17T07:00:00.000Z",
+          status: "candidate" as const,
+          parentAssetId: "parent-shop",
+        },
+      ],
+    } as ProjectFile;
+    expect(resolveCitedVisualAsset(project, "derived-child")?.id).toBe("parent-shop");
   });
 });
 

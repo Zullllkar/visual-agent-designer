@@ -10,12 +10,14 @@ import { useProjectStore } from "@/store/project-store";
 import { isCanvasVisibleAsset } from "@/lib/project/asset-visibility";
 import { useCanvasUiStore } from "@/store/canvas-ui-store";
 import type { ImageAsset } from "@/lib/project/assets-schema";
+import { displayAssetTitle } from "@/lib/project/asset-title";
 
 const EMPTY_ASSETS: ImageAsset[] = [];
 
 export function CanvasArtworkStrip({ projectId }: { projectId?: string }) {
   const editor = useEditor();
   const requestFocusAsset = useCanvasUiStore((s) => s.requestFocusAsset);
+  const appearanceMenuOpen = useCanvasUiStore((s) => s.appearanceMenuOpen);
   const selectedIds = useValue(
     "strip selection",
     () => editor.getSelectedShapeIds(),
@@ -42,10 +44,10 @@ export function CanvasArtworkStrip({ projectId }: { projectId?: string }) {
     return null;
   }, [editor, selectedIds]);
 
-  if (assets.length < 2) return null;
+  if (appearanceMenuOpen || assets.length < 2) return null;
 
   return (
-    <div className="vad-artwork-strip pointer-events-auto absolute bottom-[4.75rem] left-1/2 z-10 flex max-w-[min(480px,68vw)] -translate-x-1/2 items-center gap-1 overflow-x-auto p-1.5">
+    <div className="vad-artwork-strip pointer-events-auto absolute bottom-[4.75rem] left-1/2 z-[8] flex max-w-[min(480px,68vw)] -translate-x-1/2 items-center gap-1 overflow-x-auto p-1.5">
       {assets.map((asset, index) => {
         const active = asset.id === selectedAssetId;
         const failed =
@@ -55,8 +57,8 @@ export function CanvasArtworkStrip({ projectId }: { projectId?: string }) {
           <button
             key={asset.id}
             type="button"
-            title={(asset.prompt || `作品 ${index + 1}`).slice(0, 48)}
-            aria-label={`聚焦作品 ${index + 1}`}
+            title={displayAssetTitle(asset) || `作品 ${index + 1}`}
+            aria-label={`聚焦作品 ${displayAssetTitle(asset) || `作品 ${index + 1}`}`}
             aria-current={active ? "true" : undefined}
             onClick={() => requestFocusAsset(asset.id)}
             className={

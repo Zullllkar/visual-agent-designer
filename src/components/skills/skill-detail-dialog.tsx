@@ -243,7 +243,7 @@ export function SkillDetailDialog({
                       <section className="skill-yaml-card">
                         <div className="skill-yaml-card-head">
                           <span>YAML</span>
-                          <button type="button" onClick={copyYaml} aria-label="复制 YAML">
+                    <button type="button" onClick={copyYaml} aria-label="复制 YAML">
                             <Copy className="size-3.5" />
                           </button>
                         </div>

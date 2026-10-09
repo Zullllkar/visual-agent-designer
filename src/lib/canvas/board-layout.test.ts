@@ -154,6 +154,7 @@ describe("computeBoardLayout", () => {
       id: "p1",
       slug: "demo",
       title: "Demo",
+      rawIdea: "Demo visual project",
       createdAt: "2026-08-10T00:00:00.000Z",
       updatedAt: "2026-08-10T00:00:00.000Z",
       pages: [],

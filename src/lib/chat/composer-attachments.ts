@@ -16,7 +16,8 @@ export function isImageFile(file: File): boolean {
 
 export async function filesToReferenceAssets(
   files: File[],
-  existingCount = 0
+  existingCount = 0,
+  source: ReferenceAsset["source"] = "clipboard"
 ): Promise<ReferenceAsset[]> {
   const room = Math.max(0, MAX_ATTACHMENTS - existingCount);
   const images = files.filter(isImageFile).slice(0, room);
@@ -27,11 +28,11 @@ export async function filesToReferenceAssets(
     const size = await readImageSize(src);
     out.push({
       id: nanoid(10),
-      label: file.name || "粘贴参考图",
+      label: file.name || (source === "upload" ? "上传参考图" : "粘贴参考图"),
       src,
       width: size.width,
       height: size.height,
-      source: "clipboard",
+      source,
       createdAt: new Date().toISOString(),
     });
   }

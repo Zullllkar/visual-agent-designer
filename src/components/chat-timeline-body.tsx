@@ -53,6 +53,7 @@ import { MarkdownText } from "@/components/markdown-text";
 import type { ChatMessage } from "@/lib/agents/chat-schema";
 import type { ImageAsset } from "@/lib/project/assets-schema";
 import type { ProjectFile } from "@/lib/project/schema";
+import { displayAssetTitle } from "@/lib/project/asset-title";
 import { useCanvasUiStore } from "@/store/canvas-ui-store";
 import { useProjectStore } from "@/store/project-store";
 import {
@@ -179,6 +180,42 @@ function PendingDiffBanner({
     >
       {pendingCount} 处变更待确认：在下方 diff 块点击「应用」或「拒绝」后才会更新画布（请按时间顺序确认）。
     </p>
+  );
+}
+
+function ErrorRecoveryCard({
+  message,
+  theme,
+  retry,
+  retryPhase,
+}: {
+  message: string;
+  theme: "ide" | "home";
+  retry?: () => void;
+  retryPhase?: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    const ok = await copyText(message);
+    if (!ok) return;
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1200);
+  };
+  return (
+    <div className={theme === "ide" ? "rounded-lg border border-red-300/70 bg-red-50/80 px-3 py-2.5 text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200" : "rounded-lg border border-red-200/80 bg-red-50/90 px-3 py-2.5 text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300"} role="alert">
+      <div className="flex items-start gap-2">
+        <XCircle className="mt-0.5 size-3.5 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-semibold">本轮执行没有完成</p>
+          <p className="mt-1 break-words text-[11px] leading-relaxed opacity-85">{message}</p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {retryPhase ? <button type="button" onClick={retryPhase} className="rounded-md bg-red-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-red-700">重试当前阶段</button> : null}
+            {retry ? <button type="button" onClick={retry} className="rounded-md border border-current/20 px-2 py-1 text-[10px] font-medium hover:bg-black/5 dark:hover:bg-white/5">重试上一条</button> : null}
+            <button type="button" onClick={() => void copy()} className="inline-flex items-center gap-1 rounded-md border border-current/20 px-2 py-1 text-[10px] hover:bg-black/5 dark:hover:bg-white/5"><Copy className="size-3" />{copied ? "已复制" : "复制错误"}</button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -464,7 +501,7 @@ function CanvasResultThumbnails({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={asset.src}
-            alt={(asset.prompt || asset.id).slice(0, 40)}
+            alt={displayAssetTitle(asset)}
             className="size-full object-cover transition group-hover:scale-105"
           />
         </button>
@@ -672,6 +709,9 @@ function ToolBlock({
               {" "}
               · {item.summary.replace(/\s+/g, " ").slice(0, 72)}
             </span>
+          ) : null}
+          {!expanded && item.durationMs && item.durationMs >= 1000 ? (
+            <span className="ml-1 text-[var(--muted)]">· {Math.round(item.durationMs / 100) / 10}s</span>
           ) : null}
         </span>
         {hasDetails ? (
@@ -1147,7 +1187,7 @@ function ActionableJobBlock({
   }
 
   // IDE：与 Tool 同行风格；完成态更短更淡
-  if (isIde) {
+   if (isIde) {
     return (
       <div
         className={
@@ -1466,7 +1506,7 @@ function AgentPlanBlock({
                     : error
                       ? "bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400"
                       : step.status === "done"
-                        ? "bg-[var(--primary)] text-white"
+                        ? "bg-[var(--surface-muted)] text-[var(--success)]"
                         : "bg-[var(--surface)] text-[var(--muted)]")
                 }
               >
@@ -1827,7 +1867,7 @@ function DiscoveryFormCard({
           ) : (
             <p className="text-[10px] app-subtle">
               已预填，可直接提交或改一题
-            </p>
+             </p>
           )}
           <button
             type="button"
@@ -2044,6 +2084,7 @@ function ToolConfirmCard({
   const [cancelled, setCancelled] = useState(false);
   const [running, setRunning] = useState(false);
   const [approved, setApproved] = useState(false);
+  const [rememberApproval, setRememberApproval] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const argsText = formatToolArgs(item.args);
   const [draftArgs, setDraftArgs] = useState(argsText);
@@ -2080,8 +2121,8 @@ function ToolConfirmCard({
     setRunning(true);
     try {
       const nextArgs = isImageTool
-        ? imageApprovalArgs(imageDraft, item.args)
-        : parseToolArgs(draftArgs);
+        ? { ...imageApprovalArgs(imageDraft, item.args), ...(rememberApproval ? { rememberApproval: true } : {}) }
+        : { ...parseToolArgs(draftArgs), ...(rememberApproval ? { rememberApproval: true } : {}) };
       await onConfirm(item.runId, item.approvalId, nextArgs);
       setApproved(true);
     } catch (err) {
@@ -2217,14 +2258,14 @@ function ToolConfirmCard({
             </div>
             {!imageLocked ? (
               <button type="button" onClick={requestChanges} className="vad-approve-quiet">
-                让 Agent 改方案
-              </button>
+                 让 Agent 改方案
+               </button>
             ) : null}
           </details>
           {cancelled ? (
-            <p className="vad-approve-status">已取消</p>
+          <p className="vad-approve-status">已取消</p>
           ) : approved ? (
-            <p className="vad-approve-status is-ok">已开始生成</p>
+          <p className="vad-approve-status is-ok">已开始生成</p>
           ) : submitted ? (
             <p className="vad-approve-status is-ok">已要求调整方案</p>
           ) : (
@@ -2248,6 +2289,12 @@ function ToolConfirmCard({
               </button>
             </div>
           )}
+          {!imageLocked && item.riskLevel === "moderate" ? (
+            <label className="mt-2 flex items-center gap-1.5 text-[10px] text-[var(--muted)]">
+              <input type="checkbox" checked={rememberApproval} onChange={(event) => setRememberApproval(event.target.checked)} />
+              本项目后续自动允许此类操作
+            </label>
+          ) : null}
           {error ? <p className="vad-approve-error">{error}</p> : null}
         </div>
       </div>
@@ -2263,6 +2310,11 @@ function ToolConfirmCard({
             <span className="text-[11px] font-semibold app-strong">Agent 请求执行工具</span>
           </div>
           <p className="mt-1 truncate text-[10px] text-[var(--muted-strong)]">{item.title}</p>
+          {(item.model || item.estimatedSeconds || item.affectedAssets?.length) ? (
+            <p className="mt-1 text-[10px] text-[var(--muted)]">
+              {[item.model, item.estimatedSeconds ? `预计 ${item.estimatedSeconds}s` : null, item.affectedAssets?.length ? `影响 ${item.affectedAssets.length} 个素材` : null].filter(Boolean).join(" · ")}
+            </p>
+          ) : null}
         </div>
         <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-semibold uppercase ${toolConfirmRiskClass(item.riskLevel)}`}>
           {item.riskLevel === "destructive" ? "高风险" : "需确认"}
@@ -2300,17 +2352,17 @@ function ToolConfirmCard({
           <p className="flex items-center gap-1.5 text-[10px] font-medium text-[var(--muted-strong)]">
             <XCircle className="size-3" />
             已取消。不会执行该工具。
-          </p>
+           </p>
         ) : approved ? (
           <p className="flex items-center gap-1.5 text-[10px] font-medium text-[var(--success)]">
             <Check className="size-3" />
             已确认执行。结果会同步到时间线和画布。
-          </p>
+            </p>
         ) : submitted ? (
           <p className="flex items-center gap-1.5 text-[10px] font-medium text-[var(--success)]">
             <Check className="size-3" />
             已要求 Agent 重新说明和调整。
-          </p>
+            </p>
         ) : (
           <div className="flex justify-end gap-1.5">
             <button
@@ -2342,6 +2394,12 @@ function ToolConfirmCard({
             </button>
           </div>
         )}
+        {!submitted && !cancelled && !approved && item.riskLevel === "moderate" ? (
+          <label className="mt-2 flex items-center gap-1.5 text-[10px] text-[var(--muted)]">
+            <input type="checkbox" checked={rememberApproval} onChange={(event) => setRememberApproval(event.target.checked)} />
+            本项目后续自动允许此类操作
+          </label>
+        ) : null}
         {error ? (
           <p className="rounded-md bg-red-500/10 px-2 py-1.5 text-[10px] text-red-600 dark:text-red-300">
             {error}
@@ -2453,9 +2511,10 @@ function clampNumber(value: unknown, min: number, max: number): number {
   return Math.max(min, Math.min(max, Math.round(parsed)));
 }
 
-function toolConfirmRiskClass(risk: "safe" | "moderate" | "destructive"): string {
+function toolConfirmRiskClass(risk: "safe" | "moderate" | "destructive" | "external"): string {
   if (risk === "destructive") return "bg-red-500/10 text-red-700 dark:text-red-300";
   if (risk === "moderate") return "bg-amber-500/10 text-amber-700 dark:text-amber-300";
+  if (risk === "external") return "bg-purple-500/10 text-purple-700 dark:text-purple-300";
   return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
 }
 
@@ -2588,6 +2647,7 @@ function TimelineRow({
   onToolCancel,
   onRetryUserMessage,
   onEditUserMessage,
+  onRetryRun,
 }: {
   item: TimelineItem;
   theme: "ide" | "home";
@@ -2611,6 +2671,7 @@ function TimelineRow({
   onToolCancel?: (runId: string, approvalId: string) => Promise<void> | void;
   onRetryUserMessage?: (messageId: string, content: string) => void;
   onEditUserMessage?: (messageId: string, content: string) => void;
+  onRetryRun?: () => void;
 }) {
   switch (item.kind) {
     case "user":
@@ -2856,6 +2917,7 @@ function TurnBlock({
   onToolCancel,
   onRetryUserMessage,
   onEditUserMessage,
+  onRetryRun,
 }: {
   turn: TimelineTurn;
   theme: "ide" | "home";
@@ -2878,14 +2940,15 @@ function TurnBlock({
   onToolCancel?: (runId: string, approvalId: string) => Promise<void> | void;
   onRetryUserMessage?: (messageId: string, content: string) => void;
   onEditUserMessage?: (messageId: string, content: string) => void;
+  onRetryRun?: () => void;
 }) {
   const statusMeta = getTurnStatusMeta(turn.status);
   const summaryParts = [
-    turn.counts.tools ? `${turn.counts.tools} tools` : "",
-    turn.counts.jobs ? `${turn.counts.jobs} jobs` : "",
-    turn.counts.files ? `${turn.counts.files} files` : "",
-    turn.counts.changes ? `${turn.counts.changes} changes` : "",
-    turn.counts.errors ? `${turn.counts.errors} errors` : "",
+    turn.counts.tools ? `${turn.counts.tools} 个工具` : "",
+    turn.counts.jobs ? `${turn.counts.jobs} 个任务` : "",
+    turn.counts.files ? `${turn.counts.files} 个文件` : "",
+    turn.counts.changes ? `${turn.counts.changes} 处变更` : "",
+    turn.counts.errors ? `${turn.counts.errors} 个错误` : "",
   ].filter(Boolean);
 
   const rowProps = {
@@ -2915,6 +2978,12 @@ function TurnBlock({
       <section className="vad-agent-row-enter space-y-2.5">
         {turn.user ? <TimelineRow item={turn.user} {...rowProps} /> : null}
         <div className="space-y-1.5 pl-0.5">
+          {summaryParts.length > 0 || turn.status === "running" || turn.status === "waiting" ? (
+            <div className="flex items-center gap-1.5 px-0.5 text-[10px] text-[var(--muted)]">
+              <span className="font-medium text-[var(--foreground)]">{statusMeta.label}</span>
+              {summaryParts.length > 0 ? <span>· {summaryParts.join(" · ")}</span> : null}
+            </div>
+          ) : null}
           {turn.status === "waiting" ? (
             <div className="flex items-center gap-1.5 px-0.5 text-[10px] text-amber-600 dark:text-amber-400">
               <span className="grid size-3.5 place-items-center">{statusMeta.icon}</span>
@@ -3093,6 +3162,7 @@ export function ChatTimelineBody({
   onToolCancel,
   onRetryUserMessage,
   onEditUserMessage,
+  onRetryRun,
 }: {
   messages: ChatMessage[];
   liveEvents: ChatLiveEvent[];
@@ -3121,6 +3191,7 @@ export function ChatTimelineBody({
   onToolCancel?: (runId: string, approvalId: string) => Promise<void> | void;
   onRetryUserMessage?: (messageId: string, content: string) => void;
   onEditUserMessage?: (messageId: string, content: string) => void;
+  onRetryRun?: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollContentRef = useRef<HTMLDivElement>(null);
@@ -3217,13 +3288,12 @@ export function ChatTimelineBody({
       el.scrollTop = el.scrollHeight;
     };
     pin();
-    // Markdown / 图片布局后高度还会涨，再补一帧
     const raf = requestAnimationFrame(pin);
     return () => cancelAnimationFrame(raf);
   }, [streamFingerprint, visibleTurns.length]);
 
   // 内容高度变化时（流式打字 / Markdown 重排）持续贴底
-  useEffect(() => {
+   useEffect(() => {
     const el = scrollRef.current;
     const content = scrollContentRef.current;
     if (!el || !content || typeof ResizeObserver === "undefined") return;
@@ -3266,6 +3336,7 @@ export function ChatTimelineBody({
     if (!message) return false;
     return !timelineErrorMessages.has(normalizeUiError(message));
   });
+  const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
 
   async function handleCancelJob(jobId: string) {
     setLocalError(null);
@@ -3325,7 +3396,7 @@ export function ChatTimelineBody({
             <span className="flex items-center gap-1 text-[10px] font-mono text-[#B5A075]">
               <Loader2 className="size-3 animate-spin" />
               运行中
-            </span>
+             </span>
           ) : null}
         </div>
       ) : null}
@@ -3381,7 +3452,7 @@ export function ChatTimelineBody({
             }}
             className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-[11px] font-medium text-[var(--muted-strong)] transition hover:border-[var(--primary)]/50 hover:text-[var(--foreground)]"
           >
-            Show {hiddenTurnCount} older turns
+            查看更早的 {hiddenTurnCount} 轮对话
           </button>
         ) : null}
         {topSpacerHeight > 0 ? (
@@ -3412,11 +3483,7 @@ export function ChatTimelineBody({
         {bottomSpacerHeight > 0 ? (
           <div aria-hidden style={{ height: bottomSpacerHeight }} />
         ) : null}
-        {displayError ? (
-          <div className="rounded-lg border border-red-200/80 bg-red-50/90 px-3 py-2 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
-            {displayError}
-          </div>
-        ) : null}
+        {displayError ? <ErrorRecoveryCard theme={theme} message={displayError} retry={lastUserMessage && onRetryUserMessage ? () => onRetryUserMessage(lastUserMessage.id, lastUserMessage.content ?? "") : undefined} retryPhase={onRetryRun} /> : null}
         </div>
       </div>
       <button

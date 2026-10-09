@@ -91,7 +91,7 @@ const CODE_ROLE_OPTIONS: { value: CodeSlot["role"]; label: string }[] = [
   { value: "card", label: "card · 卡片容器" },
   { value: "sidebar", label: "sidebar · 侧栏" },
   { value: "main", label: "main · 主内容区" },
-  { value: "other", label: "other · 其它代码槽" },
+  { value: "other", label: "other · 其它媒体" },
 ];
 
 type PendingAdd = {
@@ -583,7 +583,7 @@ export function MaterialsReviewDialog({
     if (!slotIds.length) return;
     setConfirm({
       title: slotIds.length > 1 ? `删除 ${slotIds.length} 个槽位` : "删除槽位",
-      body: "删除后需重新拆解或手动画框才能恢复，确认继续？",
+          body: "删除后需重新拆解或手动画框才能恢复，确认继续？",
       confirmLabel: "确认删除",
       danger: true,
       run: () => removeSlots(slotIds),
@@ -612,7 +612,7 @@ export function MaterialsReviewDialog({
     try {
       await callMaterialize({ markMediaSlotIds: slotIds, async: false });
       setCheckedIds([]);
-      flash(`已标为媒体 ×${slotIds.length}`);
+      flash(`已标为代码 ×${slotIds.length}`);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -629,7 +629,7 @@ export function MaterialsReviewDialog({
         promptUpdate: { slotId, prompt: draftPrompt.trim() },
         async: false,
       });
-      flash("提示词已保存");
+      flash("框位已应用");
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -753,11 +753,11 @@ export function MaterialsReviewDialog({
     setConfirm({
       title: "重新 Vision 拆解",
       body: "将覆盖当前槽位方案（未生成的人工调整会丢失）。确认重新拆解？",
-      confirmLabel: "重新拆解",
+          confirmLabel: "确认删除",
       danger: true,
       run: async () => {
         await redecompose();
-        flash("拆解已完成");
+      flash("框位已应用");
       },
     });
   }
@@ -821,7 +821,7 @@ export function MaterialsReviewDialog({
                 ? "先核对左侧叠框与右侧槽位/提示词，确认后再生成素材（此时不扣生图费）。"
                 : "可拖框调区域 · 手动画框加槽 · 编辑提示词 · 标为代码/媒体"}
               {mockup.width && mockup.height
-                ? ` · 原图 ${mockup.width}×${mockup.height}`
+                          ? `${mockup.width}×${mockup.height}`
                 : ""}
             </p>
             {record.layout.meta?.warnings?.length ? (
@@ -1008,7 +1008,7 @@ export function MaterialsReviewDialog({
                   className="inline-flex size-7 items-center justify-center rounded-md border border-[var(--border)] disabled:opacity-40"
                   disabled={zoom <= 0.75}
                   onClick={() => setZoom((z) => Math.max(0.75, +(z - 0.25).toFixed(2)))}
-                  aria-label="缩小"
+            aria-label="关闭"
                 >
                   <ZoomOut className="size-3.5" />
                 </button>
@@ -1024,7 +1024,7 @@ export function MaterialsReviewDialog({
                   className="inline-flex size-7 items-center justify-center rounded-md border border-[var(--border)] disabled:opacity-40"
                   disabled={zoom >= 2.5}
                   onClick={() => setZoom((z) => Math.min(2.5, +(z + 0.25).toFixed(2)))}
-                  aria-label="放大"
+            aria-label="关闭"
                 >
                   <ZoomIn className="size-3.5" />
                 </button>
@@ -1174,8 +1174,8 @@ export function MaterialsReviewDialog({
               <div className="mt-3 flex gap-2">
                 {(
                   [
-                    ["media", "媒体槽"],
-                    ["code", "代码槽"],
+                ["media", "媒体"],
+                ["code", "代码"],
                   ] as const
                 ).map(([kind, label]) => (
                   <button
@@ -2193,7 +2193,7 @@ function SlotRow({
           <PreviewableThumb
             src={thumbSrc}
             className="size-14"
-            title={`${node.id} · ${node.role}`}
+              title={`${node.id} · ${node.role}`}
             subtitle={
               isMedia ? (needsGen ? "待生成" : String(status)) : "code"
             }
@@ -2271,7 +2271,7 @@ function SlotRow({
             ) : (
               <RefreshCw className="size-3" />
             )}
-            {needsGen ? "生成此槽" : "重做"}
+              {needsGen ? "生成此槽" : "重做此槽"}
           </button>
         ) : null}
         {isMedia ? (

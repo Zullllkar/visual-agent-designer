@@ -42,6 +42,7 @@ export function mergeProjectWithDisk(
         ...disk,
         assets: mergeAssetsPreferDiscarded(local.assets, disk.assets),
         pages: local.pages,
+        canvasNotes: local.canvasNotes ?? disk.canvasNotes,
       },
       disk
     );
@@ -52,5 +53,6 @@ export function mergeProjectWithDisk(
     assets: mergeAssetsPreferDiscarded(local.assets, disk.assets),
     pages: local.pages?.length ? local.pages : disk.pages,
     canvasSnapshot: disk.canvasSnapshot ?? local.canvasSnapshot,
+    canvasNotes: disk.canvasNotes ?? local.canvasNotes,
   };
 }

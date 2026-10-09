@@ -34,6 +34,8 @@ export interface Job<T = unknown> {
   completedAt?: number;
   /** 关联的 Agent Run ID */
   runId?: string;
+  /** Logical user turn containing this run and its background jobs. */
+  turnId?: string;
   batchId?: string;
   /** 关联的项目 ID */
   projectId?: string;
@@ -54,6 +56,7 @@ export interface SubmitJobInput {
   type: JobType;
   payload: Record<string, unknown>;
   runId?: string;
+  turnId?: string;
   batchId?: string;
   projectId?: string;
   threadId?: string;
@@ -88,6 +91,7 @@ interface JobEventBase {
   batchId?: string;
   projectId?: string;
   runId?: string;
+  turnId?: string;
   threadId?: string;
   toolCallId?: string;
   /** 关联整图 / mockup，供侧边栏展示缩略图 */

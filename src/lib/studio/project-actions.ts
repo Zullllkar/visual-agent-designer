@@ -47,6 +47,7 @@ export function applyProjectDuplicate(
     createdAt: now,
     updatedAt: now,
     linkedRepo: undefined,
+    workspacePath: undefined,
   };
 }
 

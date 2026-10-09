@@ -119,7 +119,7 @@ export function StudioProjectCard({
               }}
             >
               重命名
-            </button>
+             </button>
             <button
               type="button"
               role="menuitem"

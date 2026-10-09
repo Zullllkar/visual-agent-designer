@@ -25,7 +25,9 @@ function asset(partial: Partial<ImageAsset> & Pick<ImageAsset, "id" | "src">): I
 function project(assets: ImageAsset[]): ProjectFile {
   return {
     id: "p1",
-    name: "Demo",
+    slug: "demo",
+    title: "Demo",
+    rawIdea: "Demo visual project",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     pages: [],

@@ -15,7 +15,8 @@ import {
 } from "@/lib/agents/chat-inline-tools";
 import type { AgentContext } from "@/lib/agents/types";
 import type { ProjectFile } from "@/lib/project/schema";
-import type { ToolArtifact } from "./chat-schema";
+import type { ToolArtifact } from "@/lib/agents/chat-schema";
+import { imageToolApprovalId } from "@/lib/agents/tools/generate-images-approval";
 
 export interface WsEvent {
   type: string;
@@ -167,6 +168,15 @@ export async function* adaptStreamEvents(
       const outputSummary = extractSummary(output);
       const outputRecord = isRecord(output) ? output : undefined;
 
+      if (agentCtx?.scratch?.__updatedProject) {
+        const project = agentCtx.scratch.__updatedProject as ProjectFile;
+        yield {
+          type: "project.update",
+          data: { runId, project },
+        };
+        delete agentCtx.scratch.__updatedProject;
+      }
+
       yield {
         type: "tool.completed",
         data: {
@@ -180,13 +190,22 @@ export async function* adaptStreamEvents(
         },
       };
 
-      if (agentCtx?.scratch?.__toolConfirmation) {
-        const confirmation = agentCtx.scratch.__toolConfirmation;
+      const confirmation = agentCtx?.scratch?.__toolConfirmation as
+        | {
+            approvalId?: string;
+            toolName?: string;
+            [key: string]: unknown;
+          }
+        | undefined;
+      const isImageToolConfirm =
+        confirmation?.toolName === "generate_images" ||
+        confirmation?.toolName === "generate_image_variants";
+      if (confirmation) {
         yield {
           type: "tool.confirm",
           data: { runId, ...confirmation },
         };
-        delete agentCtx.scratch.__toolConfirmation;
+        delete agentCtx!.scratch.__toolConfirmation;
       }
 
       // ask_discovery 工具完成时，发射结构化问题事件到前端
@@ -217,24 +236,21 @@ export async function* adaptStreamEvents(
 
       if (toolName === "generate_images" && agentCtx?.scratch?.__imageGenerationConfirmation) {
         const confirmation = agentCtx.scratch.__imageGenerationConfirmation;
-        yield {
-          type: "image_generation.confirm",
-          data: { runId, ...confirmation },
-        };
+        if (!isImageToolConfirm) {
+          yield {
+            type: "image_generation.confirm",
+            data: {
+              runId,
+              approvalId: imageToolApprovalId(runId, "generate_images"),
+              ...confirmation,
+            },
+          };
+        }
         delete agentCtx.scratch.__imageGenerationConfirmation;
       }
 
       if (toolName === "manipulate_canvas") {
         yield { type: "canvas.sync", data: { runId, projectId: agentCtx?.projectId } };
-      }
-
-      if (agentCtx?.scratch?.__updatedProject) {
-        const project = agentCtx.scratch.__updatedProject as ProjectFile;
-        yield {
-          type: "project.update",
-          data: { runId, project },
-        };
-        delete agentCtx.scratch.__updatedProject;
       }
     }
   }
@@ -261,11 +277,19 @@ function parseToolOutput(output: unknown): unknown {
 }
 
 function extractInterrupts(data: unknown): Array<{ id?: unknown; value?: unknown }> {
-  const chunk = isRecord(data) ? data.chunk : undefined;
-  if (!isRecord(chunk)) return [];
-  const interrupts = chunk.__interrupt__;
-  if (!Array.isArray(interrupts)) return [];
-  return interrupts.filter(isRecord) as Array<{ id?: unknown; value?: unknown }>;
+  const records: Record<string, unknown>[] = [];
+  if (isRecord(data)) {
+    records.push(data);
+    if (isRecord(data.chunk)) records.push(data.chunk);
+    if (isRecord(data.output)) records.push(data.output);
+  }
+  for (const record of records) {
+    const interrupts = record.__interrupt__;
+    if (Array.isArray(interrupts)) {
+      return interrupts.filter(isRecord) as Array<{ id?: unknown; value?: unknown }>;
+    }
+  }
+  return [];
 }
 
 function resolveToolCallId(

@@ -28,6 +28,11 @@ import { jobStatusTool } from "./job-status";
 import { askDiscoveryTool } from "./ask-discovery";
 import { confirmDirectionTool } from "./confirm-direction";
 import { adoptAssetStyleTool } from "./adopt-asset-style";
+import { upsertCanvasNoteTool } from "./upsert-canvas-note";
+import { reviewProjectTool } from "./review-project";
+import { planAssetsTool } from "./plan-assets";
+import { repairProjectTool } from "./repair-project";
+import { restoreProjectRevisionTool } from "./restore-project-revision";
 
 let registered = false;
 
@@ -56,11 +61,16 @@ export function registerAllTools(): void {
   toolRegistry.register(askDiscoveryTool);
   toolRegistry.register(confirmDirectionTool);
   toolRegistry.register(adoptAssetStyleTool);
+  toolRegistry.register(upsertCanvasNoteTool);
+  toolRegistry.register(reviewProjectTool);
+  toolRegistry.register(planAssetsTool);
+  toolRegistry.register(repairProjectTool);
+  toolRegistry.register(restoreProjectRevisionTool);
   registered = true;
 }
 
 export { toolRegistry } from "./registry";
-export type { AgentTool, ToolContext, ToolResult, RiskLevel } from "./types";
+export type { AgentTool, ToolContext, ToolResult, RiskLevel, ConfirmationPolicy } from "./types";
 export { type AgentPhase, phaseLabel, resolveNextPhase } from "../agent-phase";
 export { jobScheduler } from "../job/job-scheduler";
 export { registerAllJobHandlers } from "../job/job-handlers";

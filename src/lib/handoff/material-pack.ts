@@ -12,6 +12,8 @@ import {
   type MaterializationRecord,
   type StyleDna,
 } from "./layout-ir";
+import { pickPrimaryMockup } from "./select-assets";
+import { buildSharedComponentIndex, renderComponentsMd } from "./shared-components";
 
 type FileEntry = HandoffArtifact["files"][number];
 
@@ -138,11 +140,20 @@ export async function appendMaterializationFiles(
     files.push({ path, content: materialized.content });
   }
 
-  const primary = records[0];
+  const primaryId = pickPrimaryMockup(project)?.id;
+  const primary =
+    records.find((r) => r.mockupAssetId === primaryId) ?? records[0];
   files.push(
     { path: "LAYOUT.md", content: renderLayoutMd(records) },
     { path: "MATERIAL_MAP.md", content: renderMaterialMapMd(records, assetById) },
-    { path: "DESIGN.md", content: renderDesignMd(project, primary) },
+    {
+      path: "DESIGN.md",
+      content: renderDesignMd(
+        project,
+        primary,
+        assetById.get(primary.mockupAssetId)
+      ),
+    },
     {
       path: "skills/design-to-code/SKILL.md",
       content: renderDesignToCodeSkill(),
@@ -152,6 +163,15 @@ export async function appendMaterializationFiles(
       content: renderAssemblyHtml(primary?.layout),
     }
   );
+
+  // ≥2 屏物料化后才有跨屏归并的意义；单屏项目不写空文件
+  if (records.length >= 2) {
+    const shared = buildSharedComponentIndex(project);
+    files.push(
+      { path: "COMPONENTS.md", content: renderComponentsMd(shared) },
+      { path: "design/components.json", content: JSON.stringify(shared, null, 2) }
+    );
+  }
 
   return {
     materialCount: materialEntries.length,
@@ -202,7 +222,10 @@ function renderLayoutMd(records: MaterializationRecord[]): string {
     "",
     "- `rebuildInCode: false` → use the `media` file path. Do **not** redraw with CSS/SVG.",
     "- `rebuildInCode: true` → implement with real UI components and `copy`.",
+    "- `copySource: plan | prompt` → `copy` is the authoritative wording decided before the image was generated; use it verbatim. `copySource: vision` → the text was read off a generated image and may contain typos; treat it as a hint and prefer the brief / `design/specs/*.md` copyPlan.",
+    "- `states[]` on a code node → every listed state (hover, focus, disabled, loading, empty, error, active…) must be implemented; `states[].copy` is the text to show in that state. The mockup only shows the default state.",
     "- `layoutHint.parentId` → nest under that node when present; honor `zIndex` / `order`.",
+    "- `swatch.dominant` / `swatch.accent` → the region's actual fill / highlight color sampled from the mockup pixels. Use it for that region's background / border / emphasis instead of guessing from the image.",
     "- `assets/final/*` is visual truth for review only.",
     "",
     "## Files",
@@ -258,12 +281,11 @@ function renderMaterialMapMd(
 
 function renderDesignMd(
   project: ProjectFile,
-  primary?: MaterializationRecord
+  primary?: MaterializationRecord,
+  primaryAsset?: ImageAsset
 ): string {
   const lock = primary?.styleLock;
-  const colors = lock?.palette?.length
-    ? lock.palette.map((c, i) => `- color-${i + 1}: ${c}`).join("\n")
-    : "- (see design/tokens.json)";
+  const colors = renderPaletteLines(lock?.palette ?? [], primaryAsset);
 
   return [
     "---",
@@ -312,6 +334,53 @@ function renderDesignMd(
   ].join("\n");
 }
 
+/**
+ * 色板行：优先用 designSpec.tokens.colors 的语义名 + 来源（pixels 采样最可信），
+ * 没有规格时回落到 style lock 的匿名 color-N。
+ */
+function renderPaletteLines(lockPalette: string[], asset?: ImageAsset): string {
+  const named = asset?.designSpec?.tokens.colors ?? [];
+  if (named.length > 0) {
+    const pixel = named.filter((c) => c.source === "pixels");
+    const rest = named.filter((c) => c.source !== "pixels");
+    const lines: string[] = [];
+    if (pixel.length) {
+      lines.push(
+        "Sampled from the approved mockup pixels (authoritative — use these exact values):",
+        ""
+      );
+      for (const c of pixel) {
+        const share =
+          typeof c.share === "number"
+            ? ` · ${Math.round(c.share * 100)}% of canvas`
+            : "";
+        lines.push(
+          `- **${c.name}**: \`${c.value}\`${c.usage ? ` — ${c.usage}` : ""}${share}`
+        );
+      }
+    }
+    if (rest.length) {
+      lines.push(
+        "",
+        pixel.length
+          ? "Also mentioned by the design brief / vision pass (secondary, verify against pixels):"
+          : "From the design brief / vision pass:",
+        ""
+      );
+      for (const c of rest) {
+        lines.push(
+          `- ${c.name}: \`${c.value}\`${c.usage ? ` — ${c.usage}` : ""}${c.source ? ` _(source: ${c.source})_` : ""}`
+        );
+      }
+    }
+    return lines.join("\n");
+  }
+  if (lockPalette.length) {
+    return lockPalette.map((c, i) => `- color-${i + 1}: ${c}`).join("\n");
+  }
+  return "- (see design/tokens.json)";
+}
+
 function renderDesignToCodeSkill(): string {
   return [
     "---",
@@ -325,6 +394,7 @@ function renderDesignToCodeSkill(): string {
     "",
     "1. DESIGN.md",
     "2. LAYOUT.md + design/layouts/*.json",
+    "2b. COMPONENTS.md (when present) — regions shared by several screens; build each once",
     "3. MATERIAL_MAP.md",
     "4. assets/materials/* (use) and assets/final/* (compare)",
     "5. design/tokens.json (+ tokens.dtcg.json)",
@@ -334,6 +404,10 @@ function renderDesignToCodeSkill(): string {
     "",
     "- For every Layout IR node with `rebuildInCode: false`, reference `media` — never recreate that visual in CSS/SVG.",
     "- For `rebuildInCode: true`, use real components and the provided `copy`.",
+    "- Trust `copy` when `copySource` is plan/prompt. When it is vision, the text is OCR from a generated image — fix obvious typos using the brief; never ship garbled text just because the PNG shows it.",
+    "- Any `unplacedCopy` listed in `design/specs/*.md` is required UI text the image failed to render — include it.",
+    "- Build every state listed under a code node's `states[]` (empty / loading / error / hover / disabled / active). A screen that only matches the mockup's default state is not done.",
+    "- Colors come from DESIGN.md palette (sampled from pixels) and each node's `swatch`; do not eyeball hex values from the PNG.",
     "- Keep the approved mockup as acceptance reference, not as a single stretched background.",
     "- Stay within screens that have layouts/materials unless the user expands scope.",
     "",

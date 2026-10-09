@@ -41,7 +41,7 @@ function formatRelativeTime(iso: string): string {
 
 function conversationGroup(iso: string): string {
   const t = Date.parse(iso);
-  if (!Number.isFinite(t)) return "更早";
+  if (!Number.isFinite(t)) return "";
   const now = new Date();
   const startToday = new Date(
     now.getFullYear(),

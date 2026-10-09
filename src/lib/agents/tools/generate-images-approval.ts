@@ -22,13 +22,28 @@ export interface GenerateImagesApprovalPlan {
   approvedArgs: Record<string, unknown>;
 }
 
+export function imageToolApprovalId(
+  runId: string | undefined,
+  toolName: string
+): string {
+  return `${runId ?? "run"}:${toolName}`;
+}
+
+export function toolResultNeedsUserConfirmation(data: unknown): boolean {
+  return Boolean(
+    data &&
+      typeof data === "object" &&
+      (data as { confirmationRequired?: unknown }).confirmationRequired === true
+  );
+}
+
 export function prepareGenerateImagesApproval(
   args: Record<string, unknown>,
   ctx: ToolContext,
 ): GenerateImagesApprovalPlan | null {
   if (!ctx.project) return null;
 
-  const confirmation = parseImageGenerationConfirmation(ctx.userMessage);
+  const confirmation = parseImageGenerationConfirmation(ctx.userMessage ?? "");
   const userApproved = isUserImageApproval(args, confirmation.confirmed);
   const fromArgs = normalizeImagePrompts({
     prompt: args.prompt,
@@ -38,7 +53,7 @@ export function prepareGenerateImagesApproval(
     n: args.n,
   });
 
-  const userCount = confirmation.count ?? parseRequestedImageCount(ctx.userMessage);
+  const userCount = confirmation.count ?? parseRequestedImageCount(ctx.userMessage ?? "");
   const seedPrompts = uniquePrompts(
     (confirmation.prompts && confirmation.prompts.length > 0
       ? confirmation.prompts
@@ -72,7 +87,7 @@ export function prepareGenerateImagesApproval(
 
   const preview = buildImageGenerationConfirmation({
     project: ctx.project,
-    userMessage: sanitizeUserMessageForImagePrompt(ctx.userMessage),
+    userMessage: sanitizeUserMessageForImagePrompt(ctx.userMessage ?? ""),
     explicitPrompt: prompts[0] || explicitPrompt,
     explicitPrompts: prompts.length > 0 ? prompts : undefined,
     count: Math.max(1, prompts.length),
@@ -83,7 +98,7 @@ export function prepareGenerateImagesApproval(
     confirmed: userApproved,
     preview: {
       ...preview,
-      prompts: prompts.length > 0 ? prompts : preview.prompts,
+      prompts: prompts.length > 0 ? prompts : (preview.prompts ?? []),
       count: Math.max(1, prompts.length),
     },
     approvedArgs: {

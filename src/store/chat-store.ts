@@ -12,6 +12,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { nanoid } from "nanoid";
+import { createBrowserJsonStorage } from "@/lib/storage/idb-storage";
 import type { ChatMessage, ToolCall } from "@/lib/agents/chat-schema";
 import {
   createEmptyConversation,
@@ -417,7 +418,7 @@ export const useChatStore = create<ChatStoreState>()(
       name: "vad.chat.v1",
       version: 2,
       skipHydration: true,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => createBrowserJsonStorage()),
       partialize: (s) => ({
         conversationsByProject: s.conversationsByProject ?? {},
         activeIdByProject: s.activeIdByProject ?? {},

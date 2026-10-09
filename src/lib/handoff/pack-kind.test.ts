@@ -29,7 +29,7 @@ function makeProject(overrides: Partial<ProjectFile> = {}): ProjectFile {
         model: "test",
         createdAt: "2026-01-01T00:00:00.000Z",
         status: "starred",
-        role: "portrait",
+        role: "avatar",
       },
     ],
     ...overrides,
@@ -154,7 +154,33 @@ describe("createHandoffTarget pack files", () => {
     expect(paths.filter((path) => path.includes("kickoff"))).toEqual([]);
     expect(paths.filter((path) => path.startsWith("design/specs/"))).toEqual([]);
     expect(fileText(artifact.files, "ART_BIBLE.md")).toMatch(/像素|仙侠|立绘/);
+    expect(fileText(artifact.files, "ART_BIBLE.md")).toMatch(/定稿（已收藏）/);
     expect(fileText(artifact.files, "README.md")).not.toMatch(/coding agent/i);
+  });
+
+  it("warns when game-art pack has no starred finals", async () => {
+    const artifact = await createHandoffTarget("markdown").build({
+      project: makeProject({
+        targetId: "game-art",
+        assets: [
+          {
+            id: "explore-1",
+            prompt: "2D pixel art cozy startup office at dusk",
+            src: "data:image/png;base64,aaa",
+            width: 1280,
+            height: 720,
+            model: "test",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            status: "candidate",
+            role: "hero",
+          },
+        ],
+      }),
+      screenshots: [],
+      aiReferenceImages: [],
+    });
+    expect(fileText(artifact.files, "ART_BIBLE.md")).toMatch(/探索（未收藏/);
+    expect(fileText(artifact.files, "README.md")).toMatch(/探索候选/);
   });
 
   it("exports social-cover with a copy sheet instead of implementation plan", async () => {

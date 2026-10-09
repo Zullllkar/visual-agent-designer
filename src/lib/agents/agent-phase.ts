@@ -5,30 +5,32 @@
  * inputPhase / outputPhase，状态机据此推进。
  *
  * 阶段流转：
- *   INIT → DISCOVERY → BRIEF → DIRECTION → GENERATION → REVIEW → EXPORT → DONE
+ *   DISCOVERY → BRIEF → DIRECTION → ASSET_PLAN → GENERATION → REVIEW → REFINEMENT → HANDOFF
  */
 
 /** Agent 工作流阶段 */
 export type AgentPhase =
-  | "INIT"          // 初始状态，等待用户输入
-  | "DISCOVERY"     // 发现阶段，向用户提问
-  | "BRIEF"         // 生成产品简报
-  | "DIRECTION"     // 规划设计方向
-  | "GENERATION"    // 生成视觉素材
-  | "REVIEW"        // 审查和调整
-  | "EXPORT"        // 导出交付物
-  | "DONE";         // 完成
+  | "DISCOVERY"
+  | "BRIEF"
+  | "DIRECTION"
+  | "ASSET_PLAN"
+  | "GENERATION"
+  | "REVIEW"
+  | "REFINEMENT"
+  | "HANDOFF"
+  | "DONE";
 
 /** 阶段之间的合法转移 */
 const PHASE_TRANSITIONS: Record<AgentPhase, AgentPhase[]> = {
-  INIT: ["DISCOVERY", "BRIEF", "GENERATION", "REVIEW", "EXPORT"],
-  DISCOVERY: ["BRIEF", "DISCOVERY"],
-  BRIEF: ["DIRECTION", "GENERATION", "REVIEW"],
-  DIRECTION: ["GENERATION", "REVIEW", "DIRECTION"],
-  GENERATION: ["REVIEW", "GENERATION", "EXPORT"],
-  REVIEW: ["GENERATION", "EXPORT", "REVIEW"],
-  EXPORT: ["DONE", "EXPORT"],
-  DONE: ["INIT"],
+  DISCOVERY: ["DISCOVERY", "BRIEF"],
+  BRIEF: ["BRIEF", "DIRECTION", "DISCOVERY"],
+  DIRECTION: ["DIRECTION", "ASSET_PLAN", "REVIEW"],
+  ASSET_PLAN: ["ASSET_PLAN", "GENERATION", "DIRECTION"],
+  GENERATION: ["GENERATION", "REVIEW", "REFINEMENT"],
+  REVIEW: ["REVIEW", "REFINEMENT", "HANDOFF", "GENERATION"],
+  REFINEMENT: ["REFINEMENT", "REVIEW", "GENERATION", "HANDOFF"],
+  HANDOFF: ["HANDOFF", "DONE"],
+  DONE: ["DISCOVERY"],
 };
 
 /** 检查从 from 到 to 的转移是否合法 */
@@ -52,13 +54,14 @@ export function transitionPhase(
 /** 获取阶段的人类可读名称 */
 export function phaseLabel(phase: AgentPhase): string {
   const labels: Record<AgentPhase, string> = {
-    INIT: "初始化",
     DISCOVERY: "需求发现",
     BRIEF: "简报生成",
     DIRECTION: "方向规划",
+    ASSET_PLAN: "素材规划",
     GENERATION: "素材生成",
-    REVIEW: "审查调整",
-    EXPORT: "导出交付",
+    REVIEW: "质量评审",
+    REFINEMENT: "迭代优化",
+    HANDOFF: "交付导出",
     DONE: "完成",
   };
   return labels[phase];
@@ -87,7 +90,7 @@ export function inferInitialPhase(project: {
   assets?: unknown[];
   pages?: unknown[];
 } | null): AgentPhase {
-  if (!project?.brief) return "INIT";
+  if (!project?.brief) return "DISCOVERY";
   if (!project.designDirection) return "BRIEF";
   if ((project.assets?.length ?? 0) > 0 || (project.pages?.length ?? 0) > 0) {
     return "GENERATION";

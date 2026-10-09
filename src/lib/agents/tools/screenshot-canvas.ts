@@ -37,7 +37,7 @@ export const screenshotCanvasTool: AgentTool = {
     args: Record<string, unknown>,
     ctx: ToolContext
   ): Promise<ToolResult> {
-    const projectId = ctx.agentCtx.projectId;
+    const projectId = ctx.project?.id ?? ctx.agentCtx.projectId;
     const mode = (args.mode as string) ?? "full";
     const pageId = args.pageId as string | undefined;
 

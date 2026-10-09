@@ -40,7 +40,8 @@ describe("planAgentInstall", () => {
     if (plan.kind !== "cli") return;
     expect(plan.addArgv).toEqual(["mcp", "add", "vibeboard", "--url", endpoint.url]);
     expect(plan.tomlPatch?.table).toBe("mcp_servers.vibeboard");
-    expect(plan.tomlPatch?.entries.required).toBe("true");
+    // required=true 时 Codex 握手失败会直接拒绝开对话，所以必须是 false
+    expect(plan.tomlPatch?.entries.required).toBe("false");
     expect(plan.tomlPatch?.entries.http_headers).toContain("Bearer vb_secret");
   });
 

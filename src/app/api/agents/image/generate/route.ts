@@ -143,6 +143,7 @@ export async function POST(req: Request) {
     initialAssets: [],
     pendingAssets: buildDirectPendingAssets(request, batchId),
     concurrency: 2,
+    ledgerProjectId: projectId,
   });
 
   const assets: ImageAsset[] = result.generatedAssets;

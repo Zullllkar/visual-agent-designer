@@ -17,7 +17,7 @@ import { appendPipelineLogEntry } from "@/lib/vad/pipeline-log-persist";
 import { toolDisplayLabel } from "@/lib/chat/live-timeline";
 
 /** Chat 工具名 → pipeline stage id */
-export const CHAT_TOOL_STAGE: Record<ToolCall["name"], string> = {
+export const CHAT_TOOL_STAGE: Record<string, string> = {
   generate_brief: "brief",
   plan_architecture: "architecture",
   plan_design_direction: "design_direction",

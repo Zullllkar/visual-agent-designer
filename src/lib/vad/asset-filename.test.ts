@@ -13,4 +13,10 @@ describe("toSafeAssetFilename", () => {
     expect(name).toMatch(/^[a-zA-Z0-9._-]+$/);
     expect(name).not.toContain(":");
   });
+
+  it("uses an ascii slug from the human title while keeping a unique id tail", () => {
+    expect(
+      toSafeAssetFilename("pending:direct:tgs6_Lab:0", "png", "Fitness Home"),
+    ).toBe("fitness-home-tgs6_Lab-0.png");
+  });
 });

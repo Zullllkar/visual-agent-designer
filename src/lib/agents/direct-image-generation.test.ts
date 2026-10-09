@@ -34,6 +34,24 @@ describe("runDirectImageGenerationBatch", () => {
     expect(pending[0]?.prompt).toBe("same sentence");
   });
 
+  it("names pending images from the prompt instead of the generated id", () => {
+    const pending = buildDirectPendingAssets(
+      {
+        prompt: "健身训练首页，暖色纸面",
+        prompts: ["健身训练首页，暖色纸面", "定价方案页，陶土强调色"],
+        count: 2,
+        width: 512,
+        height: 512,
+      },
+      "named-batch"
+    );
+    expect(pending.map((asset) => asset.title)).toEqual([
+      "健身训练首页",
+      "定价方案页",
+    ]);
+    expect(pending[0]?.title).not.toBe(pending[0]?.id);
+  });
+
   it("uses Windows-safe pending ids without colons", () => {
     const pending = buildDirectPendingAssets(request, "9c3982bea0");
     expect(pending.map((asset) => asset.id)).toEqual([

@@ -65,9 +65,31 @@ describe("shouldSupersedeForNewTurn", () => {
     expect(
       shouldSupersedeForNewTurn({
         status: "running",
+        currentStep: "delegate_task",
         lastHeartbeatAt: Date.now(),
       }),
     ).toBe(false);
+  });
+
+  it("supersedes a running run after the last tool finished so 继续 is not blocked", () => {
+    expect(
+      shouldSupersedeForNewTurn({
+        status: "running",
+        currentStep: "delegate_task:done",
+        lastHeartbeatAt: Date.now(),
+      }),
+    ).toBe(true);
+  });
+
+  it("supersedes a running run that still holds a generate_images confirm card", () => {
+    expect(
+      shouldSupersedeForNewTurn({
+        status: "running",
+        currentStep: "generate_images",
+        pendingToolApproval: { status: "pending", toolName: "generate_images" },
+        lastHeartbeatAt: Date.now(),
+      }),
+    ).toBe(true);
   });
 
   it("supersedes a running run with no heartbeat as a zombie", () => {

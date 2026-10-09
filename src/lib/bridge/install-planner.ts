@@ -3,14 +3,17 @@
  * --------------------------------------------------------------
  * 把 Bridge 端点（url + token）映射成各 coding agent 的注册动作：
  *   claude : 自带 `claude mcp add`，shell out 继承其校验与合并规则
- *   codex  : `codex mcp add --url`，再补 TOML 段里的 headers / required / timeout；
- *            没装 codex 时直接写 ~/.codex/config.toml
+ *   codex  : `codex mcp add --url`，再补 TOML 段里的 headers / timeout；
+ *            没装 codex 时直接写 ~/.codex/config.toml。required 必须为 false：
+ *            Codex 对 required MCP 握手失败会直接拒绝开对话。
  *   cursor : 深链一键安装；失败回退深合并 ~/.cursor/mcp.json
  *
  * 不做任何 IO，便于单测；执行器在 install-exec.ts。
  */
 
 import path from "node:path";
+
+export { cursorPromptDeeplink } from "./deeplinks";
 
 export const BRIDGE_AGENT_SLUGS = ["claude", "codex", "cursor"] as const;
 export type BridgeAgentSlug = (typeof BRIDGE_AGENT_SLUGS)[number];
@@ -66,10 +69,21 @@ export function authHeaderValue(endpoint: BridgeEndpoint): string | null {
   return endpoint.token ? `Bearer ${endpoint.token}` : null;
 }
 
+/** Codex TOML 段。required 必须 false，否则 Vibeboard 没开 / 端口变了 Codex 会直接拒开会话。 */
+export function codexTomlEntries(endpoint: BridgeEndpoint): Record<string, string> {
+  const auth = authHeaderValue(endpoint);
+  return {
+    url: tomlString(endpoint.url),
+    ...(auth ? { http_headers: `{ Authorization = ${tomlString(auth)} }` } : {}),
+    required: "false",
+    startup_timeout_sec: "10.0",
+  };
+}
+
 export function planAgentInstall(
   slug: BridgeAgentSlug,
   endpoint: BridgeEndpoint,
-  ctx: PlanContext
+  ctx: PlanContext,
 ): InstallPlan {
   const { home } = ctx;
   const name = endpoint.serverName;
@@ -95,13 +109,7 @@ export function planAgentInstall(
         slug,
         configPath: path.join(home, ".codex", "config.toml"),
         table: `mcp_servers.${name}`,
-        entries: {
-          url: tomlString(endpoint.url),
-          ...(auth ? { http_headers: `{ Authorization = ${tomlString(auth)} }` } : {}),
-          // Codex 对可选服务器只等 1 秒握手；标记 required 并放宽启动超时
-          required: "true",
-          startup_timeout_sec: "10.0",
-        },
+        entries: codexTomlEntries(endpoint),
       };
       if (!ctx.hasCli) return toml;
       return {
@@ -143,17 +151,11 @@ export function cursorServerEntry(endpoint: BridgeEndpoint): Record<string, unkn
   };
 }
 
-/** cursor://anysphere.cursor-deeplink/prompt?text=…（≤8000 字符，用户需确认才执行） */
-export function cursorPromptDeeplink(text: string): string {
-  const clipped = text.length > 1800 ? `${text.slice(0, 1797)}...` : text;
-  const url = new URL("cursor://anysphere.cursor-deeplink/prompt");
-  url.searchParams.set("text", clipped);
-  return url.toString();
-}
-
 /** cursor://anysphere.cursor-deeplink/mcp/install?name=…&config=base64(entry) */
 export function cursorInstallDeeplink(endpoint: BridgeEndpoint): string {
-  const config = Buffer.from(JSON.stringify(cursorServerEntry(endpoint)), "utf8").toString("base64");
+  const config = Buffer.from(JSON.stringify(cursorServerEntry(endpoint)), "utf8").toString(
+    "base64",
+  );
   const params = new URLSearchParams({ name: endpoint.serverName, config });
   return `cursor://anysphere.cursor-deeplink/mcp/install?${params.toString()}`;
 }
@@ -174,11 +176,15 @@ export function describeInstallCommand(slug: BridgeAgentSlug, endpoint: BridgeEn
         `codex mcp add ${endpoint.serverName} --url ${endpoint.url}`,
         "# then add to ~/.codex/config.toml under [mcp_servers.vibeboard]:",
         ...(auth ? [`#   http_headers = { Authorization = ${tomlString(auth)} }`] : []),
-        "#   required = true",
+        "#   required = false",
         "#   startup_timeout_sec = 10.0",
       ].join("\n");
     case "cursor":
-      return JSON.stringify({ mcpServers: { [endpoint.serverName]: cursorServerEntry(endpoint) } }, null, 2);
+      return JSON.stringify(
+        { mcpServers: { [endpoint.serverName]: cursorServerEntry(endpoint) } },
+        null,
+        2,
+      );
   }
 }
 
@@ -196,7 +202,10 @@ export function applyJsonInstall(existingText: string | null, plan: JsonInstallP
   return `${JSON.stringify(root, null, 2)}\n`;
 }
 
-export function removeJsonInstall(existingText: string | null, plan: JsonInstallPlan): string | null {
+export function removeJsonInstall(
+  existingText: string | null,
+  plan: JsonInstallPlan,
+): string | null {
   if (existingText == null || existingText.trim() === "") return null;
   const root = parseJsonObject(existingText, plan.configPath);
   let cursor: Record<string, unknown> = root;
@@ -247,7 +256,7 @@ function parseJsonObject(text: string | null, where: string): Record<string, unk
 export function upsertTomlTable(
   existingText: string | null,
   table: string,
-  entries: Record<string, string>
+  entries: Record<string, string>,
 ): string {
   const text = existingText ?? "";
   const lines = text.length ? text.split(/\r?\n/) : [];
@@ -303,7 +312,10 @@ export function removeTomlTable(existingText: string | null, table: string): str
     }
   }
   const out = [...lines.slice(0, start), ...lines.slice(end)];
-  const joined = out.join("\n").replace(/\n{3,}/g, "\n\n").replace(/\n+$/, "");
+  const joined = out
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/\n+$/, "");
   return joined ? `${joined}\n` : "";
 }
 

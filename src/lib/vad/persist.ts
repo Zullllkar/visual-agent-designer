@@ -10,6 +10,7 @@
 import { promises as fs } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { applyProjectDuplicate, isSafeProjectId } from "@/lib/studio/project-actions";
+import { workspaceSidecarDir } from "@/lib/studio/workspace";
 import type { ProjectFile } from "@/lib/project/schema";
 import type { ChatMessage } from "@/lib/agents/chat-schema";
 import {
@@ -22,6 +23,13 @@ import {
   EDITABLE_EXTENSIONS,
   EDITABLE_PREFIXES,
 } from "./paths";
+import {
+  forgetWorkspace,
+  listWorkspaceIndex,
+  peekWorkspaceEntry,
+  rememberWorkspace,
+} from "./workspace-registry";
+import { canDuplicateProjectDirs } from "./project-dir-guard";
 
 import type { VadFileNode } from "./types";
 import { toSafeAssetFilename } from "./asset-filename";
@@ -31,7 +39,7 @@ export async function ensureDir(path: string): Promise<void> {
   await fs.mkdir(path, { recursive: true });
 }
 
-type AssetLike = { id: string; src: string };
+type AssetLike = { id: string; src: string; title?: string };
 
 function parseDataImageSrc(
   src: string
@@ -69,7 +77,7 @@ export async function processBase64Assets<T extends AssetLike>(
       const parsed = parseDataImageSrc(src);
       if (parsed) {
         await ensureDir(dir);
-        const filename = toSafeAssetFilename(id, parsed.subtype);
+        const filename = toSafeAssetFilename(id, parsed.subtype, asset.title);
         try {
           await fs.writeFile(join(dir, filename), parsed.buffer);
           processed.push({
@@ -92,6 +100,14 @@ export async function processBase64Assets<T extends AssetLike>(
  */
 export async function saveProjectToVad(project: ProjectFile): Promise<ProjectFile> {
   const id = project.id;
+  if (project.workspacePath) {
+    rememberWorkspace({
+      id,
+      path: project.workspacePath,
+      title: project.title,
+      updatedAt: project.updatedAt,
+    });
+  }
   const dir = projectDir(id);
   await ensureDir(dir);
 
@@ -148,7 +164,12 @@ export async function loadProjectFromVad(
 ): Promise<ProjectFile | null> {
   try {
     const raw = await fs.readFile(projectJsonPath(projectId), "utf8");
-    return JSON.parse(raw) as ProjectFile;
+    const project = JSON.parse(raw) as ProjectFile;
+    const entry = peekWorkspaceEntry(projectId);
+    if (entry && !project.workspacePath) {
+      return { ...project, workspacePath: entry.path };
+    }
+    return project;
   } catch {
     return null;
   }
@@ -158,9 +179,23 @@ export async function listProjectsFromVad(): Promise<ProjectFile[]> {
   await ensureDir(VAD_PROJECTS_DIR);
   const dirs = await fs.readdir(VAD_PROJECTS_DIR);
   const projects: ProjectFile[] = [];
+  const seen = new Set<string>();
   for (const dir of dirs) {
     const p = await loadProjectFromVad(dir);
-    if (p) projects.push(p);
+    if (p) {
+      projects.push(p);
+      seen.add(p.id);
+    }
+  }
+  for (const entry of listWorkspaceIndex()) {
+    if (seen.has(entry.id)) continue;
+    const p = await loadProjectFromVad(entry.id);
+    if (p) {
+      projects.push({
+        ...p,
+        workspacePath: p.workspacePath ?? entry.path,
+      });
+    }
   }
   return projects.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
@@ -168,6 +203,18 @@ export async function listProjectsFromVad(): Promise<ProjectFile[]> {
 export async function deleteProjectFromVad(projectId: string): Promise<void> {
   if (!isSafeProjectId(projectId)) {
     throw new Error("invalid_project_id");
+  }
+  const entry = peekWorkspaceEntry(projectId);
+  if (entry) {
+    const root = resolve(entry.path);
+    const sidecar = resolve(workspaceSidecarDir(entry.path));
+    const rel = relative(root, sidecar);
+    if (!rel || rel.startsWith("..") || isAbsolute(rel)) {
+      throw new Error("invalid_project_path");
+    }
+    await fs.rm(sidecar, { recursive: true, force: true });
+    forgetWorkspace(projectId);
+    return;
   }
   const root = resolve(VAD_PROJECTS_DIR);
   const abs = resolve(projectDir(projectId));
@@ -185,18 +232,14 @@ export async function duplicateProjectFromVad(
   if (!isSafeProjectId(projectId) || !isSafeProjectId(newId)) {
     throw new Error("invalid_project_id");
   }
-  const root = resolve(VAD_PROJECTS_DIR);
   const src = resolve(projectDir(projectId));
-  const dest = resolve(projectDir(newId));
-  const srcRel = relative(root, src);
-  const destRel = relative(root, dest);
+  const dest = resolve(VAD_PROJECTS_DIR, newId);
   if (
-    !srcRel ||
-    srcRel.startsWith("..") ||
-    isAbsolute(srcRel) ||
-    !destRel ||
-    destRel.startsWith("..") ||
-    isAbsolute(destRel)
+    !canDuplicateProjectDirs({
+      src,
+      dest,
+      projectsRoot: VAD_PROJECTS_DIR,
+    })
   ) {
     throw new Error("invalid_project_path");
   }

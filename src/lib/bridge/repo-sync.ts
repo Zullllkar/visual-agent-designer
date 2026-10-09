@@ -238,9 +238,10 @@ async function writeProjectMcpConfigs(repoPath: string): Promise<string[]> {
 
   const tomlPath = join(repoPath, ".codex", "config.toml");
   const tomlExisting = await readOrNull(tomlPath);
+  // required 必须为 false：Codex 对 required 服务器握手失败会直接拒绝开对话（与 install-planner 一致）
   const entries: Record<string, string> = {
     url: JSON.stringify(endpoint.url),
-    required: "true",
+    required: "false",
     startup_timeout_sec: "10.0",
   };
   if (endpoint.token) {

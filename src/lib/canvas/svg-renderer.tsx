@@ -95,7 +95,7 @@ function NodeRenderer({
           width={node.width + 4}
           height={node.height + 4}
           fill="none"
-          stroke="#6366f1"
+          stroke="#141416"
           strokeWidth={1.5}
           strokeDasharray="3 3"
           pointerEvents="none"

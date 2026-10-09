@@ -10,6 +10,7 @@ const {
   dialog,
   ipcMain,
   nativeTheme,
+  safeStorage,
   screen,
   shell,
 } = require("electron");
@@ -17,9 +18,22 @@ const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
+const {
+  HEARTBEAT_MS,
+  createCaptureServer,
+  newCaptureToken,
+  registerCaptureAgent,
+  unregisterCaptureAgent,
+} = require("./capture.cjs");
 const { createLogger } = require("./log.cjs");
 const { isAgentDeeplink, isHttpUrl, isLocalAppUrl } = require("./origin.cjs");
+const { createProviderSecretStore, pushProviderConfigToServer } = require("./secrets.cjs");
 const { parseHealthResponse } = require("./health.cjs");
+const {
+  classifyAppPageResponse,
+  isAppPageStable,
+  nextConsecutiveReady,
+} = require("./app-page.cjs");
 const { resolveDevSidecarSpawn } = require("./sidecar.cjs");
 const {
   killPidTree,
@@ -35,7 +49,7 @@ const {
   resolveDesktopPaths,
   sidecarRoot,
 } = require("./paths.cjs");
-const { loadUiTheme, saveUiTheme, windowChrome } = require("./theme.cjs");
+const { loadUiTheme, saveUiTheme, windowChrome, titleBarOverlayOptions } = require("./theme.cjs");
 const { loadWindowState, saveWindowState } = require("./window-state.cjs");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
@@ -59,12 +73,87 @@ let spawnedByThisProcess = false;
 /** @type {Error | null} */
 let sidecarSpawnError = null;
 let sidecarOutput = "";
+/** @type {{ code: number | null, signal: string | null } | null} */
+let sidecarExit = null;
 let releasedNextConflict = false;
 /** @type {ReturnType<typeof createLogger> | null} */
 let logger = null;
 /** @type {ReturnType<typeof resolveDesktopPaths> | null} */
 let desktopPaths = null;
 let restoreMaximized = false;
+/** @type {{ url: string, token: string, close: () => Promise<void> } | null} */
+let captureAgent = null;
+/** @type {ReturnType<typeof setInterval> | null} */
+let captureHeartbeat = null;
+/** @type {ReturnType<typeof createProviderSecretStore> | null} */
+let providerSecrets = null;
+
+/**
+ * 把钥匙串里的 provider 配置推给 Next：启动后一次 + 界面每次改配置后一次。
+ * 这样 coding agent 的 request_asset 在没打开界面时也有凭证。
+ */
+async function pushPersistedProviderConfig(reason) {
+  if (!providerSecrets) return;
+  const json = providerSecrets.load();
+  try {
+    await pushProviderConfigToServer({ serverOrigin: SERVER_ORIGIN, json });
+    logger?.info(`provider config ${json ? "pushed" : "cleared"} (${reason})`);
+  } catch (err) {
+    logger?.error(
+      `provider config push failed (${reason}): ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+}
+
+/**
+ * 截图代理：让 coding agent 的 report_implementation 只传 url 也能拿到整页截图。
+ * 失败只记日志，不影响主流程。
+ */
+async function startCaptureAgent() {
+  if (captureAgent) return;
+  try {
+    const token = newCaptureToken();
+    const server = await createCaptureServer({ token, BrowserWindow, logger });
+    captureAgent = { url: server.url, token, close: server.close };
+    const register = async () => {
+      try {
+        await registerCaptureAgent({
+          serverOrigin: SERVER_ORIGIN,
+          agentUrl: server.url,
+          agentToken: token,
+          version: app.getVersion(),
+        });
+      } catch (err) {
+        logger?.error(
+          `capture agent register failed: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    };
+    await register();
+    captureHeartbeat = setInterval(() => void register(), HEARTBEAT_MS);
+    captureHeartbeat.unref?.();
+    await pushPersistedProviderConfig("startup");
+  } catch (err) {
+    logger?.error(
+      `capture agent unavailable: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+}
+
+function stopCaptureAgent() {
+  if (captureHeartbeat) {
+    clearInterval(captureHeartbeat);
+    captureHeartbeat = null;
+  }
+  const agent = captureAgent;
+  captureAgent = null;
+  if (!agent) return;
+  void unregisterCaptureAgent({
+    serverOrigin: SERVER_ORIGIN,
+    agentToken: agent.token,
+  }).catch(() => undefined);
+  void agent.close().catch(() => undefined);
+}
 
 function currentUiTheme() {
   return desktopPaths ? loadUiTheme(desktopPaths.uiTheme) : "light";
@@ -119,17 +208,14 @@ function probeHealth() {
 function probeAppPage(timeoutMs) {
   return new Promise((resolve) => {
     const req = http.get(`${SERVER_ORIGIN}/`, (res) => {
-      res.resume();
-      const code = res.statusCode ?? 0;
-      if (code === 503) {
-        resolve("starting");
-        return;
-      }
-      if (code >= 200 && code < 400) {
-        resolve("ready");
-        return;
-      }
-      resolve("down");
+      const chunks = [];
+      res.on("data", (chunk) => {
+        chunks.push(chunk);
+      });
+      res.on("end", () => {
+        const body = Buffer.concat(chunks).toString("utf8");
+        resolve(classifyAppPageResponse(res.statusCode ?? 0, body));
+      });
     });
     req.on("error", () => resolve("down"));
     req.setTimeout(timeoutMs, () => {
@@ -142,10 +228,12 @@ function probeAppPage(timeoutMs) {
 async function waitUntilAppPage() {
   const timeoutMs = readyTimeoutMs();
   const deadline = Date.now() + timeoutMs;
+  let consecutiveReady = 0;
   while (Date.now() < deadline) {
     const remaining = Math.max(5_000, deadline - Date.now());
     const status = await probeAppPage(remaining);
-    if (status === "ready") return;
+    consecutiveReady = nextConsecutiveReady(consecutiveReady, status);
+    if (isAppPageStable(consecutiveReady)) return;
     if (status === "timeout") break;
     await sleep(POLL_MS);
   }
@@ -177,6 +265,7 @@ function onSidecarSpawnError(err) {
 
 function attachSidecarOutput(child) {
   sidecarOutput = "";
+  sidecarExit = null;
   for (const stream of [child.stdout, child.stderr]) {
     if (!stream) continue;
     stream.on("data", (chunk) => {
@@ -185,6 +274,12 @@ function attachSidecarOutput(child) {
       process.stdout.write(text);
     });
   }
+  child.once("exit", (code, signal) => {
+    sidecarExit = { code: code ?? null, signal: signal ?? null };
+    logger?.error(
+      `sidecar exited before readiness code=${code ?? "null"} signal=${signal ?? "null"} output=${sidecarOutput.slice(-4000)}`
+    );
+  });
 }
 
 function spawnDevServer() {
@@ -215,7 +310,7 @@ function spawnPackagedServer() {
       `安装包缺少 sidecar（${nodeBin} 或 ${serverJs}）。请用 pnpm dist:desktop 重新打包。`
     );
   }
-  return spawn(nodeBin, [serverJs], {
+  const child = spawn(nodeBin, [serverJs], {
     cwd: appDir,
     env: {
       ...sidecarEnv(),
@@ -226,6 +321,13 @@ function spawnPackagedServer() {
     windowsHide: true,
     detached: false,
   });
+  child.once("exit", (code, signal) => {
+    sidecarExit = { code: code ?? null, signal: signal ?? null };
+    logger?.error(
+      `packaged sidecar exited before readiness code=${code ?? "null"} signal=${signal ?? "null"}`
+    );
+  });
+  return child;
 }
 
 function spawnVadServer() {
@@ -244,6 +346,7 @@ function killSpawnedServer() {
   const pid = child.pid;
   spawnedServer = null;
   spawnedByThisProcess = false;
+  sidecarExit = null;
   if (!pid) return;
   if (process.platform === "win32") {
     spawn("taskkill", ["/pid", String(pid), "/T", "/F"], {
@@ -264,6 +367,12 @@ async function waitUntilReady(onStarting) {
       throw sidecarSpawnError;
     }
     if (spawnedByThisProcess && spawnedServer) {
+      if (sidecarExit) {
+        const detail = sidecarOutput.trim().slice(-4000);
+        throw new Error(
+          `Local sidecar exited before readiness (code=${sidecarExit.code ?? "null"}, signal=${sidecarExit.signal ?? "null"}).${detail ? `\n\nLast output:\n${detail}` : ""}`
+        );
+      }
       if (spawnedServer.exitCode !== null || spawnedServer.killed) {
         throw new Error("本地服务在就绪前退出");
       }
@@ -474,13 +583,14 @@ function buildAppMenu() {
 }
 
 function createWindow() {
-  const workArea = screen.getPrimaryDisplay().workAreaSize;
+  const workArea = screen.getPrimaryDisplay().workArea;
   const state = loadWindowState(desktopPaths.windowState, workArea);
   restoreMaximized = state.isMaximized;
   const chrome = windowChrome(currentUiTheme());
   mainWindow = new BrowserWindow({
     x: state.x,
     y: state.y,
+    center: state.x === undefined || state.y === undefined,
     width: state.width,
     height: state.height,
     minWidth: 960,
@@ -493,11 +603,7 @@ function createWindow() {
     ...(process.platform === "darwin"
       ? {}
       : {
-          titleBarOverlay: {
-            color: chrome.overlay,
-            symbolColor: chrome.symbol,
-            height: 40,
-          },
+          titleBarOverlay: titleBarOverlayOptions(currentUiTheme()),
         }),
     autoHideMenuBar: true,
     webPreferences: {
@@ -560,7 +666,19 @@ function registerIpc() {
 
   ipcMain.on("desktop:open-project", (_event, projectId) => {
     if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(String(projectId ?? ""))) return;
-    openDir(path.join(desktopPaths.vadRoot, "projects", projectId));
+    let target = path.join(desktopPaths.vadRoot, "projects", projectId);
+    try {
+      const raw = JSON.parse(
+        fs.readFileSync(path.join(desktopPaths.vadRoot, "workspaces.json"), "utf8")
+      );
+      const workspacePath = raw?.entries?.[projectId]?.path;
+      if (typeof workspacePath === "string" && workspacePath.trim()) {
+        target = workspacePath;
+      }
+    } catch {
+      /* fall back to app data dir */
+    }
+    openDir(target);
   });
 
   // 渲染进程请求打开外部地址：只放行 http(s) 外链与 coding agent 深链
@@ -585,20 +703,23 @@ function registerIpc() {
     });
   });
 
+  let titleBarScrim = false;
+
+  function paintTitleBarOverlay(win, theme) {
+    if (!win || process.platform === "darwin" || !win.setTitleBarOverlay) return;
+    win.setTitleBarOverlay(titleBarOverlayOptions(theme, titleBarScrim));
+  }
+
+  ipcMain.on("desktop:titlebar-scrim", (event, scrim) => {
+    titleBarScrim = scrim === true;
+    paintTitleBarOverlay(windowFromEvent(event), currentUiTheme());
+  });
+
   ipcMain.on("desktop:titlebar-theme", (event, theme) => {
     const next = theme === "dark" ? "dark" : "light";
     nativeTheme.themeSource = next;
     if (desktopPaths) saveUiTheme(desktopPaths.uiTheme, next);
-    const win = windowFromEvent(event);
-    if (!win || process.platform === "darwin" || !win.setTitleBarOverlay) {
-      return;
-    }
-    const chrome = windowChrome(next);
-    win.setTitleBarOverlay({
-      color: chrome.overlay,
-      symbolColor: chrome.symbol,
-      height: 40,
-    });
+    paintTitleBarOverlay(windowFromEvent(event), next);
   });
 
   const FILE_MAX_BYTES = 48 * 1024 * 1024;
@@ -643,11 +764,29 @@ function registerIpc() {
     return { ok: true, path: filePath };
   });
 
+  // 渲染进程设置面板改了 provider 配置 → 加密落盘 → 推给 Next
+  ipcMain.handle("desktop:provider-config", async (event, payload) => {
+    if (!windowFromEvent(event) || !providerSecrets) {
+      return { ok: false, reason: "unavailable" };
+    }
+    const action = payload?.action;
+    if (action === "clear") {
+      providerSecrets.clear();
+      void pushPersistedProviderConfig("clear");
+      return { ok: true, persisted: false };
+    }
+    if (action !== "save") return { ok: false, reason: "bad_action" };
+    const result = providerSecrets.save(payload?.json);
+    if (!result.ok) return { ok: false, reason: result.reason };
+    void pushPersistedProviderConfig("save");
+    return { ok: true, persisted: true };
+  });
+
   ipcMain.handle("desktop:pick-directory", async (event) => {
     const win = windowFromEvent(event);
     if (!win) return { ok: false };
     const { canceled, filePaths } = await dialog.showOpenDialog(win, {
-      properties: ["openDirectory"],
+      properties: ["openDirectory", "createDirectory"],
     });
     if (canceled || !filePaths?.[0]) return { ok: false, canceled: true };
     return { ok: true, path: filePaths[0] };
@@ -677,6 +816,10 @@ async function startDesktop() {
   logger.info(
     `start packaged=${app.isPackaged} origin=${SERVER_ORIGIN} vadRoot=${desktopPaths.vadRoot}`
   );
+  providerSecrets = createProviderSecretStore(safeStorage, desktopPaths.userData, logger);
+  if (!providerSecrets.available()) {
+    logger.info("safeStorage encryption unavailable; provider keys will not persist for the bridge");
+  }
 
   nativeTheme.themeSource = currentUiTheme();
   registerIpc();
@@ -781,6 +924,11 @@ async function startDesktop() {
   await waitUntilAppPage();
   await win.loadURL(SERVER_ORIGIN);
   if (restoreMaximized && !win.isDestroyed()) win.maximize();
+  if (!win.isDestroyed()) {
+    if (!win.isVisible()) win.show();
+    win.focus();
+  }
+  void startCaptureAgent();
 }
 
 const gotTheLock = app.requestSingleInstanceLock();
@@ -803,11 +951,13 @@ if (!gotTheLock) {
   });
 
   app.on("window-all-closed", () => {
+    stopCaptureAgent();
     killSpawnedServer();
     app.quit();
   });
 
   app.on("before-quit", () => {
+    stopCaptureAgent();
     killSpawnedServer();
   });
 }

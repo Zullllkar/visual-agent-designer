@@ -14,6 +14,7 @@ export type ClientJob = {
   startedAt?: number;
   completedAt?: number;
   runId?: string;
+  turnId?: string;
   batchId?: string;
   projectId?: string;
   threadId?: string;
@@ -41,13 +42,14 @@ export function toClientJob(job: JobLike | Record<string, unknown>): ClientJob {
 
   return {
     id: String(record.id ?? ""),
-    type: record.type,
-    status: record.status,
+    type: record.type ?? "custom",
+    status: record.status ?? "pending",
     error: record.error,
     createdAt: Number(record.createdAt ?? 0),
     startedAt: record.startedAt,
     completedAt: record.completedAt,
     runId: record.runId,
+    turnId: record.turnId,
     batchId: record.batchId,
     projectId: record.projectId,
     threadId: record.threadId,

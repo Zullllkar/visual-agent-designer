@@ -1,17 +1,21 @@
 ﻿/**
  * POST /api/agents/generate/stream
  * --------------------------------------------------------------
- * SSE 娴佸紡杩斿洖娴佹按绾挎棩蹇?+ 鏈€缁?ProjectFile銆? *
- * event: log       鈫?PipelineLogEntry
- * event: code_diff 鈫?椤甸潰 JSON 鍙樻洿棰勮
- * event: progress  鈫?{ stage, detail? }
- * event: project_snapshot 鈫?{ project }  锛堝竷灞€ / 鐢熷浘鍗犱綅 / 姣忓紶瀹屾垚锛? * event: final_project 鈫?{ project }
- * event: error     鈫?{ message }
- * event: done      鈫?{ reason }
+ * SSE 流式返回流水线日志 + 最终 ProjectFile。
  *
- * @author锛歸angjunhua
+ * event: log       → PipelineLogEntry
+ * event: code_diff → 页面 JSON 变更预览
+ * event: progress  → { stage, detail? }
+ * event: project_snapshot → { project }  （布局 / 生图占位 / 每张完成）
+ * event: final_project → { project }
+ * event: error     → { message }
+ * event: done      → { reason }
+ *
+ * @author：wangjunhua
  */
 
+// DEPRECATED MIGRATION SENTINEL: WebSocket + LangGraph is the only formal
+// execution path. The old fixed SSE pipeline must never be started here.
 export async function POST(req: Request) {
   await req.body?.cancel().catch(() => undefined);
   return Response.json(
@@ -90,7 +94,7 @@ export async function POST(req: Request) {
       });
 
       try {
-        const existing = await loadProjectFromVad(projectId).catch(() => null);
+        const existing = await loadMergedProjectFromVad(projectId);
 
         const project = await generateProjectFromIdea(parsed.data.idea, {
           providerConfig: parsed.data.providerConfig,

@@ -33,20 +33,34 @@ export function shouldSupersedeForNewTurn(
     status: string;
     pendingToolApproval?: { status?: string; toolName?: string } | null;
     lastHeartbeatAt?: number;
+    currentStep?: string;
   },
   now = Date.now(),
 ): boolean {
-  if (
-    run.status === "waiting_user" &&
+  const pendingImage =
     run.pendingToolApproval?.status === "pending" &&
     (run.pendingToolApproval.toolName === "generate_images" ||
       run.pendingToolApproval.toolName === "generate_image_variants" ||
-      !run.pendingToolApproval.toolName)
+      !run.pendingToolApproval.toolName);
+
+  if (run.status === "waiting_user" && pendingImage) {
+    return true;
+  }
+  if (
+    (run.status === "running" || run.status === "accepted") &&
+    pendingImage
   ) {
     return true;
   }
   if (run.status !== "accepted" && run.status !== "running" && run.status !== "cancelling") {
     return false;
+  }
+  if (
+    run.status === "running" &&
+    typeof run.currentStep === "string" &&
+    run.currentStep.endsWith(":done")
+  ) {
+    return true;
   }
   if (!run.lastHeartbeatAt) return true;
   return now - run.lastHeartbeatAt > STALE_HEARTBEAT_MS;

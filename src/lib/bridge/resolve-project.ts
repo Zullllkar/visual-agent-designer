@@ -5,6 +5,7 @@
  * 省略时回退到 active context。所有工具共用，保证提示语一致。
  */
 
+import { isCodingHandoffPack, resolveHandoffPackKind } from "@/lib/handoff/pack-kind";
 import type { ProjectFile } from "@/lib/project/schema";
 import { listProjectsFromVad, loadMergedProjectFromVad } from "@/lib/vad/storage";
 import { activeContext } from "./active-context";
@@ -88,6 +89,8 @@ export function summarizeProject(project: ProjectFile) {
     title: project.title,
     rawIdea: project.rawIdea,
     targetId: project.targetId ?? "ui-visual",
+    packKind: resolveHandoffPackKind(project),
+    codingHandoff: isCodingHandoffPack(resolveHandoffPackKind(project)),
     platform: project.brief?.platform,
     positioning: project.brief?.positioning,
     visualStyle: project.brief?.visualStyle,

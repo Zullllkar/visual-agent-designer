@@ -8,6 +8,8 @@ import { ImagePlannerAgent } from "@/lib/agents/image-planner-agent";
 import { ImageExecutorAgent } from "@/lib/agents/image-executor-agent";
 import type { SubAgent } from "./types";
 import { parseRequestedImageCount, ProjectFileSchema } from "@/lib/agents/tools/utils";
+import { ensureProjectBrief } from "@/lib/project/ensure-brief";
+import { processBase64Assets } from "@/lib/vad/persist";
 
 export const imageGenSubAgent: SubAgent = {
   name: "image-generation",
@@ -15,16 +17,19 @@ export const imageGenSubAgent: SubAgent = {
   keywords: ["生成素材", "生图", "批量生成", "generate images", "视觉素材"],
 
   async run(input) {
-    if (!input.project?.brief) {
-      throw new Error("缺少 brief，无法生图");
+    if (!input.project) {
+      throw new Error("缺少项目，无法生图");
     }
+    const project = ensureProjectBrief(input.project, { userMessage: input.task });
+    if (!project.brief) throw new Error("项目 Brief 不完整，无法规划生图");
 
     const requestedCount = parseRequestedImageCount(input.task) ?? 1;
+    const pages = project.pages ?? [];
     const plan = await ImagePlannerAgent.run(
       {
-        brief: input.project.brief,
-        pages: [],
-        designDirection: input.project.designDirection,
+        brief: project.brief,
+        pages,
+        designDirection: project.designDirection,
         standaloneCount: requestedCount,
       },
       input.agentCtx
@@ -36,17 +41,29 @@ export const imageGenSubAgent: SubAgent = {
 
     const executed = await ImageExecutorAgent.run(
       {
-        brief: input.project.brief,
-        pages: [],
+        brief: project.brief,
+        pages,
         plan,
         providerConfig: input.providerConfig,
       },
       input.agentCtx
     );
 
+    const mergedAssets = [
+      ...(project.assets ?? []).filter(
+        (asset) => !executed.assets.some((item) => item.id === asset.id)
+      ),
+      ...executed.assets,
+    ];
+    const writtenAssets = await processBase64Assets(
+      project.id,
+      mergedAssets,
+      "assets"
+    );
     const updated = ProjectFileSchema.parse({
-      ...input.project,
-      assets: [...(input.project.assets ?? []), ...executed.assets],
+      ...project,
+      pages: executed.pages.length > 0 ? executed.pages : pages,
+      assets: writtenAssets,
       updatedAt: new Date().toISOString(),
     });
 

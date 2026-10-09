@@ -18,7 +18,7 @@
  */
 
 import { z } from "zod";
-import { AssetDesignSpecSchema } from "./design-spec-schema";
+import { AssetDesignSpecSchema, CopyPlanItemSchema } from "./design-spec-schema";
 
 export const MockupApprovalSchema = z.object({
   status: z.enum([
@@ -37,6 +37,8 @@ export const ImageAssetSchema = z.object({
   id: z.string(),
   /** 调用图像模型时使用的 prompt（包含 visualStyle 前缀） */
   prompt: z.string(),
+  /** 生图前规划的 UI 文案；拆解时用它校正 Vision 读到的字 */
+  copyPlan: z.array(CopyPlanItemSchema).optional(),
   /** 候选图：data:image/png;base64,... 或 https://... */
   src: z.string(),
   /** 像素宽高（由请求 size 推断或 image natural size） */
@@ -130,6 +132,8 @@ export const ImageAssetSchema = z.object({
   materialSlotId: z.string().optional(),
   /** 画布家族底板标题，用来标这组素材属于哪个页面。 */
   familyTitle: z.string().optional(),
+  /** 用户可见短名，不是生成 id。缺省时由 prompt / 角色推导。 */
+  title: z.string().optional(),
 });
 
 export type ImageAsset = z.infer<typeof ImageAssetSchema>;

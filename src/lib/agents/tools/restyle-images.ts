@@ -16,6 +16,8 @@ import {
   type DirectImageGenerationRequest,
 } from "@/lib/agents/direct-image-generation";
 import { stageGeneratingAssets } from "@/lib/canvas/stage-generating-assets";
+import { publishGeneratingPlaceholders } from "@/lib/agents/persist-then-submit";
+import { ensureProjectBrief } from "@/lib/project/ensure-brief";
 import type { AgentTool, ToolContext, ToolResult } from "./types";
 import {
   buildNodeImagePrompt,
@@ -57,9 +59,13 @@ export const restyleImagesTool: AgentTool = {
     args: Record<string, unknown>,
     ctx: ToolContext
   ): Promise<ToolResult> {
-    if (!ctx.project?.brief) {
-      throw new Error("缺少 brief，无法统一素材风格");
+    if (!ctx.project) {
+      throw new Error("缺少项目，无法统一素材风格");
     }
+    ctx.project = ensureProjectBrief(ctx.project, {
+      prompt: typeof args.instruction === "string" ? args.instruction : undefined,
+      userMessage: ctx.userMessage,
+    });
     assertRealImageForGeneration(ctx.providerConfig);
     registerAllJobHandlers();
 
@@ -132,6 +138,8 @@ export const restyleImagesTool: AgentTool = {
       designContext: resolveRunDesignContext(ctx.project, ctx.agentCtx.scratch),
     });
 
+    await publishGeneratingPlaceholders(ctx, projectWithPending);
+
     const jobIds: string[] = [];
     for (let index = 0; index < targets.length; index++) {
       const parent = targets[index]!;
@@ -156,6 +164,7 @@ export const restyleImagesTool: AgentTool = {
           pendingAssets: slice,
         },
         runId: ctx.runId,
+            turnId: typeof ctx.agentCtx.scratch.turnId === "string" ? ctx.agentCtx.scratch.turnId : undefined,
         toolCallId: ctx.toolCallId,
         projectId: ctx.agentCtx.projectId,
         threadId: ctx.agentCtx.threadId,
@@ -167,8 +176,6 @@ export const restyleImagesTool: AgentTool = {
         agentRuns.addJobToRun(ctx.runId, job.id);
       }
     }
-
-    ctx.onProjectUpdate?.(projectWithPending);
 
     return {
       summary: `已提交 ${targets.length} 张换风格任务（画布已出现 loading 占位）`,

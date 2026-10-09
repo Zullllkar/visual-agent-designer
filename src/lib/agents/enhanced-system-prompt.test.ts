@@ -8,6 +8,8 @@ import { describe, expect, it } from "vitest";
 import type { ProjectFile } from "@/lib/project/schema";
 import { buildEnhancedSystemPrompt } from "./enhanced-system-prompt";
 import type { AgentContext } from "./types";
+import { createPlaceholderProject } from "@/lib/project/placeholder";
+import { SkillManifestSchema, DesignSystemManifestSchema } from "@/lib/skills/schema";
 
 describe("buildEnhancedSystemPrompt", () => {
   const mockAgentContext = (): AgentContext => ({
@@ -15,14 +17,15 @@ describe("buildEnhancedSystemPrompt", () => {
     scratch: {},
     providers: {
       llm: {
-        kind: "mock",
+        name: "mock-llm",
         generateText: async () => ({ text: "mock" }),
         supportsToolCalling: false,
       },
-      imageGen: {
-        kind: "mock",
-        generateImage: async () => ({ src: "mock.png" }),
+      image: {
+        name: "mock-image",
+        generateImage: async () => ({ imageUrl: "mock.png", model: "mock" }),
       },
+      visionCritic: false,
     },
     skill: undefined,
     designSystem: undefined,
@@ -98,7 +101,7 @@ describe("buildEnhancedSystemPrompt", () => {
     });
 
     it("shows project with brief", () => {
-      const project: ProjectFile = {
+      const project = {
         id: "test",
         title: "Test Project",
         brief: {
@@ -116,13 +119,13 @@ describe("buildEnhancedSystemPrompt", () => {
         updatedAt: new Date().toISOString(),
       };
 
-      const prompt = buildEnhancedSystemPrompt(project, mockAgentContext());
+      const prompt = buildEnhancedSystemPrompt(project as unknown as ProjectFile, mockAgentContext());
       expect(prompt).toContain("Brief: generated");
       expect(prompt).toContain("Test Project");
     });
 
     it("shows design direction state", () => {
-      const project: ProjectFile = {
+      const project = {
         id: "test",
         title: "Test Project",
         brief: {
@@ -144,12 +147,12 @@ describe("buildEnhancedSystemPrompt", () => {
         updatedAt: new Date().toISOString(),
       };
 
-      const prompt = buildEnhancedSystemPrompt(project, mockAgentContext());
+      const prompt = buildEnhancedSystemPrompt(project as unknown as ProjectFile, mockAgentContext());
       expect(prompt).toContain("Visual direction: generated");
     });
 
     it("shows assets count", () => {
-      const project: ProjectFile = {
+      const project = {
         id: "test",
         title: "Test Project",
         brief: {
@@ -170,7 +173,7 @@ describe("buildEnhancedSystemPrompt", () => {
           {
             id: "asset1",
             src: "test.png",
-            status: "ready",
+            status: "candidate",
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           },
@@ -187,7 +190,7 @@ describe("buildEnhancedSystemPrompt", () => {
         updatedAt: new Date().toISOString(),
       };
 
-      const prompt = buildEnhancedSystemPrompt(project, mockAgentContext());
+      const prompt = buildEnhancedSystemPrompt(project as unknown as ProjectFile, mockAgentContext());
       expect(prompt).toContain("Assets: 2");
       expect(prompt).toContain("ready 1");
       expect(prompt).toContain("generating 1");
@@ -269,12 +272,18 @@ describe("buildEnhancedSystemPrompt", () => {
     it("includes skill section when skill is present", () => {
       const ctx = mockAgentContext();
       ctx.skill = {
-        manifest: {
-          name: "Test Skill",
+        sourcePath: "skills/test-skill/SKILL.md",
+        raw: "Test skill instructions",
+        origin: "builtin",
+        enabled: true,
+        manifest: SkillManifestSchema.parse({
+          name: "test-skill",
+          description: "Test skill",
+          kind: "prototype",
           version: "1.0.0",
-          output: { defaultPageSize: { width: 1920, height: 1080 } },
-          agent: { repairThreshold: 0.8 },
-        },
+          output: { artifact: "canvas-pages", defaultPageSize: { width: 1920, height: 1080 } },
+          agent: { repairThreshold: 8 },
+        }),
         body: "Test skill instructions",
       };
 
@@ -286,23 +295,29 @@ describe("buildEnhancedSystemPrompt", () => {
     it("includes design system when present", () => {
       const ctx = mockAgentContext();
       ctx.designSystem = {
-        manifest: {
-          name: "Test Design System",
+        sourcePath: "design-systems/test-system/DESIGN.md",
+        manifest: DesignSystemManifestSchema.parse({
+          name: "test-system",
+          description: "Test design system",
+          atmosphere: "Calm",
           version: "1.0.0",
-        },
+        }),
         body: "Test design system guidelines",
       };
 
       const prompt = buildEnhancedSystemPrompt(null, ctx);
-      expect(prompt).toContain("# Design System: Test Design System");
+      expect(prompt).toContain("# Design System: test-system");
       expect(prompt).toContain("Test design system guidelines");
     });
 
     it("includes brand kit when present in project", () => {
-      const project: ProjectFile = {
+      const project = {
         id: "test",
         title: "Test Project",
         brandKit: {
+          id: "test-brand",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
           name: "Test Brand",
           colors: [
             { name: "Primary", value: "#0066FF", usage: "CTA buttons" },
@@ -318,7 +333,7 @@ describe("buildEnhancedSystemPrompt", () => {
         updatedAt: new Date().toISOString(),
       };
 
-      const prompt = buildEnhancedSystemPrompt(project, mockAgentContext());
+      const prompt = buildEnhancedSystemPrompt(project as unknown as ProjectFile, mockAgentContext());
       expect(prompt).toContain("# Brand Kit: Test Brand");
       expect(prompt).toContain("Primary: #0066FF (CTA buttons)");
       expect(prompt).toContain("Heading: Inter Bold");

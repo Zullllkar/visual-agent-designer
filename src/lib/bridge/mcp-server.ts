@@ -17,22 +17,30 @@ import { z } from "zod";
 import { buildDirectPendingAssets } from "@/lib/agents/direct-image-generation";
 import { registerAllJobHandlers } from "@/lib/agents/job/job-handlers";
 import { jobScheduler } from "@/lib/agents/job/job-scheduler";
+import { cropSlotFromMockup } from "@/lib/handoff/crop-slot";
 import { buildKickoffClipboardText } from "@/lib/handoff/kickoff-prompt";
 import { MATERIAL_SLOT_COST_USD } from "@/lib/handoff/materialize-cost";
+import { diffDesignSnapshots, takeDesignSnapshot } from "@/lib/handoff/design-snapshot";
 import { resolveAssetImageDataUrl } from "@/lib/handoff/resolve-asset-src";
+import { buildScreenTask, getScreen, latestReportByAsset, listScreens } from "@/lib/handoff/screens";
+import { pickPrimaryMockup } from "@/lib/handoff/select-assets";
+import { buildSharedComponentIndex } from "@/lib/handoff/shared-components";
+import { isCodingHandoffPack, resolveHandoffPackKind } from "@/lib/handoff/pack-kind";
 import { compressImageDataUrlForVision } from "@/lib/handoff/vision-image";
 import type { ProjectFile } from "@/lib/project/schema";
 import { resolveProviders } from "@/lib/providers/registry";
 import { listProjectsFromVad } from "@/lib/vad/storage";
 
 import { activeContext } from "./active-context";
+import { captureAgent, captureViaDesktop } from "./capture-agent";
 import { BRIDGE_SERVER_NAME } from "./config";
+import { describeProposal, ProposalChangeSchema } from "./design-proposal";
 import {
   HANDOFF_PRIMARY_DOCS,
   getBuiltHandoff,
   type BuiltHandoff,
 } from "./handoff-cache";
-import { reviewImplementation } from "./implementation-review";
+import { listImplementationReports, reviewImplementation } from "./implementation-review";
 import {
   bridgeRequests,
   isAutoApproveAssets,
@@ -41,16 +49,19 @@ import {
 import { getCachedProviderConfig, providerCacheStatus } from "./provider-cache";
 import { readScreenshotInput } from "./screenshot-input";
 import { resolveProject, summarizeProject } from "./resolve-project";
+import { findBaselineSnapshot, recordDesignSnapshot } from "./snapshot-store";
 
 export const BRIDGE_SERVER_VERSION = "0.1.0";
 
 const SERVER_INSTRUCTIONS = [
-  "Vibeboard is a local design studio. Its final visual assets, layout IR, tokens and specs are the design source of truth for the code you write.",
-  "Start with get_active_context (or pass `project` explicitly), then call get_handoff once — it bundles README/DESIGN/SPEC/LAYOUT/tokens in one response. Prefer it over many read_handoff_file calls.",
-  "Use get_asset_image to look at a final mockup as an image; use get_layout_ir for authoritative regions, copy and which regions must be rebuilt in code.",
-  "Never invent a different visual system. Follow tokens, style lock and the don'ts in DESIGN.md.",
-  "After you implement a screen, call report_implementation with a screenshot — Vibeboard compares it to the approved design and returns a concrete deviation list to fix.",
-  "Missing an image? Call request_asset instead of drawing it in CSS/SVG. Unsure about a design decision? Call ask_designer rather than guessing.",
+  "Vibeboard is a local design studio. First call get_active_context or list_projects and read packKind.",
+  "If packKind is code-kickoff: final visuals, layout IR, tokens and specs are the source of truth for the code you write. Work screen by screen — list_screens → get_screen_task → implement → report_implementation.",
+  "If packKind is art-bible, media-pack or none: this is NOT a UI to implement. Read ART_BIBLE.md / COPY.md / STYLE_NOTES.md via get_handoff, look at images with get_asset_image. Do not call get_layout_ir, propose_design_change or report_implementation. Unstarred assets are exploration, not finals.",
+  "Start with get_active_context (or pass `project` explicitly), then call get_handoff once. Prefer it over many read_handoff_file calls.",
+  "For code-kickoff: use get_layout_ir for regions; get_asset_crop(slotId) to zoom. Never invent a different visual system.",
+  "For code-kickoff after implementing a screen, call report_implementation with the dev-server url (desktop captures it) or a screenshot.",
+  "Missing an image? request_asset. Unsure? ask_designer. Layout cannot be implemented as specified? propose_design_change (code-kickoff only).",
+  "If the designer changes a code-kickoff after you built a screen, call get_design_changes and patch incrementally.",
 ].join("\n");
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
@@ -98,9 +109,16 @@ function registerContextTools(server: McpServer): void {
       const snap = activeContext.snapshot();
       if (!snap.active || !snap.projectId) return json(snap);
       const resolved = await resolveProject(snap.projectId);
+      const summary = resolved.ok ? summarizeProject(resolved.project) : undefined;
+      const packKind = resolved.ok ? resolveHandoffPackKind(resolved.project) : undefined;
       return json({
         ...snap,
-        project: resolved.ok ? summarizeProject(resolved.project) : undefined,
+        packKind,
+        codingHandoff: packKind ? isCodingHandoffPack(packKind) : undefined,
+        project: summary,
+        workflow: packKind && !isCodingHandoffPack(packKind)
+          ? "Look at starred finals with get_handoff + get_asset_image. Do not implement UI screens."
+          : "list_screens → get_screen_task → implement → report_implementation.",
       });
     }
   );
@@ -182,6 +200,179 @@ function registerContextTools(server: McpServer): void {
 
 function registerPullTools(server: McpServer): void {
   server.registerTool(
+    "list_screens",
+    {
+      title: "List screens to implement",
+      description:
+        "Every final mockup as a screen, in suggested implementation order (approved → materialized → starred → rest). Each entry has readiness (ready | partial | draft, with what is missing), Layout IR / material counts, copy-plan counts, the files to read, and the latest report_implementation verdict. Use this to pick the next screen and to see overall progress.",
+      inputSchema: { project: PROJECT_ARG },
+      annotations: READ_ONLY,
+    },
+    async ({ project }) => {
+      const r = await resolveProject(project);
+      if (!r.ok) return fail(r.error, r.candidates);
+      const reports = await listImplementationReports(r.project.id, 200).catch(() => []);
+      const screens = listScreens(r.project, reports);
+      const passed = screens.filter((s) => s.implementation?.verdict === "pass").length;
+      const shared = buildSharedComponentIndex(r.project);
+      const packKind = resolveHandoffPackKind(r.project);
+      const coding = isCodingHandoffPack(packKind);
+      const nextSuggested = coding
+        ? (screens.find((s) => !s.implementation || s.implementation.verdict !== "pass")?.assetId ?? null)
+        : (screens.find((s) => s.status.starred)?.assetId ?? null);
+      return json({
+        project: summarizeProject(r.project),
+        packKind,
+        count: screens.length,
+        progress: coding
+          ? {
+              passed,
+              reviewed: screens.filter((s) => s.implementation && s.implementation.verdict !== "unreviewed").length,
+              ready: screens.filter((s) => s.readiness.level === "ready").length,
+            }
+          : {
+              starred: screens.filter((s) => s.status.starred).length,
+              exploring: screens.filter((s) => !s.status.starred).length,
+              ready: screens.filter((s) => s.status.starred).length,
+            },
+        nextSuggested,
+        sharedComponents: coding
+          ? shared.components.map((c) => ({
+              id: c.id,
+              name: c.name,
+              kind: c.kind,
+              screenCount: c.screenCount,
+              screens: [...new Set(c.instances.map((i) => i.assetId))],
+            }))
+          : [],
+        screens,
+        hint: coding
+          ? "Call get_screen_task(assetId) for the next screen. Build sharedComponents once (they appear on several screens) before screen-specific work. Screens with readiness=draft usually need the designer to materialize them first — ask via ask_designer if that blocks you."
+          : nextSuggested
+            ? `This is a ${packKind} (not a UI-to-code pack). Starred assets are the finals. Call get_screen_task(assetId) for usage, then get_asset_image. Do not implement React screens or call report_implementation.`
+            : "This is not a UI-to-code pack, and nothing is starred yet. Ask the designer to star the finals in Vibeboard before treating any image as production art. You can still get_asset_image to look.",
+      });
+    }
+  );
+
+  server.registerTool(
+    "get_screen_task",
+    {
+      title: "Get a task brief for one screen",
+      description:
+        "Focused implementation brief for a single mockup: scope, readiness warnings, exact files to read, the region table from Layout IR (bbox, build mode, copy, swatch), the authoritative copy plan, acceptance steps, and any open deviations from the last review. Implement exactly this screen, then report_implementation with the same assetId.",
+      inputSchema: {
+        project: PROJECT_ARG,
+        assetId: z.string().min(1).describe("Screen (mockup asset) id from list_screens."),
+      },
+      annotations: READ_ONLY,
+    },
+    async ({ project, assetId }) => {
+      const r = await resolveProject(project);
+      if (!r.ok) return fail(r.error, r.candidates);
+      const reports = await listImplementationReports(r.project.id, 200).catch(() => []);
+      const screens = listScreens(r.project, reports);
+      const screen = screens.find((s) => s.assetId === assetId) ?? getScreen(r.project, assetId, reports);
+      if (!screen) {
+        return fail(`No screen (final mockup) with id ${assetId}.`, undefined, {
+          screenIds: screens.map((s) => s.assetId),
+        });
+      }
+      const latest = latestReportByAsset(reports).get(assetId);
+      void recordDesignSnapshot(r.project).catch(() => undefined);
+      const shared = buildSharedComponentIndex(r.project);
+      return {
+        content: [
+          { type: "text", text: buildScreenTask(r.project, screen, latest, screens.length, shared) },
+        ],
+      };
+    }
+  );
+
+  server.registerTool(
+    "get_design_changes",
+    {
+      title: "What changed in the design since I last looked?",
+      description:
+        "Semantic diff of the design between a baseline and now: screens added/removed, mockups regenerated, Layout IR regions added/removed/moved/resized, copy and copy-plan edits, materials regenerated, swatch/palette changes — each with an impact level (rebuild | relayout | restyle | copy-only). Use it after the designer changes things so you patch incrementally instead of re-implementing. Baseline defaults to your last report_implementation for this project; pass `since` (ISO or unix ms) to override.",
+      inputSchema: {
+        project: PROJECT_ARG,
+        since: z
+          .union([z.string(), z.number()])
+          .optional()
+          .describe("Baseline time as ISO string or unix ms. Default: time of the latest report_implementation, else the oldest snapshot."),
+        assetId: z.string().optional().describe("Only report changes for this screen."),
+      },
+      annotations: READ_ONLY,
+    },
+    async ({ project, since, assetId }) => {
+      const r = await resolveProject(project);
+      if (!r.ok) return fail(r.error, r.candidates);
+      const p = r.project;
+
+      let sinceMs: number | undefined;
+      if (typeof since === "number") sinceMs = since;
+      else if (typeof since === "string" && since.trim()) {
+        const parsed = Date.parse(since);
+        if (Number.isNaN(parsed)) return fail(`since is not a valid time: ${since}`);
+        sinceMs = parsed;
+      }
+      let baselineSource: "since" | "last-report" | "oldest-snapshot" = "since";
+      if (sinceMs === undefined) {
+        const reports = await listImplementationReports(p.id, 200).catch(() => []);
+        const relevant = assetId ? reports.filter((x) => x.assetId === assetId) : reports;
+        const last = relevant[0];
+        if (last) {
+          sinceMs = Date.parse(last.createdAt);
+          baselineSource = "last-report";
+        } else {
+          sinceMs = 0;
+          baselineSource = "oldest-snapshot";
+        }
+      }
+
+      const baseline = await findBaselineSnapshot(p.id, sinceMs);
+      const current = takeDesignSnapshot(p);
+      void recordDesignSnapshot(p).catch(() => undefined);
+      if (!baseline) {
+        return json({
+          baseline: null,
+          hint: "No design snapshots exist yet for this project. This call recorded the first one — call get_design_changes again after the designer makes changes.",
+          current: { takenAt: current.takenAt, screens: Object.keys(current.screens).length },
+        });
+      }
+
+      let changes = diffDesignSnapshots(baseline.snapshot, current);
+      if (assetId) {
+        changes = {
+          ...changes,
+          addedScreens: changes.addedScreens.filter((s) => s.assetId === assetId),
+          removedScreens: changes.removedScreens.filter((s) => s.assetId === assetId),
+          changedScreens: changes.changedScreens.filter((s) => s.assetId === assetId),
+          unchangedScreens: changes.unchangedScreens.filter((id) => id === assetId),
+          summary: changes.summary.filter((line) => line.includes(assetId) || /^No design/.test(line)),
+        };
+        if (changes.summary.length === 0) changes.summary = [`No changes to screen ${assetId} since the baseline.`];
+      }
+      return json({
+        baseline: {
+          takenAt: baseline.snapshot.takenAt,
+          source: baselineSource,
+          exact: baseline.exact,
+          note: baseline.exact
+            ? undefined
+            : "No snapshot existed at or before `since`; compared against the oldest available snapshot instead.",
+        },
+        ...changes,
+        hint:
+          changes.changedScreens.length === 0 && changes.addedScreens.length === 0 && changes.removedScreens.length === 0
+            ? "Nothing to do."
+            : "Handle screens by impact: rebuild → re-run get_screen_task and redo the screen; relayout → adjust the listed regions; restyle → update colors / re-copy materials; copy-only → change text. Then report_implementation again.",
+      });
+    }
+  );
+
+  server.registerTool(
     "get_handoff",
     {
       title: "Pull design handoff bundle",
@@ -240,10 +431,16 @@ function registerPullTools(server: McpServer): void {
         otherFiles: built.index
           .filter((f) => !inlined.has(f.path))
           .map((f) => ({ path: f.path, bytes: f.bytes, mime: f.mime })),
-        hints: [
-          "Image files (assets/final/*, assets/materials/*) are not inlined — call get_asset_image with the asset id from ASSET_MAP.md / get_project.",
-          "design/layouts/*.json can be read via read_handoff_file or get_layout_ir(assetId).",
-        ],
+        hints: isCodingHandoffPack(built.packKind)
+          ? [
+              "Image files (assets/final/*, assets/materials/*) are not inlined — call get_asset_image with the asset id from ASSET_MAP.md / get_project.",
+              "design/layouts/*.json can be read via read_handoff_file or get_layout_ir(assetId).",
+            ]
+          : [
+              `This is a ${built.packKind} pack, not a UI-to-code handoff. Do not implement React/app screens.`,
+              "Read ART_BIBLE.md / ASSET_USAGE.md (or COPY.md / STYLE_NOTES.md). Images: get_asset_image with ids from get_project / list_screens.",
+              "Starred assets are finals. Unstarred images are exploration.",
+            ],
       });
     }
   );
@@ -395,6 +592,113 @@ function registerPullTools(server: McpServer): void {
   );
 
   server.registerTool(
+    "get_asset_crop",
+    {
+      title: "Zoom into one region of a mockup",
+      description:
+        "Crop a region of a final asset at full source resolution and return it as an image. Pass slotId (a Layout IR node id from get_layout_ir) to crop exactly that region, or an explicit bbox (normalized 0-1, or pixels). Use this instead of squinting at the downscaled get_asset_image when you need to read small copy, icon details, border radii or spacing inside one area.",
+      inputSchema: {
+        project: PROJECT_ARG,
+        assetId: z.string().min(1).describe("Mockup asset id (from get_project / ASSET_MAP.md)."),
+        slotId: z
+          .string()
+          .optional()
+          .describe("Layout IR node id. Requires the mockup to be materialized. Takes precedence over bbox."),
+        bbox: z
+          .object({
+            x: z.number().min(0),
+            y: z.number().min(0),
+            w: z.number().positive(),
+            h: z.number().positive(),
+          })
+          .optional()
+          .describe("Region to crop. Values ≤1 are treated as normalized fractions of the image; larger values as pixels."),
+        padding: z
+          .number()
+          .min(0)
+          .max(0.5)
+          .optional()
+          .describe("Extra context around the region as a fraction of the region size (default 0.08)."),
+        maxEdge: z
+          .number()
+          .int()
+          .min(256)
+          .max(4096)
+          .optional()
+          .describe("Longest output edge in px (default 1536). The crop is never upscaled beyond source pixels."),
+      },
+      annotations: READ_ONLY,
+    },
+    async ({ project, assetId, slotId, bbox, padding, maxEdge }) => {
+      const r = await resolveProject(project);
+      if (!r.ok) return fail(r.error, r.candidates);
+      const p = r.project;
+      const asset = (p.assets ?? []).find((a) => a.id === assetId);
+      if (!asset?.src) return fail(`No asset with id ${assetId} in project ${p.id}.`);
+
+      const layout = p.materializations?.[assetId]?.layout;
+      const slot = slotId ? layout?.nodes.find((n) => n.id === slotId) : undefined;
+      if (slotId && !slot) {
+        return fail(
+          layout
+            ? `No Layout IR node "${slotId}" on asset ${assetId}.`
+            : `Asset ${assetId} has no Layout IR yet, so slotId cannot be resolved. Pass a bbox instead, or ask the user to materialize it in Vibeboard.`,
+          undefined,
+          { availableSlotIds: layout?.nodes.map((n) => n.id) ?? [] }
+        );
+      }
+
+      const region = slot?.bbox ?? normalizeCropBBox(bbox, asset.width, asset.height);
+      if (!region) return fail("Provide either slotId or bbox.");
+      const pad = padding ?? 0.08;
+      const padded = padBBox(region, pad);
+
+      const crop = await cropSlotFromMockup({
+        src: asset.src,
+        width: asset.width,
+        height: asset.height,
+        bbox: padded,
+        maxEdge: Math.min(maxEdge ?? 1536, Math.round(Math.max(padded.w * asset.width, padded.h * asset.height))),
+        projectId: p.id,
+      });
+      if (!crop) return fail(`Could not crop asset ${assetId} (image unreadable or unsupported format).`);
+      const parsed = crop.dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+      if (!parsed) return fail("Crop did not produce a base64 image.");
+
+      return {
+        content: [
+          { type: "image", data: parsed[2], mimeType: parsed[1] },
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                assetId,
+                slotId: slot?.id,
+                role: slot?.role,
+                rebuildInCode: slot?.rebuildInCode,
+                copy: slot && "copy" in slot ? slot.copy : undefined,
+                swatch: slot?.swatch,
+                bbox: region,
+                paddedBbox: padded,
+                sourcePixels: {
+                  x: Math.round(padded.x * asset.width),
+                  y: Math.round(padded.y * asset.height),
+                  w: Math.round(padded.w * asset.width),
+                  h: Math.round(padded.h * asset.height),
+                },
+                deliveredWidth: crop.width,
+                deliveredHeight: crop.height,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+  );
+
+  server.registerTool(
     "get_layout_ir",
     {
       title: "Get Layout IR for a mockup",
@@ -409,6 +713,8 @@ function registerPullTools(server: McpServer): void {
     async ({ project, assetId }) => {
       const r = await resolveProject(project);
       if (!r.ok) return fail(r.error, r.candidates);
+      const blocked = rejectNonCoding(r.project, "get_layout_ir");
+      if (blocked) return blocked;
       const record = r.project.materializations?.[assetId];
       if (!record) {
         const available = Object.keys(r.project.materializations ?? {});
@@ -494,7 +800,7 @@ function registerWriteBackTools(server: McpServer): void {
       const providerConfig = getCachedProviderConfig(p.id);
       if (!providerConfig?.image || providerConfig.image.kind === "mock") {
         return fail(
-          "Vibeboard has no image provider credentials in memory. Ask the user to open Vibeboard (and configure an image model in Settings → 模型); keys live in the browser and are only cached while the app is in use.",
+          "Vibeboard has no image provider credentials available. Ask the user to open Vibeboard and configure an image model in Settings → 模型. In the desktop app the keys are then kept in the system keychain, so this works even when the window is closed; in the browser they are only cached while a tab is open.",
           undefined,
           { providerCache: providerCacheStatus(p.id) }
         );
@@ -556,7 +862,7 @@ function registerWriteBackTools(server: McpServer): void {
     {
       title: "Check a Vibeboard request",
       description:
-        "Status of a request_asset / ask_designer request: pending, approved (with jobId), rejected (with reason) or answered (with the designer's answer).",
+        "Status of a request_asset / ask_designer / propose_design_change request: pending, approved (with jobId for assets, appliedSummary for proposals), rejected (with reason) or answered (with the designer's answer).",
       inputSchema: {
         requestId: z.string().min(1),
         waitMs: z
@@ -665,11 +971,79 @@ function registerWriteBackTools(server: McpServer): void {
   );
 
   server.registerTool(
+    "propose_design_change",
+    {
+      title: "Propose a change to the design",
+      description:
+        "When the design cannot (or should not) be implemented as specified — e.g. three columns will not fit on mobile, copy is too long for the button, a decorative image is better done in CSS — propose a concrete Layout IR change instead of silently deviating. The designer sees a card in Vibeboard and approves or rejects; approval applies the change to the Layout IR / spec immediately and syncs the handoff. Allowed changes: copy, bbox, convert-to-code, remove-slot, add-state, note. For new images use request_asset; for open questions use ask_designer.",
+      inputSchema: {
+        project: PROJECT_ARG,
+        assetId: z.string().min(1).describe("Screen (mockup asset) id the change applies to."),
+        change: ProposalChangeSchema.describe(
+          "One of: {kind:'copy',slotId,copy} · {kind:'bbox',slotId,bbox:{x,y,w,h} normalized 0-1} · {kind:'convert-to-code',slotId} · {kind:'remove-slot',slotId} · {kind:'add-state',slotId,state:{name,notes,copy?}} · {kind:'note',slotId?,text}"
+        ),
+        rationale: z.string().min(8).describe("Why — one or two sentences the designer will read."),
+      },
+      annotations: WRITE,
+    },
+    async ({ project, assetId, change, rationale }) => {
+      const r = await resolveProject(project);
+      if (!r.ok) return fail(r.error, r.candidates);
+      const blocked = rejectNonCoding(r.project, "propose_design_change");
+      if (blocked) return blocked;
+      const p = r.project;
+      const asset = (p.assets ?? []).find((a) => a.id === assetId);
+      if (!asset) return fail(`No asset ${assetId} in project ${p.id}.`);
+      const layout = p.materializations?.[assetId]?.layout;
+      if (change.kind !== "note" && !layout) {
+        return fail(
+          `Asset ${assetId} has no Layout IR yet, so only {kind:'note'} proposals are possible. Ask the designer to materialize it first.`
+        );
+      }
+      if ("slotId" in change && change.slotId && layout && !layout.nodes.some((n) => n.id === change.slotId)) {
+        return fail(`No node "${change.slotId}" on ${assetId}.`, undefined, {
+          availableSlotIds: layout.nodes.map((n) => n.id),
+        });
+      }
+
+      const input = { assetId, change, rationale: rationale.trim() };
+      const request = bridgeRequests.create({
+        kind: "proposal",
+        projectId: p.id,
+        proposal: { ...input, description: describeProposal(input) },
+      });
+      const settled = await bridgeRequests.wait(request.id, USER_WAIT_MS);
+      if (settled.status === "approved") {
+        return json({
+          requestId: request.id,
+          status: "approved",
+          applied: settled.appliedSummary,
+          hint: "The change is now part of the Layout IR / spec. Re-read get_layout_ir (or get_screen_task) and implement accordingly.",
+        });
+      }
+      if (settled.status === "rejected") {
+        return json({
+          requestId: request.id,
+          status: "rejected",
+          reason: settled.reason,
+          hint: "Implement the design as specified. If that is impossible, ask_designer with the constraint spelled out.",
+        });
+      }
+      return json({
+        requestId: request.id,
+        status: "pending",
+        description: describeProposal(input),
+        hint: "Waiting for the designer. Continue other work and call get_request({requestId, waitMs}) later; until approved, implement the design as specified.",
+      });
+    }
+  );
+
+  server.registerTool(
     "report_implementation",
     {
       title: "Report an implemented screen for review",
       description:
-        "Send a screenshot of what you built. Vibeboard compares it against the approved mockup and Layout IR and returns a structured deviation list (slot, kind, expected, actual, fixHint) plus a 0-10 score. Fix the high-severity items and report again. This is the acceptance loop — call it after each screen.",
+        "Report a screen you implemented so Vibeboard can compare it against the approved mockup and Layout IR. Returns a structured deviation list (slot, kind, expected, actual, fixHint) plus a 0-10 score. Fix the high-severity items and report again. This is the acceptance loop — call it after each screen. EASIEST: just pass `url` (your running dev server) — when the Vibeboard desktop app is open it takes the full-page screenshot itself. Otherwise pass screenshotBase64 or screenshotPath.",
       inputSchema: {
         project: PROJECT_ARG,
         assetId: z
@@ -677,26 +1051,67 @@ function registerWriteBackTools(server: McpServer): void {
           .optional()
           .describe("Which approved mockup this screen implements. Defaults to the project's primary mockup."),
         summary: z.string().min(4).describe("One or two sentences: what you implemented and anything you deliberately changed."),
+        url: z
+          .string()
+          .optional()
+          .describe(
+            "Where the screen runs, e.g. http://localhost:5173/dashboard. If no screenshot is passed, Vibeboard (desktop app) loads this URL and captures a full-page screenshot for you."
+          ),
+        viewportWidth: z
+          .number()
+          .int()
+          .min(320)
+          .max(2560)
+          .optional()
+          .describe("Viewport width for the automatic capture. Defaults to the mockup's width (capped at 1920)."),
         screenshotBase64: z
           .string()
           .optional()
-          .describe("PNG/JPEG as base64 (or a data: URL). Preferred — no filesystem access needed."),
+          .describe("PNG/JPEG as base64 (or a data: URL). Use when you already have a screenshot."),
         screenshotPath: z
           .string()
           .optional()
           .describe("Absolute path to a screenshot inside the linked repo or the system temp dir."),
-        url: z.string().optional().describe("Where the screen runs, e.g. http://localhost:5173/dashboard."),
       },
       annotations: WRITE,
     },
-    async ({ project, assetId, summary, screenshotBase64, screenshotPath, url }) => {
+    async ({ project, assetId, summary, screenshotBase64, screenshotPath, url, viewportWidth }) => {
       const r = await resolveProject(project);
       if (!r.ok) return fail(r.error, r.candidates);
       const p = r.project;
+      const blocked = rejectNonCoding(p, "report_implementation");
+      if (blocked) return blocked;
 
-      const shot = await readScreenshotInput(p, { screenshotBase64, screenshotPath });
+      let shot = await readScreenshotInput(p, { screenshotBase64, screenshotPath });
+      let captured: { width: number; height: number; finalUrl?: string; elapsedMs: number } | undefined;
+      const wantsAutoCapture = !screenshotBase64?.trim() && !screenshotPath?.trim() && Boolean(url?.trim());
+      if (wantsAutoCapture) {
+        const target = url!.trim();
+        if (!/^https?:\/\//i.test(target)) {
+          return fail(`url must be http(s), got: ${target}`);
+        }
+        const mockup = assetId
+          ? (p.assets ?? []).find((a) => a.id === assetId)
+          : pickPrimaryMockup(p);
+        const width = viewportWidth ?? Math.min(1920, Math.max(320, Math.round(mockup?.width ?? 1440)));
+        const cap = await captureViaDesktop({ url: target, width, fullPage: true });
+        if (!cap.ok) {
+          return fail(cap.error, undefined, {
+            code: cap.code,
+            desktopCapture: captureAgent.status(),
+            hint:
+              cap.code === "no_agent"
+                ? "Ask the user to open the Vibeboard desktop app, or take a screenshot yourself (e.g. browser devtools / playwright) and pass screenshotBase64."
+                : "Check that the dev server is running and the URL renders, then retry. You can also pass screenshotBase64 directly.",
+          });
+        }
+        shot = { ok: true, dataUrl: cap.dataUrl, from: "base64", bytes: Math.floor((cap.dataUrl.length * 3) / 4) };
+        captured = { width: cap.width, height: cap.height, finalUrl: cap.finalUrl, elapsedMs: cap.elapsedMs };
+      }
       if (!shot.ok) return fail(shot.error);
 
+      // 回报时的设计状态 = 代码对着做的那版，作为后续 get_design_changes 的基线
+      void recordDesignSnapshot(p).catch(() => undefined);
       const providerConfig = getCachedProviderConfig(p.id);
       const llm = providerConfig ? resolveProviders(providerConfig).llm : undefined;
       const report = await reviewImplementation({
@@ -712,6 +1127,8 @@ function registerWriteBackTools(server: McpServer): void {
         reportId: report.id,
         reviewedAgainst: report.assetId,
         source: report.source,
+        capturedBy: captured ? "vibeboard-desktop" : shot.from,
+        capture: captured,
         score: report.score,
         verdict: report.verdict,
         summary: report.summary,
@@ -719,9 +1136,11 @@ function registerWriteBackTools(server: McpServer): void {
         deviations: report.deviations,
         warnings: report.warnings,
         hint:
-          report.deviations.length === 0
-            ? "No deviations found. Tell the user the screen matches the design."
-            : "Fix the high-severity deviations using each fixHint, then call report_implementation again with a fresh screenshot.",
+          report.verdict === "unreviewed"
+            ? "Vibeboard recorded your report but could NOT compare it visually (see warnings). Do not treat this as feedback and do not iterate on it — tell the user to open Vibeboard and configure a vision-capable LLM, then call report_implementation again."
+            : report.deviations.length === 0
+              ? "No deviations found. Tell the user the screen matches the design."
+              : "Fix the high-severity deviations using each fixHint, then call report_implementation again with a fresh screenshot.",
       });
     }
   );
@@ -780,8 +1199,10 @@ export function publicRequest(request: BridgeRequest) {
     jobId: request.jobId,
     answer: request.answer,
     reason: request.reason,
+    appliedSummary: request.appliedSummary,
     asset: request.asset,
     question: request.question,
+    proposal: request.proposal,
   };
 }
 
@@ -843,6 +1264,16 @@ function json(value: unknown): CallToolResult {
   return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] };
 }
 
+function rejectNonCoding(project: ProjectFile, tool: string): CallToolResult | null {
+  const packKind = resolveHandoffPackKind(project);
+  if (isCodingHandoffPack(packKind)) return null;
+  return fail(
+    `Project "${project.title}" is a ${packKind} pack (${project.targetId ?? "non-UI"}), not a UI-to-code handoff. ${tool} does not apply. Use get_handoff + get_asset_image; starred assets are the finals.`,
+    undefined,
+    { packKind, targetId: project.targetId, tool }
+  );
+}
+
 function fail(
   message: string,
   candidates?: Array<{ id: string; title: string }>,
@@ -861,4 +1292,37 @@ function fail(
 
 function mimeOf(built: BuiltHandoff, path: string): string {
   return built.index.find((f) => f.path === path)?.mime ?? "text/plain";
+}
+
+type NormBBox = { x: number; y: number; w: number; h: number };
+
+/** 接受 0–1 归一化或像素值；越界裁到图内；过小返回 null */
+function normalizeCropBBox(
+  bbox: NormBBox | undefined,
+  width: number,
+  height: number
+): NormBBox | null {
+  if (!bbox) return null;
+  const pixelLike = bbox.x > 1 || bbox.y > 1 || bbox.w > 1 || bbox.h > 1;
+  const x = clamp01(pixelLike ? bbox.x / Math.max(1, width) : bbox.x);
+  const y = clamp01(pixelLike ? bbox.y / Math.max(1, height) : bbox.y);
+  const w = clamp01(pixelLike ? bbox.w / Math.max(1, width) : bbox.w);
+  const h = clamp01(pixelLike ? bbox.h / Math.max(1, height) : bbox.h);
+  if (w < 0.005 || h < 0.005) return null;
+  return { x, y, w: Math.min(w, 1 - x), h: Math.min(h, 1 - y) };
+}
+
+function padBBox(b: NormBBox, pad: number): NormBBox {
+  const dx = b.w * pad;
+  const dy = b.h * pad;
+  const left = clamp01(b.x - dx);
+  const top = clamp01(b.y - dy);
+  const right = clamp01(b.x + b.w + dx);
+  const bottom = clamp01(b.y + b.h + dy);
+  return { x: left, y: top, w: right - left, h: bottom - top };
+}
+
+function clamp01(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(1, n));
 }

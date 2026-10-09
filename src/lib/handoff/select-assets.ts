@@ -38,6 +38,24 @@ export function listSelectableHandoffReferences(
   return (project.references ?? []).filter(isSelectableHandoffReference);
 }
 
+/**
+ * 项目的「主 mockup」：DESIGN.md 色板、验收对照、项目级 tokens 都以它为准。
+ * approved / materials_ready > 已物料化 > starred > 第一张可交付整图。
+ */
+export function pickPrimaryMockup(project: ProjectFile): ImageAsset | undefined {
+  const candidates = listSelectableHandoffAssets(project);
+  return (
+    candidates.find(
+      (a) =>
+        a.approval?.status === "approved" ||
+        a.approval?.status === "materials_ready"
+    ) ??
+    candidates.find((a) => project.materializations?.[a.id]) ??
+    candidates.find((a) => a.status === "starred") ??
+    candidates[0]
+  );
+}
+
 /** 默认勾选：有收藏则只勾收藏；否则勾全部可选（避免空选择阻断新手） */
 export function defaultSelectedAssetIds(project: ProjectFile): string[] {
   const selectable = listSelectableHandoffAssets(project);
@@ -50,29 +68,33 @@ export function defaultSelectedReferenceIds(project: ProjectFile): string[] {
   return listSelectableHandoffReferences(project).map((r) => r.id);
 }
 
+/**
+ * 导出弹窗的默认勾选：有收藏只勾收藏；没有收藏则留空，
+ * 逼使用者点选定稿，避免把全部探索图当施工包交出去。
+ * MCP / 无勾选的 get_handoff 仍用 defaultSelectedAssetIds（有收藏用收藏，否则全选）。
+ */
 export function defaultHandoffSelection(project: ProjectFile): HandoffSelection {
+  const selectable = listSelectableHandoffAssets(project);
+  const starred = selectable.filter((a) => a.status === "starred");
   return {
-    assetIds: defaultSelectedAssetIds(project),
+    assetIds: starred.map((a) => a.id),
     referenceIds: defaultSelectedReferenceIds(project),
   };
 }
 
-/** 与当前可选集合求交；素材为空时回退默认（参考图允许为空） */
+/** 与当前可选集合求交。显式空数组保留为空；仅 selection 缺失时才回退默认。 */
 export function sanitizeHandoffSelection(
   project: ProjectFile,
   selection: Partial<HandoffSelection> | null | undefined
 ): HandoffSelection {
+  if (selection == null) return defaultHandoffSelection(project);
   const allowAssets = new Set(listSelectableHandoffAssets(project).map((a) => a.id));
   const allowRefs = new Set(
     listSelectableHandoffReferences(project).map((r) => r.id)
   );
-  const assetIds = (selection?.assetIds ?? []).filter((id) => allowAssets.has(id));
-  const referenceIds = (selection?.referenceIds ?? []).filter((id) =>
-    allowRefs.has(id)
-  );
   return {
-    assetIds: assetIds.length > 0 ? assetIds : defaultSelectedAssetIds(project),
-    referenceIds,
+    assetIds: (selection.assetIds ?? []).filter((id) => allowAssets.has(id)),
+    referenceIds: (selection.referenceIds ?? []).filter((id) => allowRefs.has(id)),
   };
 }
 

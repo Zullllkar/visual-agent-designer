@@ -10,6 +10,7 @@
 import type { ProjectFile } from "@/lib/project/schema";
 import type { ImageAsset, ReferenceAsset } from "@/lib/project/assets-schema";
 import { isUsableReferenceImage } from "@/lib/agents/tools/utils";
+import { displayAssetTitle } from "@/lib/project/asset-title";
 
 export const MAX_REFERENCE_IMAGES = 3;
 const FROM_ASSET_PREFIX = "from-asset-";
@@ -75,17 +76,47 @@ export function collectProjectReferenceImages(
   };
 }
 
+/** 父图派生节点一律用连线上的父图当参考，不用子图自己、也不回退到最新生成图。 */
+export function resolveCitedVisualAsset(
+  project: ProjectFile | null | undefined,
+  assetId: string | undefined
+): ImageAsset | undefined {
+  if (!assetId) return undefined;
+  const byId = new Map((project?.assets ?? []).map((asset) => [asset.id, asset]));
+  const startId = assetId.startsWith(FROM_ASSET_PREFIX)
+    ? assetId.slice(FROM_ASSET_PREFIX.length)
+    : assetId;
+  return resolveLinkedVisualAsset(byId.get(startId), byId);
+}
+
 export function resolveCitedParentAssetId(
   project: ProjectFile | null | undefined,
   preferIds: string[]
 ): string | undefined {
-  const assets = project?.assets ?? [];
-  const ids = new Set(assets.map((asset) => asset.id));
   for (const raw of preferIds) {
-    const assetId = raw.startsWith(FROM_ASSET_PREFIX)
-      ? raw.slice(FROM_ASSET_PREFIX.length)
-      : raw;
-    if (assetId && ids.has(assetId)) return assetId;
+    const visual = resolveCitedVisualAsset(project, raw);
+    if (visual) return visual.id;
+  }
+  return undefined;
+}
+
+function resolveLinkedVisualAsset(
+  start: ImageAsset | undefined,
+  byAssetId: Map<string, ImageAsset>
+): ImageAsset | undefined {
+  if (!start) return undefined;
+  if (start.parentAssetId) {
+    const parent = byAssetId.get(start.parentAssetId);
+    if (parent && isUsableReferenceImage(parent.src)) return parent;
+  }
+  const seen = new Set<string>();
+  let current: ImageAsset | undefined = start;
+  while (current && !seen.has(current.id)) {
+    seen.add(current.id);
+    if (isUsableReferenceImage(current.src)) return current;
+    current = current.parentAssetId
+      ? byAssetId.get(current.parentAssetId)
+      : undefined;
   }
   return undefined;
 }
@@ -95,19 +126,24 @@ function pickReferenceById(
   byRefId: Map<string, ReferenceAsset>,
   byAssetId: Map<string, ImageAsset>
 ): PickedRef | null {
-  const ref = byRefId.get(id);
-  if (ref) return toPickedRef(ref);
-
   const assetId = id.startsWith(FROM_ASSET_PREFIX)
     ? id.slice(FROM_ASSET_PREFIX.length)
     : id;
-  const asset = byAssetId.get(id) ?? byAssetId.get(assetId);
-  if (!asset) return null;
-  return {
-    id: asset.id,
-    label: (asset.prompt || asset.id).slice(0, 40),
-    src: asset.src,
-  };
+  const visual = resolveLinkedVisualAsset(
+    byAssetId.get(id) ?? byAssetId.get(assetId),
+    byAssetId
+  );
+  if (visual) {
+    return {
+      id: visual.id,
+      label: displayAssetTitle(visual).slice(0, 40),
+      src: visual.src,
+    };
+  }
+
+  const ref = byRefId.get(id);
+  if (ref && isUsableReferenceImage(ref.src)) return toPickedRef(ref);
+  return null;
 }
 
 function toPickedRef(ref: ReferenceAsset): PickedRef {

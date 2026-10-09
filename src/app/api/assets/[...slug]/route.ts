@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
-import { join } from "node:path";
-import { VAD_PROJECTS_DIR } from "@/lib/vad/paths";
+import { isAbsolute, join, relative, resolve } from "node:path";
+import { projectDir } from "@/lib/vad/paths";
 
 /**
  * 静态读取本地物理磁盘存储的图片资源
@@ -25,7 +25,12 @@ export async function GET(
     }
 
     const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "");
-    const filePath = join(VAD_PROJECTS_DIR, projectId, subFolder, safeFilename);
+    const root = resolve(projectDir(projectId));
+    const filePath = resolve(join(root, subFolder, safeFilename));
+    const rel = relative(root, filePath);
+    if (!rel || rel.startsWith("..") || isAbsolute(rel)) {
+      return new Response("Forbidden", { status: 403 });
+    }
 
     const buffer = await fs.readFile(filePath);
     

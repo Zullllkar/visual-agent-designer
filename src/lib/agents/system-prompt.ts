@@ -8,8 +8,11 @@ import { isChatInlineTool } from "@/lib/agents/chat-inline-tools";
 import { registerAllSubAgents, subAgentRegistry } from "@/lib/agents/sub-agents";
 import { registerAllTools, toolRegistry } from "@/lib/agents/tools";
 import type { AgentContext } from "@/lib/agents/types";
+import { isGeneratingPlaceholderSrc } from "@/lib/canvas/generating-placeholder";
+import type { ImageAsset } from "@/lib/project/assets-schema";
 import { deriveDesignContext, summarizeDesignContext } from "@/lib/project/design-context";
 import type { ProjectFile } from "@/lib/project/schema";
+import { displayAssetTitle } from "@/lib/project/asset-title";
 import { formatSkillRuntime } from "@/lib/skills/runtime";
 import { getTargetRecipe } from "@/lib/targets/catalog";
 import { buildGoalPromptSection, resolveTargetId } from "@/lib/targets/resolve";
@@ -17,7 +20,7 @@ import { buildGoalPromptSection, resolveTargetId } from "@/lib/targets/resolve";
 export function buildSystemPrompt(
   project: ProjectFile | null,
   agentCtx: AgentContext,
-  rulesPrompt?: string
+  rulesPrompt?: string,
 ): string {
   registerAllTools();
   registerAllSubAgents();
@@ -28,12 +31,7 @@ export function buildSystemPrompt(
     "Use tools only when you must change the project, generate/edit assets, inspect the canvas, or trigger side effects. Call one tool at a time, wait for the result, then decide the next step.",
     "When the task is complete, tell the user clearly. Do not loop indefinitely.",
     `## Current project state\n${formatProjectState(project, agentCtx)}`,
-    project
-      ? buildGoalPromptSection(
-          resolveTargetId(project),
-          project.directionCardId
-        )
-      : "",
+    project ? buildGoalPromptSection(resolveTargetId(project), project.directionCardId) : "",
     `## Available tools\n${toolRegistry
       .list()
       .filter((tool) => !isChatInlineTool(tool.name))
@@ -49,8 +47,9 @@ export function buildSystemPrompt(
       "- User wants the selected picture to become the project style ([采用素材风格]): call adopt_asset_style with that assetId and STOP. Then the confirm card appears. Do not write a prose recap instead of the card.",
       "- Export or handoff request: use export_handoff (opens the selection dialog; never pack every canvas asset blindly). Only ui-visual / code-kickoff exports to Cursor / Claude / Codex. Other targets export art/media/draft packs without coding kickoff.",
       "- User is satisfied with a screen mockup: use materialize_mockup with skipGeneration (default) to show the split plan (regions, media vs code, prompts). Only call generateMaterials:true after the user confirms.",
-      "- Pure question / discussion / \"what pages next\": answer directly in text using project state above. Never call answer_question.",
+      '- Pure question / discussion / "what pages next": answer directly in text using project state above. Never call answer_question.',
       "- Canvas inspection: use inspect_canvas.",
+      "- Write scripts / copy / rules onto the canvas: use upsert_canvas_note. After citing an image for text, fill that noteId.",
       "- Asset/canvas manipulation: use manipulate_canvas.",
       "- Canvas screenshot: use screenshot_canvas.",
       "- Brand kit work: use brand_kit.",
@@ -127,7 +126,7 @@ export function buildSystemPrompt(
             : "",
         ]
           .filter(Boolean)
-          .join("\n")
+          .join("\n"),
       );
     }
   }
@@ -158,22 +157,17 @@ export function buildSystemPrompt(
         : "",
     ]
       .filter(Boolean)
-      .join("\n")
+      .join("\n"),
   );
 
   return sections.filter(Boolean).join("\n\n---\n\n");
 }
 
-function formatProjectState(
-  project: ProjectFile | null,
-  agentCtx?: AgentContext,
-): string {
+function formatProjectState(project: ProjectFile | null, agentCtx?: AgentContext): string {
   if (!project) return "Blank project; no brief has been generated.";
   const refs = project.references ?? [];
   const pages = project.pages ?? [];
-  const assets = (project.assets ?? []).filter(
-    (asset) => asset.status !== "discarded"
-  );
+  const assets = (project.assets ?? []).filter((asset) => asset.status !== "discarded");
   const targetId = resolveTargetId(project);
   const targetLabel = getTargetRecipe(targetId).label;
   const targetNote = project.targetId
@@ -184,11 +178,21 @@ function formatProjectState(
     targetNote,
     `Brief: ${project.brief ? "generated" : "missing"}`,
     `Visual direction: ${project.designDirection ? "generated" : "missing"}`,
-    `Assets: ${assets.length}`,
+    `Assets: ${assets.length}${formatAssetReadiness(assets)}`,
+    `Canvas notes: ${(project.canvasNotes ?? []).length}`,
     `Pages: ${pages.length}`,
     `Critique score: ${project.critique?.overallScore ?? "n/a"}`,
     `Reference images: ${refs.length}`,
   ];
+  const notes = project.canvasNotes ?? [];
+  if (notes.length > 0) {
+    parts.push(
+      `Canvas notes: ${notes.length} (${notes
+        .map((note) => `${note.kind}:${note.title || note.id}`)
+        .slice(0, 8)
+        .join("; ")})`
+    );
+  }
   if (pages.length > 0) {
     const pageLines = pages
       .slice(0, 12)
@@ -208,7 +212,7 @@ function formatProjectState(
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
       .slice(0, 5)
       .map((asset) => {
-        const label = asset.prompt.trim().slice(0, 48) || asset.id;
+        const label = displayAssetTitle(asset);
         return `- ${label}${asset.role ? ` (${asset.role})` : ""}`;
       })
       .join("\n");
@@ -234,4 +238,22 @@ function formatProjectState(
     }
   }
   return parts.join("\n");
+}
+
+function formatAssetReadiness(assets: ImageAsset[]): string {
+  const ready = assets.filter(
+    (asset) =>
+      !isGeneratingPlaceholderSrc(asset.src) &&
+      Boolean(asset.src?.trim()) &&
+      asset.status !== "failed" &&
+      asset.status !== "cancelled" &&
+      asset.status !== "generating" &&
+      asset.status !== "discarded",
+  ).length;
+  const generating = assets.filter((asset) => asset.status === "generating").length;
+  const failed = assets.filter(
+    (asset) => asset.status === "failed" || asset.status === "cancelled",
+  ).length;
+  if (assets.length === 0) return "";
+  return ` (ready ${ready}, generating ${generating}, failed ${failed})`;
 }

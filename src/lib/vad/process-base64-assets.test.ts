@@ -45,6 +45,21 @@ describe("processBase64Assets", () => {
     await expect(readFile(disk)).resolves.toBeInstanceOf(Buffer);
   });
 
+  it("writes a readable ascii filename when the asset has a human title", async () => {
+    const { processBase64Assets } = await import("./persist");
+    const id = "pending:direct:tgs6_Lab:0";
+    const [out] = await processBase64Assets("QI0M0xQ80A", [
+      {
+        id,
+        title: "Fitness Home",
+        src: `data:image/png;base64,${TINY_PNG}`,
+      },
+    ]);
+    expect(out.src).toBe(
+      "/api/assets/QI0M0xQ80A/assets/fitness-home-tgs6_Lab-0.png"
+    );
+  });
+
   it("persists wrapped base64 data URIs to a safe filename", async () => {
     const { processBase64Assets } = await import("./persist");
     const id = "pending:direct:9c3982bea0:0";

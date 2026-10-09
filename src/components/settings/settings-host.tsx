@@ -21,6 +21,14 @@ export function SettingsHost() {
     return () => window.removeEventListener(SETTINGS_OPEN_EVENT, onOpen);
   }, []);
 
+  useEffect(() => {
+    if (!open) return;
+    const setScrim = window.vadDesktop?.setTitleBarScrim;
+    if (typeof setScrim !== "function") return;
+    setScrim(true);
+    return () => setScrim(false);
+  }, [open]);
+
   if (!open) return null;
   return (
     <SettingsDialog

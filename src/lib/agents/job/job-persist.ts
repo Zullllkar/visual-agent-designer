@@ -34,6 +34,9 @@ function buildRecoverablePayload(job: Job): Record<string, unknown> | undefined 
   return {
     providerConfig: job.payload.providerConfig,
     request: slimRecoverableRequest(job.payload.request),
+    pendingAssetIds: Array.isArray(job.payload.pendingAssets)
+      ? job.payload.pendingAssets.map((asset) => (asset as { id?: unknown }).id).filter((id): id is string => typeof id === "string")
+      : [],
   };
 }
 

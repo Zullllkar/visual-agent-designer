@@ -1,11 +1,12 @@
 .vad-settings-overlay {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: 200;
   display: grid;
   place-items: center;
-  padding: 24px;
-  background: color-mix(in srgb, #18181c 42%, transparent);
+  padding: 28px;
+  background: rgba(22, 22, 22, 0.55);
+  backdrop-filter: blur(18px);
 }
 
 .vad-settings-backdrop {
@@ -17,27 +18,35 @@
 }
 
 .vad-settings {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: 196px minmax(0, 1fr);
-  width: min(880px, calc(100vw - 48px));
-  height: min(640px, calc(100vh - 48px));
+  width: min(880px, calc(100vw - 56px));
+  height: min(680px, calc(100vh - 56px));
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 18px;
   background: var(--surface);
   box-shadow: var(--shadow-elevated);
   color: var(--foreground);
-  position: relative;
-  z-index: 1;
 }
 
 .vad-settings-nav {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 16px 12px;
+  gap: 3px;
+  padding: 20px 14px 16px;
   border-right: 1px solid var(--border);
-  background: color-mix(in srgb, var(--background) 70%, var(--surface));
+  background: color-mix(in srgb, var(--background) 82%, var(--surface));
+}
+
+.vad-settings-nav-label {
+  margin: 2px 10px 12px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
 }
 
 .vad-settings-nav-item {
@@ -45,9 +54,9 @@
   align-items: center;
   gap: 10px;
   height: 36px;
-  padding: 0 10px;
+  padding: 0 11px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 10px;
   background: transparent;
   color: var(--muted-strong);
   font-size: 13px;
@@ -56,19 +65,35 @@
   cursor: pointer;
 }
 
+.vad-settings-nav-item svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
 .vad-settings-nav-item:hover {
   background: color-mix(in srgb, var(--foreground) 5%, transparent);
   color: var(--foreground);
 }
 
 .vad-settings-nav-item.is-active {
-  background: color-mix(in srgb, var(--foreground) 7%, transparent);
-  color: var(--foreground);
+  background: var(--primary-soft);
+  color: var(--primary-strong);
   font-weight: 600;
 }
 
-.vad-settings-nav-item:focus-visible {
-  outline: 2px solid var(--primary);
+.vad-settings-nav-item.is-active svg {
+  opacity: 1;
+  color: var(--primary-strong);
+}
+
+.vad-settings-nav-item:focus-visible,
+.vad-settings-close:focus-visible,
+.vad-settings-btn:focus-visible,
+.vad-settings-select:focus-visible,
+.vad-settings-switch:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 70%, transparent);
   outline-offset: 2px;
 }
 
@@ -77,29 +102,42 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  background: var(--surface);
 }
 
 .vad-settings-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  padding: 20px 24px 8px;
+  gap: 16px;
+  padding: 20px 26px 14px;
 }
 
 .vad-settings-head h2 {
   margin: 0;
   font-size: 18px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+
+.vad-settings-hint {
+  margin: 5px 0 0;
+  max-width: 46ch;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.5;
 }
 
 .vad-settings-close {
   display: grid;
   width: 32px;
   height: 32px;
+  flex-shrink: 0;
   place-items: center;
   border: 0;
-  border-radius: 8px;
+  border-radius: 9px;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -114,71 +152,134 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 8px 24px 28px;
+  padding: 2px 26px 28px;
 }
 
 .vad-settings-group {
-  margin: 18px 0 8px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.vad-settings-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  min-height: 64px;
-  padding: 12px 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  gap: 12px;
+  margin: 24px 0 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
 }
 
-.vad-settings-row:last-child {
+.vad-settings-group:first-child {
+  margin-top: 2px;
+}
+
+.vad-settings-row,
+.vad-settings-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px 28px;
+  min-height: 64px;
+  padding: 15px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
+}
+
+.vad-settings-row:last-child,
+.vad-settings-card:last-child {
   border-bottom: 0;
+}
+
+.vad-settings-card {
+  flex-direction: column;
+  align-items: stretch;
+  min-height: 0;
+  padding: 16px 0;
 }
 
 .vad-settings-copy {
   min-width: 0;
+  flex: 1;
 }
 
-.vad-settings-copy strong {
-  display: block;
-  font-size: 14px;
+.vad-settings-copy strong,
+.vad-settings-card-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  color: var(--foreground);
+  font-size: 13px;
   font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
 }
 
-.vad-settings-copy p {
-  margin: 4px 0 0;
+.vad-settings-copy p,
+.vad-settings-card > p {
+  margin: 5px 0 0;
+  max-width: 54ch;
   color: var(--muted);
   font-size: 12.5px;
+  font-weight: 500;
   line-height: 1.55;
 }
 
-.vad-settings-select {
-  height: 34px;
-  min-width: 108px;
-  padding: 0 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--foreground);
-  font-size: 13px;
+.vad-settings-copy code,
+.vad-settings-card code,
+.vad-settings-note code,
+.vad-settings-body .vad-daemon-hint code {
+  font-family: var(--font-mono, ui-monospace, "Cascadia Code", Consolas, monospace);
+  font-size: 0.92em;
 }
 
-.vad-settings-select:focus {
-  outline: 2px solid var(--primary);
-  outline-offset: 1px;
+.vad-settings-control,
+.vad-settings-actions {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.vad-settings-card .vad-settings-actions {
+  margin-top: 12px;
+  justify-content: flex-start;
+}
+
+.vad-settings-select {
+  appearance: none;
+  box-sizing: border-box;
+  height: 32px;
+  min-width: 138px;
+  padding: 0 28px 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  line-height: 30px;
+  background-color: var(--surface);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'><path d='M3 4.5 6 7.5 9 4.5' stroke='%235c5850' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.vad-settings-select--fill {
+  width: 100%;
+  min-width: 0;
+}
+
+.vad-settings-select:hover {
+  border-color: color-mix(in srgb, var(--foreground) 18%, var(--border));
 }
 
 .vad-settings-switch {
   position: relative;
-  width: 42px;
+  width: 40px;
   height: 24px;
   flex-shrink: 0;
   border: 0;
   border-radius: 999px;
-  background: var(--surface-muted);
+  background: color-mix(in srgb, var(--foreground) 14%, var(--surface-muted));
   cursor: pointer;
 }
 
@@ -191,87 +292,981 @@
   height: 18px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
-  transition: transform 0.16s cubic-bezier(0.2, 0, 0, 1);
+  box-shadow: 0 1px 2px rgba(26, 25, 22, 0.18);
+  transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .vad-settings-switch.is-on {
   background: var(--primary);
 }
 
+.vad-settings-switch:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .vad-settings-switch.is-on::after {
-  transform: translateX(18px);
+  transform: translateX(16px);
 }
 
 .vad-settings-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  height: 34px;
+  height: 32px;
   padding: 0 12px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 9px;
   background: var(--surface);
-  color: var(--foreground);
+  color: var(--muted-strong);
   font-size: 13px;
-  font-weight: 550;
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
   cursor: pointer;
 }
 
-.vad-settings-btn:hover {
+.vad-settings-btn svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.vad-settings-btn:hover:not(:disabled) {
   background: var(--surface-muted);
+  color: var(--foreground);
 }
 
 .vad-settings-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.48;
   cursor: not-allowed;
 }
 
+.vad-settings-btn--primary {
+  border-color: transparent;
+  background: var(--primary);
+  color: var(--vad-accent-fg-on);
+}
+
+.vad-settings-btn--primary:hover:not(:disabled) {
+  background: var(--primary-strong);
+  color: var(--vad-accent-fg-on);
+}
+
+.vad-settings-btn--quiet {
+  width: 32px;
+  padding: 0;
+  color: var(--muted);
+}
+
+.vad-settings-btn--ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 8px;
+}
+
+.vad-settings-btn--ghost:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  color: var(--foreground);
+}
+
+.vad-settings-btn--danger {
+  color: var(--danger);
+}
+
+.vad-settings-btn--danger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger) 28%, var(--border));
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+  color: var(--danger);
+}
+
 .vad-settings-kbd {
+  display: inline-flex;
+  align-items: center;
   height: 26px;
   padding: 0 8px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 7px;
   background: var(--surface-muted);
-  color: var(--foreground);
-  font-family: var(--font-mono);
+  color: var(--muted-strong);
+  font-family: var(--font-mono, ui-monospace, "Cascadia Code", Consolas, monospace);
   font-size: 11px;
-  line-height: 24px;
+  font-weight: 500;
+  line-height: 1;
   white-space: nowrap;
 }
 
-.vad-settings-path {
-  margin-top: 6px;
+.vad-settings-meta {
   color: var(--muted);
-  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 12.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.vad-settings-path,
+.vad-settings-code {
+  margin: 0 0 12px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface-muted) 58%, var(--surface));
+  color: var(--muted-strong);
+  font-family: var(--font-mono, ui-monospace, "Cascadia Code", Consolas, monospace);
   font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.5;
   word-break: break-all;
 }
 
-.vad-settings-models .vad-provider-header {
+.vad-settings-row + .vad-settings-path,
+.vad-settings-row + .vad-settings-code {
+  margin-top: -6px;
+}
+
+.vad-settings-code {
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.vad-settings-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.vad-settings-badge--ok {
+  border-color: color-mix(in srgb, var(--success) 28%, var(--border));
+  background: color-mix(in srgb, var(--success) 10%, var(--surface));
+  color: var(--success);
+}
+
+.vad-settings-badge--warn {
+  border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+}
+
+.vad-settings-note {
+  display: grid;
+  gap: 4px;
+  margin: 4px 0 16px;
+  padding: 11px 13px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--surface-muted) 46%, var(--surface));
+  color: var(--muted-strong);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.vad-settings-body .vad-daemon-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 4px 0 16px;
+  padding: 11px 13px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--surface-muted) 46%, var(--surface));
+  color: var(--muted-strong);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.vad-settings-note strong,
+.vad-settings-body .vad-daemon-hint p:first-child {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.vad-settings-note.is-ok,
+.vad-settings-body .vad-daemon-hint.is-ok {
+  border-color: color-mix(in srgb, var(--success) 26%, var(--border));
+  background: color-mix(in srgb, var(--success) 8%, var(--surface));
+}
+
+.vad-settings-note.is-warn,
+.vad-settings-body .vad-daemon-hint.is-warn {
+  border-color: color-mix(in srgb, var(--primary) 26%, var(--border));
+  background: var(--primary-soft);
+}
+
+.vad-settings-note.is-danger {
+  border-color: color-mix(in srgb, var(--danger) 26%, var(--border));
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+}
+
+.vad-settings-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.vad-provider-config-lead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.vad-settings-models-form {
+  display: grid;
+  gap: 2px;
+}
+
+.vad-settings-models .vad-provider-config-lead {
+  padding-bottom: 10px;
+}
+
+.vad-settings-models .vad-provider-header,
+.vad-settings-models .vad-provider-section-heading {
   display: none;
+}
+
+.vad-settings-models h3.vad-settings-group {
+  margin-bottom: 10px;
+}
+
+.vad-settings-models .vad-provider-grid {
+  margin-top: 0;
+  gap: 8px;
+}
+
+.vad-settings-models .vad-provider-card {
+  min-height: 0;
+  gap: 6px;
+  border-radius: 11px;
+  padding: 11px;
+}
+
+.vad-settings-models .vad-provider-card:hover {
+  transform: none;
+}
+
+.vad-settings-models .vad-provider-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
+.vad-settings-models .vad-provider-card-copy strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.vad-settings-models .vad-provider-card-copy small,
+.vad-settings-models .vad-provider-card-description,
+.vad-settings-models .vad-provider-card-badge {
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.vad-settings-models .vad-provider-card-badge {
+  padding: 2px 7px;
+  font-size: 11px;
+}
+
+.vad-settings-models .vad-provider-config-panel {
+  gap: 12px;
+  margin-top: 10px;
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.vad-settings-models .vad-provider-config-panel > .flex.items-center {
+  padding-bottom: 10px;
+}
+
+.vad-settings-models .vad-provider-config-panel .app-strong,
+.vad-settings-models .vad-provider-config-head {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.vad-settings-models .vad-provider-config-panel .app-subtle,
+.vad-settings-models .vad-provider-hint {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.vad-settings-models .vad-provider-field-label,
+.vad-settings-models .text-\[10px\],
+.vad-settings-models .text-xs.font-bold.uppercase,
+.vad-settings-models .text-xs.font-bold.app-subtle {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.vad-settings-models .vad-provider-input-wrap input,
+.vad-settings-models .vad-provider-select,
+.vad-settings-models select.vad-settings-select {
+  appearance: none;
+  box-sizing: border-box;
+  min-height: 32px;
+  height: 32px;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-right: 28px;
+  border-radius: 9px;
+  line-height: 30px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'><path d='M3 4.5 6 7.5 9 4.5' stroke='%235c5850' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.vad-settings-models .vad-provider-input-wrap input {
+  appearance: none;
+  background-image: none;
+  padding-right: 2.45rem;
+}
+
+.vad-settings-models .vad-settings-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 6px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.vad-settings-models .vad-settings-fineprint {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.55;
+}
+
+/* ── 导航页脚 ── */
+
+.vad-settings-nav-foot {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: auto;
+  padding: 12px 10px 0;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.vad-settings-nav-foot svg {
+  flex-shrink: 0;
+  color: var(--muted-strong);
+}
+
+.vad-settings-nav-foot span {
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.vad-settings-nav-foot small {
+  margin-left: auto;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 堆叠行：控件放到文案下面 ── */
+
+.vad-settings-row--stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.vad-settings-row--stack .vad-settings-control {
+  justify-content: flex-start;
+}
+
+/* ── 主题卡片 ── */
+
+.vad-theme-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+  max-width: 420px;
+}
+
+.vad-theme-card {
+  display: grid;
+  position: relative;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.vad-theme-card:hover {
+  border-color: color-mix(in srgb, var(--foreground) 20%, var(--border));
+}
+
+.vad-theme-card.is-active {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
+.vad-theme-card:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.vad-theme-preview {
+  display: grid;
+  grid-template-columns: 26% 1fr;
+  height: 84px;
+  overflow: hidden;
+  border: 1px solid;
+  border-radius: 8px;
+}
+
+.vad-theme-card.is-light .vad-theme-preview {
+  border-color: #e2e4e9;
+  background: #edeef1;
+}
+
+.vad-theme-card.is-dark .vad-theme-preview {
+  border-color: #2a2c33;
+  background: #0e0f12;
+}
+
+.vad-theme-preview-side {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 8px 6px;
+  border-right: 1px solid;
+}
+
+.vad-theme-card.is-light .vad-theme-preview-side {
+  border-color: transparent;
+  background: transparent;
+}
+
+.vad-theme-card.is-dark .vad-theme-preview-side {
+  border-color: #2a2c33;
+  background: #0e0f12;
+}
+
+.vad-theme-preview-side i {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.vad-theme-preview-side i:first-child {
+  width: 70%;
+}
+
+.vad-theme-card.is-light .vad-theme-preview-side i {
+  background: rgba(26, 25, 22, 0.16);
+}
+
+.vad-theme-card.is-light .vad-theme-preview-side i:first-child {
+  background: rgba(26, 25, 22, 0.22);
+}
+
+.vad-theme-card.is-dark .vad-theme-preview-side i {
+  background: rgba(241, 239, 232, 0.18);
+}
+
+.vad-theme-card.is-dark .vad-theme-preview-side i:first-child {
+  background: #f2f3f5;
+}
+
+.vad-theme-preview-main {
+  display: grid;
+  position: relative;
+  align-content: start;
+  gap: 5px;
+  padding: 10px 10px 0;
+}
+
+.vad-theme-card.is-light .vad-theme-preview-main {
+  margin: 6px 6px 6px 0;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.vad-theme-preview-main i {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.vad-theme-preview-main i.is-title {
+  width: 46%;
+  height: 6px;
+}
+
+.vad-theme-preview-main i.is-line {
+  width: 78%;
+}
+
+.vad-theme-preview-main i.is-short {
+  width: 56%;
+}
+
+.vad-theme-preview-main b {
+  display: block;
+  height: 26px;
+  margin-top: 4px;
+  border: 1px solid;
+  border-radius: 6px;
+}
+
+.vad-theme-card.is-light .vad-theme-preview-main i {
+  background: rgba(26, 25, 22, 0.14);
+}
+
+.vad-theme-card.is-light .vad-theme-preview-main i.is-title {
+  background: #141416;
+}
+
+.vad-theme-card.is-light .vad-theme-preview-main b {
+  border-color: rgba(26, 25, 22, 0.08);
+  background: #e2e4e9;
+}
+
+.vad-theme-card.is-dark .vad-theme-preview-main i {
+  background: rgba(241, 239, 232, 0.16);
+}
+
+.vad-theme-card.is-dark .vad-theme-preview-main i.is-title {
+  background: #f2f3f5;
+}
+
+.vad-theme-card.is-dark .vad-theme-preview-main b {
+  border-color: rgba(241, 239, 232, 0.1);
+  background: #17181d;
+}
+
+.vad-theme-card-copy {
+  display: grid;
+  gap: 1px;
+  padding: 0 2px;
+}
+
+.vad-theme-card-copy strong {
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.vad-theme-card-copy small {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.vad-theme-card-radio {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid color-mix(in srgb, var(--foreground) 22%, transparent);
+  border-radius: 999px;
+  background: var(--surface);
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.vad-theme-card.is-active .vad-theme-card-radio {
+  border-color: var(--primary);
+  background: var(--primary);
+  box-shadow: inset 0 0 0 3px var(--surface);
+}
+
+/* ── 快捷键 ── */
+
+.vad-settings-keys,
+.vad-settings-keys-part {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.vad-settings-keys-part i {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+}
+
+/* ── 关于页品牌块 ── */
+
+.vad-settings-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 4px 0 8px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-muted) 40%, var(--surface));
+}
+
+.vad-settings-brand-mark {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--foreground);
+}
+
+.vad-settings-brand-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.vad-settings-brand-copy strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+.vad-settings-brand-copy p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* ── 连接页：coding agent 卡片 ── */
+
+.vad-agent-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.vad-agent-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  transition: border-color 0.15s ease;
+}
+
+.vad-agent-card:hover {
+  border-color: color-mix(in srgb, var(--foreground) 18%, var(--border));
+}
+
+.vad-agent-card.is-registered {
+  border-color: color-mix(in srgb, var(--success) 30%, var(--border));
+}
+
+.vad-agent-card .vad-settings-actions {
+  grid-column: 2;
+  justify-content: flex-start;
+}
+
+.vad-agent-card-logo,
+.vad-agent-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+}
+
+.vad-agent-logo svg {
+  width: 18px;
+  height: 18px;
+}
+
+.vad-settings-inline-path {
+  display: inline-block;
+  max-width: 100%;
+  margin-top: 8px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface-muted) 70%, var(--surface));
+  color: var(--muted-strong);
+  font-family: var(--font-mono, ui-monospace, "Cascadia Code", Consolas, monospace);
+  font-size: 11px;
+  word-break: break-all;
+}
+
+/* ── 模型页：总览 + 连接器芯片 ── */
+
+.vad-models-overview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 4px 0 18px;
+}
+
+.vad-models-tile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-muted) 40%, var(--surface));
+}
+
+.vad-models-tile.is-ready {
+  background: var(--surface);
+}
+
+.vad-models-tile > .vad-provider-logo {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 10px;
+}
+
+.vad-models-tile > .vad-settings-badge {
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+
+.vad-models-tile-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 1px;
+}
+
+.vad-models-tile-copy small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.vad-models-tile-copy strong {
+  color: var(--foreground);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.vad-models-tile-copy code {
+  overflow: hidden;
+  color: var(--muted-strong);
+  font-family: var(--font-mono, ui-monospace, "Cascadia Code", Consolas, monospace);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vad-provider-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.vad-provider-chip {
+  display: inline-flex;
+  position: relative;
+  height: 36px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--muted-strong);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.vad-provider-chip:hover {
+  border-color: color-mix(in srgb, var(--foreground) 20%, var(--border));
+  color: var(--foreground);
+}
+
+.vad-provider-chip.is-active {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+  color: var(--foreground);
+}
+
+.vad-provider-chip:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.vad-provider-chip .vad-provider-logo {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+}
+
+.vad-provider-chip .vad-provider-logo svg {
+  width: 13px;
+  height: 13px;
+}
+
+.vad-provider-chip-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.vad-provider-chip-badge {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.vad-provider-chip-check {
+  width: 13px;
+  height: 13px;
+  color: var(--primary);
+}
+
+.vad-provider-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.vad-settings-models .vad-provider-config-panel {
+  background: var(--surface);
+}
+
+.vad-settings-models .vad-provider-config-lead .vad-provider-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+}
+
+.vad-settings-models .vad-settings-list {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.vad-settings-models .vad-settings-list > .vad-settings-row {
+  padding-right: 14px;
+  padding-left: 14px;
+}
+
+.vad-settings-models .vad-settings-list > .vad-settings-row:last-child {
+  border-bottom: 0;
+}
+
+.vad-settings-models .vad-settings-section {
+  margin-bottom: 8px;
 }
 
 @media (max-width: 720px) {
   .vad-settings {
     grid-template-columns: 1fr;
-    height: min(92vh, 720px);
+    height: min(92vh, 740px);
+  }
+
+  .vad-settings-nav-foot {
+    display: none;
+  }
+
+  .vad-models-overview,
+  .vad-provider-field-grid,
+  .vad-theme-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .vad-agent-card {
+    grid-template-columns: 1fr;
+  }
+
+  .vad-agent-card .vad-settings-actions {
+    grid-column: 1;
   }
 
   .vad-settings-nav {
     flex-direction: row;
     flex-wrap: nowrap;
+    align-items: center;
     overflow: auto;
+    padding: 10px 12px;
     border-right: 0;
     border-bottom: 1px solid var(--border);
+  }
+
+  .vad-settings-nav-label {
+    display: none;
   }
 
   .vad-settings-nav-item {
     flex-shrink: 0;
   }
+
+  .vad-settings-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .vad-settings-control,
+  .vad-settings-actions {
+    justify-content: flex-start;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .vad-settings-overlay {
+    backdrop-filter: none;
+  }
+
   .vad-settings-switch::after {
     transition: none;
   }

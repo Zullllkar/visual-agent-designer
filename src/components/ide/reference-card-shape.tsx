@@ -1,4 +1,5 @@
 "use client";
+import { createShapeId, type RecordProps, type TLBaseShape } from "@/lib/tldraw-compat";
 
 /**
  * ReferenceCard Shape — Lovart 式直出参考图
@@ -10,9 +11,6 @@ import {
   Rectangle2d,
   ShapeUtil,
   T,
-  createShapeId,
-  type RecordProps,
-  type TLBaseShape,
 } from "tldraw";
 import { useProjectStore } from "@/store/project-store";
 import { useCanvasChromePalette } from "@/lib/canvas/use-canvas-chrome";
@@ -31,11 +29,10 @@ export type ReferenceCardShape = TLBaseShape<
   }
 >;
 
-// @ts-expect-error TLShape union does not include custom shapes by design
 export class ReferenceCardShapeUtil extends ShapeUtil<ReferenceCardShape> {
-  static override type = "reference-card" as const;
+  static type = "reference-card" as any;
 
-  static override props: RecordProps<ReferenceCardShape> = {
+  static props: RecordProps<ReferenceCardShape> = {
     w: T.number,
     h: T.number,
     referenceId: T.string,
@@ -44,7 +41,7 @@ export class ReferenceCardShapeUtil extends ShapeUtil<ReferenceCardShape> {
     source: T.string,
   };
 
-  override getDefaultProps(): ReferenceCardShape["props"] {
+  getDefaultProps(): ReferenceCardShape["props"] {
     return {
       w: 260,
       h: 180,
@@ -55,7 +52,7 @@ export class ReferenceCardShapeUtil extends ShapeUtil<ReferenceCardShape> {
     };
   }
 
-  override getGeometry(shape: ReferenceCardShape): Rectangle2d {
+  getGeometry(shape: ReferenceCardShape): Rectangle2d {
     return new Rectangle2d({
       width: shape.props.w,
       height: shape.props.h,
@@ -63,16 +60,16 @@ export class ReferenceCardShapeUtil extends ShapeUtil<ReferenceCardShape> {
     });
   }
 
-  override canResize = () => true;
-  override canEditInReadonly = () => false;
-  override hideRotateHandle = () => true;
-  override canBind = () => false;
+  canResize = () => true;
+  canEditInReadonly = () => false;
+  hideRotateHandle = () => true;
+  canBind = () => false;
 
-  override component(shape: ReferenceCardShape) {
+  component(shape: ReferenceCardShape) {
     return <ReferenceCardShapeView shape={shape} />;
   }
 
-  override getIndicatorPath(shape: ReferenceCardShape): Path2D | undefined {
+  getIndicatorPath(shape: ReferenceCardShape): Path2D | undefined {
     if (typeof Path2D === "undefined") return undefined;
     const r = PHOTO_RADIUS;
     const w = shape.props.w;

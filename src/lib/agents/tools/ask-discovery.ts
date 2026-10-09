@@ -41,7 +41,7 @@ export const askDiscoveryTool: AgentTool = {
     "向用户提出结构化确认表单（进场需求或调整视觉方向）。" +
     "空白项目缺类型/风格时用需求表；用户要调整方向时用方向调整表。" +
     "每题必须带推荐 default；调用后立即停止。禁止改用助手正文编号提问。",
-  inputPhase: ["INIT", "DISCOVERY", "BRIEF", "DIRECTION", "GENERATION", "REVIEW"],
+  inputPhase: ["DISCOVERY", "DISCOVERY", "BRIEF", "DIRECTION", "GENERATION", "REVIEW"],
   outputPhase: "DISCOVERY",
   riskLevel: "safe",
   parameters: {

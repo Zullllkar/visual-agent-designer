@@ -29,4 +29,11 @@ describe("createPlaceholderProject", () => {
     expect(project.skillVersion).toBe("0.1.0");
     expect(project.designSystemId).toBe("linear-like");
   });
+
+  it("binds a user workspace folder so files are not stored in the app data dir", () => {
+    const project = createPlaceholderProject("abc123", "健身训练首页", {
+      workspacePath: "E:/work/fitness-app",
+    });
+    expect(project.workspacePath).toBe("E:/work/fitness-app");
+  });
 });

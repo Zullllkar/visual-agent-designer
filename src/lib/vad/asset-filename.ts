@@ -20,6 +20,22 @@ export function imageExtFromMimeSubtype(subtype: string): string {
   return raw.replace(/[^a-z0-9]/g, "") || "png";
 }
 
-export function toSafeAssetFilename(id: string, ext: string): string {
-  return `${toSafeAssetFileId(id)}.${imageExtFromMimeSubtype(ext)}`;
+export function toSafeAssetFilename(id: string, ext: string, title?: string): string {
+  const idPart = toSafeAssetFileId(id);
+  const extPart = imageExtFromMimeSubtype(ext);
+  const slug = slugAsciiTitle(title);
+  if (!slug) return `${idPart}.${extPart}`;
+  const tail = idPart.slice(-10);
+  return `${slug}-${tail}.${extPart}`;
+}
+
+function slugAsciiTitle(title?: string): string {
+  if (!title) return "";
+  return title
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32)
+    .toLowerCase();
 }

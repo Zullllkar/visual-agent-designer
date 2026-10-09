@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ProjectFile } from "@/lib/project/schema";
 import {
+  defaultHandoffSelection,
   defaultSelectedAssetIds,
   defaultSelectedReferenceIds,
   listSelectableHandoffAssets,
@@ -41,6 +42,17 @@ describe("select-assets", () => {
       assets: [asset("a1", "candidate"), asset("a2", "candidate")],
     });
     expect(defaultSelectedAssetIds(project)).toEqual(["a1", "a2"]);
+  });
+
+  it("dialog default is starred-only and stays empty when nothing is starred", () => {
+    const mixed = makeProject({
+      assets: [asset("a1", "candidate"), asset("a2", "starred")],
+    });
+    expect(defaultHandoffSelection(mixed).assetIds).toEqual(["a2"]);
+    const exploring = makeProject({
+      assets: [asset("a1", "candidate"), asset("a2", "candidate")],
+    });
+    expect(defaultHandoffSelection(exploring).assetIds).toEqual([]);
   });
 
   it("defaults references to all selectable", () => {
@@ -139,7 +151,7 @@ describe("select-assets", () => {
     expect(Object.keys(scoped.materializations ?? {})).toEqual(["mock-1"]);
   });
 
-  it("sanitizes stale ids and restores default assets when empty", () => {
+  it("sanitizes stale ids and keeps an explicit empty asset selection", () => {
     const project = makeProject({
       assets: [asset("a1", "candidate"), asset("a2", "starred")],
       references: [ref("r1")],
@@ -155,8 +167,11 @@ describe("select-assets", () => {
       assetIds: [],
       referenceIds: [],
     });
-    expect(emptyAssets.assetIds).toEqual(["a2"]);
+    expect(emptyAssets.assetIds).toEqual([]);
     expect(emptyAssets.referenceIds).toEqual([]);
+
+    const missing = sanitizeHandoffSelection(project, null);
+    expect(missing.assetIds).toEqual(["a2"]);
   });
 });
 

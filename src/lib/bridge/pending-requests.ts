@@ -4,14 +4,16 @@
  * coding agent 通过 MCP 发起、需要设计侧人来处理的请求：
  *   asset    — request_asset：要一张新素材（默认需人工批准，涉及费用）
  *   question — ask_designer：设计上的歧义提问
+ *   proposal — propose_design_change：结构化的 Layout IR 变更提案，批准即应用
  *
  * 工具会短暂等待（Codex 默认工具超时 60s，这里留足余量），超时则返回
  * requestId 让 agent 稍后用 get_answer / get_job 轮询。
  */
 
 import { nanoid } from "nanoid";
+import type { DesignProposalInput } from "./design-proposal";
 
-export type BridgeRequestKind = "asset" | "question";
+export type BridgeRequestKind = "asset" | "question" | "proposal";
 
 export type BridgeRequestStatus =
   | "pending"
@@ -46,12 +48,15 @@ export interface BridgeRequest {
   resolvedAt?: number;
   asset?: BridgeAssetRequestInput;
   question?: BridgeQuestionInput;
+  proposal?: DesignProposalInput & { description: string };
   /** approved 后由工具写入，供 get_job 关联。 */
   jobId?: string;
   /** answered 时的回答文本。 */
   answer?: string;
   /** rejected 时的理由。 */
   reason?: string;
+  /** proposal 批准并应用后的结果说明。 */
+  appliedSummary?: string;
 }
 
 type Waiter = (request: BridgeRequest) => void;
@@ -72,16 +77,27 @@ class PendingRequestRegistry {
     input:
       | { kind: "asset"; projectId: string; clientName?: string; asset: BridgeAssetRequestInput }
       | { kind: "question"; projectId: string; clientName?: string; question: BridgeQuestionInput }
+      | {
+          kind: "proposal";
+          projectId: string;
+          clientName?: string;
+          proposal: DesignProposalInput & { description: string };
+        }
   ): BridgeRequest {
     this.evictStale();
+    const prefix = input.kind === "asset" ? "req" : input.kind === "question" ? "q" : "prop";
     const request: BridgeRequest = {
-      id: `${input.kind === "asset" ? "req" : "q"}_${nanoid(10)}`,
+      id: `${prefix}_${nanoid(10)}`,
       kind: input.kind,
       projectId: input.projectId,
       clientName: input.clientName,
       status: "pending",
       createdAt: Date.now(),
-      ...(input.kind === "asset" ? { asset: input.asset } : { question: input.question }),
+      ...(input.kind === "asset"
+        ? { asset: input.asset }
+        : input.kind === "question"
+          ? { question: input.question }
+          : { proposal: input.proposal }),
     };
     this.requests.set(request.id, request);
     this.notify(request);
@@ -104,7 +120,7 @@ class PendingRequestRegistry {
   resolve(
     id: string,
     resolution:
-      | { action: "approve" }
+      | { action: "approve"; appliedSummary?: string }
       | { action: "reject"; reason?: string }
       | { action: "answer"; answer: string }
   ): BridgeRequest | undefined {
@@ -112,8 +128,9 @@ class PendingRequestRegistry {
     if (!request || request.status !== "pending") return undefined;
 
     if (resolution.action === "approve") {
-      if (request.kind !== "asset") return undefined;
+      if (request.kind === "question") return undefined;
       request.status = "approved";
+      if (resolution.appliedSummary) request.appliedSummary = resolution.appliedSummary;
     } else if (resolution.action === "reject") {
       request.status = "rejected";
       request.reason = resolution.reason;

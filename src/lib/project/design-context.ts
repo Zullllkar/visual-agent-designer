@@ -8,23 +8,97 @@ import type {
 import { briefDisplayFields } from "@/lib/targets/brief";
 import { parseTargetId, type TargetId } from "@/lib/targets/resolve";
 
+/**
+ * 没有任何真实来源时的占位色。不是设计决策——只是让 UI 有东西可渲染。
+ * Handoff 不应把它当 tokens 交给 coding agent（见 isPlaceholderColorTokens）。
+ */
 const DEFAULT_COLORS = [
-  { name: "primary", value: "#4F46FF", usage: "主要按钮、选中状态、关键路径强调" },
-  { name: "surface", value: "#FFFFFF", usage: "页面背景、卡片与编辑器面板" },
-  { name: "ink", value: "#111827", usage: "标题、正文与高优先级信息" },
-  { name: "muted", value: "#64748B", usage: "说明文字、辅助标签与低优先级信息" },
+  { name: "background", value: "#EDEEF1", usage: "桌面、画布底、顶栏与侧栏" },
+  { name: "surface", value: "#FFFFFF", usage: "内容面板与卡片" },
+  { name: "primary", value: "#141416", usage: "主按钮、选中与焦点" },
+  { name: "ink", value: "#141416", usage: "标题与正文" },
+  { name: "muted", value: "#5C616B", usage: "说明文字与次要信息" },
 ];
 
+const LEGACY_PLACEHOLDER_VALUES = [
+  "#4F46FF",
+  "#111827",
+  "#64748B",
+  "#F5F5F7",
+  "#6366F1",
+  "#18181C",
+  "#6B7180",
+];
+
+const PLACEHOLDER_VALUES = new Set([
+  ...DEFAULT_COLORS.map((c) => c.value.toUpperCase()),
+  ...LEGACY_PLACEHOLDER_VALUES,
+]);
+
+/** 全部 token 都还是默认占位 → 没有真实颜色来源 */
+export function isPlaceholderColorTokens(
+  tokens: Array<{ value: string }> | undefined
+): boolean {
+  if (!tokens || tokens.length === 0) return true;
+  return tokens.every((t) => PLACEHOLDER_VALUES.has(t.value.toUpperCase()));
+}
+
 export function deriveDesignContext(project: ProjectFile): DesignContext | null {
-  if (project.designContext) return project.designContext;
-  if (!project.brief) return null;
-  const ctx = buildDesignContext({
-    brief: project.brief,
-    targetId: project.targetId,
-    designDirection: project.designDirection,
-    designSystemId: project.designSystemId,
-  });
-  return mergeBrandKit(ctx, project.brandKit);
+  const persisted = project.designContext;
+  if (persisted && !isPlaceholderColorTokens(persisted.colorTokens)) return persisted;
+  if (!persisted && !project.brief) return null;
+  const ctx =
+    persisted ??
+    mergeBrandKit(
+      buildDesignContext({
+        brief: project.brief!,
+        targetId: project.targetId,
+        designDirection: project.designDirection,
+        designSystemId: project.designSystemId,
+      }),
+      project.brandKit
+    );
+  return upgradeColorsFromPixelSpecs(ctx, project);
+}
+
+/**
+ * 项目级色 token 仍是占位时，用定稿图的像素色板替换：
+ * 优先 approved / 已物料化的 mockup，其次 starred，再其次任何带像素色板的素材。
+ */
+function upgradeColorsFromPixelSpecs(
+  ctx: DesignContext,
+  project: ProjectFile
+): DesignContext {
+  if (!isPlaceholderColorTokens(ctx.colorTokens)) return ctx;
+  const assets = (project.assets ?? []).filter(
+    (a) =>
+      a.source !== "materialized" &&
+      a.status !== "discarded" &&
+      a.status !== "failed" &&
+      a.designSpec?.tokens?.colors?.some((c) => c.source === "pixels")
+  );
+  if (assets.length === 0) return ctx;
+  const rank = (a: (typeof assets)[number]) =>
+    a.approval?.status === "approved" || a.approval?.status === "materials_ready"
+      ? 0
+      : project.materializations?.[a.id]
+        ? 1
+        : a.status === "starred"
+          ? 2
+          : 3;
+  const best = [...assets].sort((a, b) => rank(a) - rank(b))[0];
+  const colors = (best.designSpec?.tokens.colors ?? []).filter(
+    (c) => c.source === "pixels"
+  );
+  if (colors.length === 0) return ctx;
+  return {
+    ...ctx,
+    colorTokens: colors.map((c) => ({
+      name: c.name,
+      value: c.value,
+      usage: `${c.usage ?? ""}（采样自定稿图 ${best.id}）`.trim(),
+    })),
+  };
 }
 
 export function readDesignContextFromScratch(

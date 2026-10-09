@@ -19,7 +19,8 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@tldraw/tlschema": ["./node_modules/.pnpm/@tldraw+tlschema@*/node_modules/@tldraw/tlschema/dist-cjs/index.d.ts"]
     }
   },
   "include": [

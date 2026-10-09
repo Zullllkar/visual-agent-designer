@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { useDesktopProviderSync } from "@/lib/desktop/use-desktop-provider-sync";
 import { useDesktopRuntime } from "@/lib/desktop/use-desktop-runtime";
 import { usePreferences } from "@/lib/preferences";
 import { DesktopStatusbar } from "./desktop-statusbar";
@@ -9,6 +10,7 @@ import { DesktopTitlebar } from "./desktop-titlebar";
 export function DesktopShell({ children }: { children: React.ReactNode }) {
   const desktop = useDesktopRuntime();
   const { resolvedTheme } = usePreferences();
+  useDesktopProviderSync(desktop);
 
   useEffect(() => {
     if (!desktop) return;

@@ -135,6 +135,38 @@ describe("Stream Adapter", () => {
     });
   });
 
+  it("yields tool.confirm when interrupt is on the event data root", async () => {
+    const events: StreamEvent[] = [
+      {
+        event: "on_chain_stream",
+        data: {
+          __interrupt__: [
+            {
+              id: "interrupt-root",
+              value: {
+                approvalId: "run-1:generate_images",
+                toolName: "generate_images",
+                pausedByInterrupt: true,
+              },
+            },
+          ],
+        },
+      } as unknown as StreamEvent,
+    ];
+
+    const results = [];
+    for await (const ev of adaptStreamEvents(mockStream(events), "run-1")) {
+      results.push(ev);
+    }
+
+    expect(results.find((e) => e.type === "tool.confirm")?.data).toMatchObject({
+      runId: "run-1",
+      checkpointInterruptId: "interrupt-root",
+      toolName: "generate_images",
+      pausedByInterrupt: true,
+    });
+  });
+
   it("should prefer native LangGraph tool call id over tool run id", async () => {
     const events: StreamEvent[] = [
       {
@@ -252,6 +284,10 @@ describe("Stream Adapter", () => {
     expect((projectUpdate!.data as { project: unknown }).project).toEqual(
       mockProject
     );
+    const completedIdx = results.findIndex((e) => e.type === "tool.completed");
+    const updateIdx = results.findIndex((e) => e.type === "project.update");
+    expect(updateIdx).toBeGreaterThan(-1);
+    expect(updateIdx).toBeLessThan(completedIdx);
 
     // scratch should be cleaned up after yielding
     expect(agentCtx.scratch.__updatedProject).toBeUndefined();
@@ -451,5 +487,51 @@ describe("Stream Adapter", () => {
     expect(data.artifacts).toBeDefined();
     expect(data.artifacts!.length).toBe(2);
     expect(data.outputSummary).toBe("Generated 2 images");
+  });
+
+  it("yields a single generate_images approval, not tool.confirm plus image_generation.confirm", async () => {
+    const agentCtx = makeMockAgentCtx();
+    agentCtx.scratch.__toolConfirmation = {
+      approvalId: "run-9:generate_images",
+      toolName: "generate_images",
+      args: { prompt: "Dark OmniTab home", count: 1 },
+      reason: "Needs approval",
+    };
+    agentCtx.scratch.__imageGenerationConfirmation = {
+      title: "生图执行请求",
+      prompt: "Dark OmniTab home",
+      count: 1,
+      width: 1024,
+      height: 1024,
+    };
+
+    const events: StreamEvent[] = [
+      {
+        event: "on_tool_end",
+        name: "generate_images",
+        data: {
+          name: "generate_images",
+          output: JSON.stringify({
+            ok: false,
+            data: { confirmationRequired: true },
+          }),
+        },
+      } as unknown as StreamEvent,
+    ];
+
+    const results = [];
+    for await (const ev of adaptStreamEvents(mockStream(events), "run-9", agentCtx)) {
+      results.push(ev);
+    }
+
+    const confirms = results.filter(
+      (ev) => ev.type === "tool.confirm" || ev.type === "image_generation.confirm"
+    );
+    expect(confirms).toHaveLength(1);
+    expect(confirms[0]?.type).toBe("tool.confirm");
+    expect(confirms[0]?.data).toMatchObject({
+      approvalId: "run-9:generate_images",
+      toolName: "generate_images",
+    });
   });
 });

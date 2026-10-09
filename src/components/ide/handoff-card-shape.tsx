@@ -1,4 +1,5 @@
 "use client";
+import { createShapeId, type RecordProps, type TLBaseShape } from "@/lib/tldraw-compat";
 
 /**
  * HandoffCard Shape — 设计交付画布卡片（Lovart 式交付物）
@@ -14,9 +15,6 @@ import {
   Rectangle2d,
   ShapeUtil,
   T,
-  createShapeId,
-  type RecordProps,
-  type TLBaseShape,
 } from "tldraw";
 import { useProjectStore } from "@/store/project-store";
 import { useCanvasUiStore } from "@/store/canvas-ui-store";
@@ -36,21 +34,20 @@ export type HandoffCardShape = TLBaseShape<
 export const HANDOFF_CARD_W = 300;
 export const HANDOFF_CARD_H = 236;
 
-// @ts-expect-error TLShape union does not include custom shapes by design
 export class HandoffCardShapeUtil extends ShapeUtil<HandoffCardShape> {
-  static override type = "handoff-card" as const;
+  static type = "handoff-card" as any;
 
-  static override props: RecordProps<HandoffCardShape> = {
+  static props: RecordProps<HandoffCardShape> = {
     w: T.number,
     h: T.number,
     projectId: T.string,
   };
 
-  override getDefaultProps(): HandoffCardShape["props"] {
+  getDefaultProps(): HandoffCardShape["props"] {
     return { w: HANDOFF_CARD_W, h: HANDOFF_CARD_H, projectId: "" };
   }
 
-  override getGeometry(shape: HandoffCardShape): Rectangle2d {
+  getGeometry(shape: HandoffCardShape): Rectangle2d {
     return new Rectangle2d({
       width: shape.props.w,
       height: shape.props.h,
@@ -58,16 +55,16 @@ export class HandoffCardShapeUtil extends ShapeUtil<HandoffCardShape> {
     });
   }
 
-  override canResize = () => false;
-  override canEditInReadonly = () => false;
-  override hideRotateHandle = () => true;
-  override canBind = () => false;
+  canResize = () => false;
+  canEditInReadonly = () => false;
+  hideRotateHandle = () => true;
+  canBind = () => false;
 
-  override component(shape: HandoffCardShape) {
+  component(shape: HandoffCardShape) {
     return <HandoffCardShapeView shape={shape} />;
   }
 
-  override getIndicatorPath(shape: HandoffCardShape): Path2D | undefined {
+  getIndicatorPath(shape: HandoffCardShape): Path2D | undefined {
     return roundedRectPath(shape.props.w, shape.props.h);
   }
 }
@@ -123,7 +120,7 @@ function HandoffCardShapeView({ shape }: { shape: HandoffCardShape }) {
         }}
       >
         Handoff 交付包
-      </p>
+       </p>
 
       <ul
         style={{
@@ -160,8 +157,7 @@ function HandoffCardShapeView({ shape }: { shape: HandoffCardShape }) {
                 fontWeight: 700,
               }}
             >
-              ✓
-            </span>
+              </span>
             {item}
           </li>
         ))}

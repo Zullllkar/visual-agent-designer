@@ -6,18 +6,35 @@
  * coding agent 从 Cursor / Codex / Claude Code 发来的待处理请求：
  *   asset    — 要一张素材，需要批准（花钱）
  *   question — 设计歧义提问，需要回答
+ *   proposal — 结构化 Layout IR 变更，批准后立刻写回项目
  * 以及最近一次实现验收结果。没有待办且没有新报告时完全不渲染。
  */
 
-import { Check, ChevronDown, ChevronUp, Image as ImageIcon, MessageSquare, Send, X } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  GitPullRequestArrow,
+  Image as ImageIcon,
+  MessageSquare,
+  Send,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { type ImplementationReportDto, useImplementationStore } from "@/store/implementation-store";
 
 interface BridgeRequestDto {
   requestId: string;
-  kind: "asset" | "question";
+  kind: "asset" | "question" | "proposal";
   status: "pending" | "approved" | "rejected" | "answered" | "expired";
   createdAt: number;
   jobId?: string;
+  proposal?: {
+    assetId: string;
+    description: string;
+    rationale: string;
+    change: { kind: string; slotId?: string };
+  };
   asset?: {
     description: string;
     role?: string;
@@ -30,22 +47,16 @@ interface BridgeRequestDto {
   question?: { question: string; options?: string[]; context?: string };
 }
 
-interface ReportDto {
-  id: string;
-  score: number;
-  verdict: "pass" | "needs-work" | "off-track";
-  summary: string;
-  source: "vision" | "heuristic";
-  createdAt: string;
-  deviations: Array<{
-    slot: string;
-    kind: string;
-    severity: "low" | "medium" | "high";
-    expected: string;
-    actual: string;
-    fixHint: string;
-  }>;
-}
+type ReportDto = ImplementationReportDto;
+
+const PROPOSAL_KIND_LABEL: Record<string, string> = {
+  copy: "改文案",
+  bbox: "调整位置",
+  "convert-to-code": "改用代码绘制",
+  "remove-slot": "删除区域",
+  "add-state": "增加状态",
+  note: "备注",
+};
 
 export function BridgeRequestDock({ projectId }: { projectId: string }) {
   const [requests, setRequests] = useState<BridgeRequestDto[]>([]);
@@ -54,6 +65,7 @@ export function BridgeRequestDock({ projectId }: { projectId: string }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [dismissedReportId, setDismissedReportId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
+  const publishReports = useImplementationStore((s) => s.setReports);
 
   const refresh = useCallback(async () => {
     try {
@@ -67,12 +79,14 @@ export function BridgeRequestDock({ projectId }: { projectId: string }) {
       }
       if (repRes.ok) {
         const body = (await repRes.json()) as { reports?: ReportDto[] };
-        setReports(body.reports ?? []);
+        const next = body.reports ?? [];
+        setReports(next);
+        publishReports(projectId, next);
       }
     } catch {
       // Bridge 未就绪：静默，下一轮再试
     }
-  }, [projectId]);
+  }, [projectId, publishReports]);
 
   useEffect(() => {
     void refresh();
@@ -171,6 +185,42 @@ export function BridgeRequestDock({ projectId }: { projectId: string }) {
                   </button>
                 </div>
               </div>
+            ) : request.kind === "proposal" && request.proposal ? (
+              <div
+                key={request.requestId}
+                className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 shadow-[var(--shadow-soft)]"
+              >
+                <p className="flex items-center gap-1.5 text-[11px] font-semibold">
+                  <GitPullRequestArrow className="size-3.5" />
+                  设计变更提案
+                  <span className="font-normal app-subtle">
+                    {PROPOSAL_KIND_LABEL[request.proposal.change.kind] ?? request.proposal.change.kind}
+                    {request.proposal.change.slotId ? ` · ${request.proposal.change.slotId}` : ""}
+                  </span>
+                </p>
+                <p className="mt-1 text-[11px] leading-relaxed">{request.proposal.description}</p>
+                <p className="mt-0.5 text-[10px] leading-relaxed app-subtle">{request.proposal.rationale}</p>
+                <div className="mt-2 flex gap-1.5">
+                  <button
+                    type="button"
+                    disabled={busy === request.requestId}
+                    onClick={() => void resolve(request.requestId, "approve")}
+                    className="inline-flex h-7 items-center gap-1 rounded-md bg-[var(--primary)] px-2.5 text-[11px] font-semibold text-white disabled:opacity-50"
+                  >
+                    <Check className="size-3" />
+                    批准并应用
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy === request.requestId}
+                    onClick={() => void resolve(request.requestId, "reject", "保持原设计")}
+                    className="inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border)] px-2.5 text-[11px] disabled:opacity-50"
+                  >
+                    <X className="size-3" />
+                    拒绝
+                  </button>
+                </div>
+              </div>
             ) : request.question ? (
               <div
                 key={request.requestId}
@@ -232,7 +282,8 @@ export function BridgeRequestDock({ projectId }: { projectId: string }) {
             <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 shadow-[var(--shadow-soft)]">
               <div className="flex items-start justify-between gap-2">
                 <p className="text-[11px] font-semibold">
-                  实现验收 {latestReport.score.toFixed(1)}/10
+                  实现验收{" "}
+                  {latestReport.score === null ? "—" : `${latestReport.score.toFixed(1)}/10`}
                   <span
                     className={
                       "ml-1.5 font-normal " +
@@ -240,16 +291,24 @@ export function BridgeRequestDock({ projectId }: { projectId: string }) {
                         ? "text-emerald-600 dark:text-emerald-400"
                         : latestReport.verdict === "off-track"
                           ? "text-red-600 dark:text-red-400"
-                          : "text-amber-600 dark:text-amber-400")
+                          : latestReport.verdict === "unreviewed"
+                            ? "app-subtle"
+                            : "text-amber-600 dark:text-amber-400")
                     }
                   >
                     {latestReport.verdict === "pass"
                       ? "通过"
                       : latestReport.verdict === "off-track"
                         ? "偏离较大"
-                        : "待修"}
+                        : latestReport.verdict === "unreviewed"
+                          ? "未比对"
+                          : "待修"}
                   </span>
-                  {latestReport.source === "heuristic" ? (
+                  {latestReport.verdict === "unreviewed" ? (
+                    <span className="ml-1.5 font-normal app-subtle">
+                      需要配置支持视觉的模型才能对照定稿图
+                    </span>
+                  ) : latestReport.source === "heuristic" ? (
                     <span className="ml-1.5 font-normal app-subtle">未启用视觉比对</span>
                   ) : null}
                 </p>

@@ -23,14 +23,14 @@ import {
   Package,
   Palette,
   Square,
-  Sparkles,
   X,
   XCircle,
 } from "lucide-react";
 import type { ChatMessage } from "@/lib/agents/chat-schema";
 import type { ProjectFile } from "@/lib/project/schema";
+import type { TurnSnapshot } from "@/lib/agents/turn-service";
 import type { ReferenceAsset } from "@/lib/project/assets-schema";
-import { upsertComposerReference } from "@/lib/chat/composer-refs";
+import { upsertComposerReference, referenceFromAsset } from "@/lib/chat/composer-refs";
 import type { ProviderConfig } from "@/lib/providers/registry";
 import {
   useCanvasSelectionStore,
@@ -40,11 +40,23 @@ import { useCanvasUiStore } from "@/store/canvas-ui-store";
 import type { ChatLiveEvent } from "@/lib/chat/use-chat-stream";
 import type { DiffDecision } from "@/lib/chat/diff-preview";
 import { filesToReferenceAssets } from "@/lib/chat/composer-attachments";
+import {
+  applySlashSelection,
+  buildSlashItems,
+  filterSlashItems,
+  parseSlashQuery,
+  type SlashItem,
+} from "@/lib/chat/composer-slash";
+import { ComposerModelChip } from "@/components/brand/composer-model-marks";
 import { ConversationSwitcher } from "@/components/ide/conversation-switcher";
+import { ComposerSlashMenu } from "@/components/ide/composer-slash-menu";
 import { useChatStore } from "@/store/chat-store";
 import { ChatTimelineBody } from "@/components/chat-timeline-body";
 import { toolDisplayLabel } from "@/lib/chat/live-timeline";
 import { useProjectStore } from "@/store/project-store";
+import { isCanvasVisibleAsset } from "@/lib/project/asset-visibility";
+import { releaseStuckGeneratingAssets } from "@/lib/canvas/spawn-child-asset";
+import { useSkillCatalog } from "@/lib/skills/use-skill-catalog";
 
 type RecoverableTimelineJob = {
   id: string;
@@ -73,6 +85,7 @@ type RecoverableTimelineJob = {
 
 type AgentRunSummary = {
   runId: string;
+  turnId?: string;
   threadId: string;
   projectId: string;
   status:
@@ -105,8 +118,11 @@ type AgentRunSummary = {
     toolName: string;
     toolCallId?: string;
     args?: Record<string, unknown>;
-    riskLevel: "safe" | "moderate" | "destructive";
+    riskLevel: "safe" | "moderate" | "destructive" | "external";
     reason: string;
+    model?: string;
+    estimatedSeconds?: number;
+    affectedAssets?: string[];
     requestedAt: number;
   };
   jobCount: number;
@@ -146,7 +162,7 @@ type AgentRunDetail = {
     seq?: number;
     at?: number;
     toolName?: string;
-    riskLevel?: "safe" | "moderate" | "destructive";
+    riskLevel?: "safe" | "moderate" | "destructive" | "external";
     requiresConfirmation?: boolean;
     jobType?: string;
     progress?: number;
@@ -154,24 +170,6 @@ type AgentRunDetail = {
     error?: string;
   }>;
 };
-
-function getLlmModelLabel(providerConfig: ProviderConfig): string {
-  const llm = providerConfig.llm;
-  if (!llm || llm.kind === "mock") return "模拟模型";
-  const modelName =
-    "model" in llm ? (llm as { model?: string }).model : undefined;
-  if (modelName) return modelName;
-  return llm.kind;
-}
-
-function getModelHint(providerConfig: ProviderConfig): string {
-  const llm = providerConfig.llm;
-  if (!llm || llm.kind === "mock") return "本地演示";
-  if ("baseURL" in llm && (llm as { baseURL?: string }).baseURL) {
-    return String((llm as { baseURL?: string }).baseURL);
-  }
-  return llm.kind;
-}
 
 function jobToTimelineEvent(job: RecoverableTimelineJob): ChatLiveEvent | null {
   const base = {
@@ -252,6 +250,9 @@ function pendingApprovalToTimelineEvent(run: AgentRunSummary): ChatLiveEvent | n
       riskLevel: pending.riskLevel,
       args: pending.args,
       reason: pending.reason,
+      model: pending.model,
+      estimatedSeconds: pending.estimatedSeconds,
+      affectedAssets: pending.affectedAssets,
       restored: true,
     },
   };
@@ -262,6 +263,7 @@ export function ChatStreamView({
   messages,
   liveEvents,
   status,
+  connectionStatus,
   error,
   input,
   setInput,
@@ -288,7 +290,9 @@ export function ChatStreamView({
   composerDisabled = false,
   composerPlaceholder,
   queuedCount = 0,
+  queuedItems,
   onClearQueue,
+  onRemoveQueued,
   onRetryUserMessage,
   onEditUserMessage,
   runningConversationId,
@@ -297,6 +301,7 @@ export function ChatStreamView({
   messages: ChatMessage[];
   liveEvents: ChatLiveEvent[];
   status: string;
+  connectionStatus?: "idle" | "connecting" | "streaming" | "waiting_user" | "cancelling" | "done" | "error";
   error: string | null;
   input: string;
   setInput: (value: string) => void;
@@ -330,7 +335,9 @@ export function ChatStreamView({
   composerDisabled?: boolean;
   composerPlaceholder?: string;
   queuedCount?: number;
+  queuedItems?: string[];
   onClearQueue?: () => void;
+  onRemoveQueued?: (index: number) => void;
   onRetryUserMessage?: (messageId: string, content: string) => void;
   onEditUserMessage?: (messageId: string, content: string) => void;
   runningConversationId?: string | null;
@@ -342,14 +349,21 @@ export function ChatStreamView({
   const [composerRefs, setComposerRefs] = useState<ReferenceAsset[]>([]);
   const [omitSelection, setOmitSelection] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [slashQuery, setSlashQuery] = useState<{ start: number; query: string } | null>(
+    null
+  );
+  const [slashIndex, setSlashIndex] = useState(0);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const attachInputRef = useRef<HTMLInputElement | null>(null);
   const appliedComposerRefToken = useRef(0);
   const composerFocusToken = useCanvasUiStore((s) => s.composerFocusToken);
   const composerRefToken = useCanvasUiStore((s) => s.composerRefToken);
   const composerRefOffer = useCanvasUiStore((s) => s.composerRefOffer);
   const [recoveredJobs, setRecoveredJobs] = useState<RecoverableTimelineJob[]>([]);
   const [runHistory, setRunHistory] = useState<AgentRunSummary[]>([]);
+  const [turnSnapshot, setTurnSnapshot] = useState<TurnSnapshot | null>(null);
   const [showRunHistory, setShowRunHistory] = useState(false);
+  const [showQueue, setShowQueue] = useState(false);
   const [autoExpandFailedRunId, setAutoExpandFailedRunId] = useState<
     string | null
   >(null);
@@ -380,10 +394,23 @@ export function ChatStreamView({
     useCanvasUiStore.getState().clearComposerRefOffer();
   }, [composerRefToken, composerRefOffer]);
 
+  const composerDraftToken = useCanvasUiStore((s) => s.composerDraftToken);
+  const composerDraftOffer = useCanvasUiStore((s) => s.composerDraftOffer);
+  const appliedComposerDraftToken = useRef(0);
+  useEffect(() => {
+    if (composerDraftToken === 0 || !composerDraftOffer) return;
+    if (appliedComposerDraftToken.current === composerDraftToken) return;
+    appliedComposerDraftToken.current = composerDraftToken;
+    setInput(composerDraftOffer);
+    useCanvasUiStore.getState().clearComposerDraftOffer();
+  }, [composerDraftToken, composerDraftOffer, setInput]);
+
   const upsertProject = useProjectStore((s) => s.upsert);
   const reloadFromDisk = useProjectStore((s) => s.reloadFromDisk);
+  const { skills } = useSkillCatalog();
   const appliedJobProjectIdsRef = useRef<Set<string>>(new Set());
   const cleanedTerminalImageJobsRef = useRef<Set<string>>(new Set());
+  const releasedStuckAssetsKeyRef = useRef<string>("");
   const lastImageJobReloadKeyRef = useRef("");
   const runHistoryJsonRef = useRef("");
   useEffect(() => {
@@ -419,6 +446,28 @@ export function ChatStreamView({
       window.clearInterval(timer);
     };
   }, [project.id, status]);
+
+  useEffect(() => {
+    let disposed = false;
+    let inFlight = false;
+    const loadTurn = async () => {
+      const turnId = runHistory[0]?.turnId;
+      if (!turnId || inFlight) return;
+      inFlight = true;
+      try {
+        const response = await fetch(`/api/turns/${encodeURIComponent(turnId)}?projectId=${encodeURIComponent(project.id)}`);
+        const snapshot = await response.json().catch(() => null);
+        if (!disposed && response.ok && snapshot?.turnId === turnId) setTurnSnapshot(snapshot as TurnSnapshot);
+      } catch {
+        // Turn status is an enhancement; the live event stream remains authoritative.
+      } finally {
+        inFlight = false;
+      }
+    };
+    void loadTurn();
+    const timer = window.setInterval(() => void loadTurn(), status === "streaming" || status === "waiting_user" ? 1500 : 4000);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [project.id, runHistory, status]);
 
   useEffect(() => {
     let disposed = false;
@@ -496,19 +545,54 @@ export function ChatStreamView({
     );
     // 只恢复进行中的 job。已完成/失败的历史 materialize 等卡片若反复注入，
     // 会卡在侧栏对话中间，把新消息拆到上下两截。
-    const recoveredEvents = recoveredJobs
+     const recoveredEvents = recoveredJobs
       .filter((job) => !liveJobIds.has(job.id))
       .filter((job) => job.status === "pending" || job.status === "running")
       .map(jobToTimelineEvent)
       .filter((event): event is ChatLiveEvent => Boolean(event));
+    const liveHasImageApproval = liveEvents.some((event) => {
+      if (event.type === "image_generation.confirm") return true;
+      if (event.type !== "tool.confirm") return false;
+      const toolName = String((event.data as { toolName?: string })?.toolName ?? "");
+      return (
+        toolName === "generate_images" || toolName === "generate_image_variants"
+      );
+    });
     const pendingApprovalEvents = runHistory
       .map(pendingApprovalToTimelineEvent)
       .filter((event): event is ChatLiveEvent => Boolean(event))
       .filter((event) => {
         const approvalId = String((event.data as { approvalId?: string }).approvalId ?? "");
-        return approvalId && !liveApprovalIds.has(approvalId);
+        if (!approvalId || liveApprovalIds.has(approvalId)) return false;
+        const toolName = String((event.data as { toolName?: string }).toolName ?? "");
+        if (
+          liveHasImageApproval &&
+          (toolName === "generate_images" ||
+            toolName === "generate_image_variants")
+        ) {
+          return false;
+        }
+        return true;
       });
-    return [...pendingApprovalEvents, ...recoveredEvents, ...liveEvents];
+    const imagePending = pendingApprovalEvents.filter((event) => {
+      const toolName = String((event.data as { toolName?: string }).toolName ?? "");
+      return (
+        toolName === "generate_images" || toolName === "generate_image_variants"
+      );
+    });
+    const otherPending = pendingApprovalEvents.filter((event) => {
+      const toolName = String((event.data as { toolName?: string }).toolName ?? "");
+      return (
+        toolName !== "generate_images" && toolName !== "generate_image_variants"
+      );
+    });
+    const latestImagePending = imagePending.at(-1);
+    return [
+      ...otherPending,
+      ...(latestImagePending ? [latestImagePending] : []),
+      ...recoveredEvents,
+      ...liveEvents,
+    ];
   }, [liveEvents, recoveredJobs, runHistory]);
 
   const awaitingClickConfirm = timelineEvents.some(
@@ -602,45 +686,80 @@ export function ChatStreamView({
         event.type === "job.failed" ||
         event.type === "job.cancelled"
     );
-    if (!terminal) return;
-    const terminalData = terminal.data as { jobId?: string; batchId?: string };
-    const terminalJobId = String(terminalData.jobId ?? "");
-    const batchId = terminalData.batchId;
-    if (!terminalJobId || cleanedTerminalImageJobsRef.current.has(terminalJobId)) return;
-    if (!batchId) return;
-    const staleAssets = (project.assets ?? []).filter(
-      (asset) =>
-        asset.batchId === batchId &&
-        (asset.status === "generating" || asset.model === "pending")
-    );
-    if (staleAssets.length === 0) return;
-    cleanedTerminalImageJobsRef.current.add(terminalJobId);
-    const nextStatus = terminal.type === "job.cancelled" ? "cancelled" : "failed";
+    const terminalData = terminal?.data as { jobId?: string; batchId?: string } | undefined;
+    const terminalJobId = String(terminalData?.jobId ?? "");
+    const batchId = terminalData?.batchId;
+    if (terminalJobId && cleanedTerminalImageJobsRef.current.has(terminalJobId)) return;
+    const currentAssets = project.assets ?? [];
+    const nextAssets = releaseStuckGeneratingAssets(currentAssets, {
+      hasActiveImageJob: false,
+      terminalBatchId: typeof batchId === "string" ? batchId : null,
+    });
+    if (nextAssets === currentAssets) return;
+    if (terminalJobId) cleanedTerminalImageJobsRef.current.add(terminalJobId);
     upsertProject({
       ...project,
       pages: project.pages,
-      assets: (project.assets ?? []).map((asset) =>
-        asset.batchId === batchId &&
-        (asset.status === "generating" || asset.model === "pending")
-          ? {
-              ...asset,
-              status: nextStatus,
-              error:
-                nextStatus === "cancelled"
-                  ? "Cancelled"
-                  : "Image job ended before this placeholder received a final image.",
-            }
-          : asset
-      ),
+      assets: nextAssets,
       updatedAt: new Date().toISOString(),
     });
   }, [project, timelineEvents, upsertProject]);
+
+  useEffect(() => {
+    if (isStreaming || isCancelling) return;
+    const latestByJob = new Map<string, ChatLiveEvent>();
+    for (const event of timelineEvents) {
+      if (!event.type.startsWith("job.")) continue;
+      const data = event.data as { jobType?: string; projectId?: string; jobId?: string };
+      if (
+        data.projectId !== project.id ||
+        (data.jobType !== "image_generation" &&
+          data.jobType !== "direct_image_generation")
+      ) {
+        continue;
+      }
+      const jobId = String(data.jobId ?? "");
+      if (jobId) latestByJob.set(jobId, event);
+    }
+    const hasActiveImageJob = [...latestByJob.values()].some(
+      (event) =>
+        event.type === "job.queued" ||
+        event.type === "job.started" ||
+        event.type === "job.progress"
+    );
+    if (hasActiveImageJob) return;
+    const currentAssets = project.assets ?? [];
+    const stuckKey = currentAssets
+      .filter(
+        (asset) =>
+          (asset.status ?? "candidate") === "generating" || asset.model === "pending"
+      )
+      .map((asset) => `${asset.id}:${asset.status ?? ""}:${asset.model ?? ""}`)
+      .sort()
+      .join("|");
+    if (stuckKey && stuckKey === releasedStuckAssetsKeyRef.current) return;
+    const nextAssets = releaseStuckGeneratingAssets(currentAssets, {
+      hasActiveImageJob: false,
+    });
+    if (nextAssets === currentAssets) {
+      releasedStuckAssetsKeyRef.current = stuckKey;
+      return;
+    }
+    releasedStuckAssetsKeyRef.current = stuckKey;
+    upsertProject({
+      ...project,
+      pages: project.pages,
+      assets: nextAssets,
+      updatedAt: new Date().toISOString(),
+    });
+  }, [isCancelling, isStreaming, project, timelineEvents, upsertProject]);
 
   const latestJob = [...timelineEvents]
     .reverse()
     .find((event) => event.type.startsWith("job."));
   const latestJobData = latestJob?.data as {
     progress?: number;
+    jobType?: string;
     detail?: { completed?: number; total?: number; message?: string };
   } | undefined;
   const latestRunEvent = [...timelineEvents]
@@ -665,13 +784,16 @@ export function ChatStreamView({
   // 欢迎页：仅看本会话是否已有消息。勿用 timelineEvents/liveEvents 门闩——
   // 项目级 recovered job / 残留 live 会让 hasConversation=true，而
   // ChatTimelineBody 在无可见 turn 时 return null，侧栏就变成空白。
+  const hasRecoveredWork = recoveredJobs.some((job) => job.status === "pending" || job.status === "running");
+  const failedRun = runHistory.find((run) => (run.status === "failed" || run.status === "interrupted") && run.phaseRetryInstruction);
   const showWelcome =
     showEmptyHints &&
     messages.length === 0 &&
+    !hasRecoveredWork &&
     !isStreaming &&
     !isCancelling &&
     !isWaitingForUser;
-  const hasConversation = messages.length > 0 || isStreaming || isWaitingForUser;
+  const hasConversation = messages.length > 0 || isStreaming || isWaitingForUser || hasRecoveredWork;
   const runProgress = latestJobData?.progress ?? 0;
   const generatingOnCanvas = (project.assets ?? []).filter(
     (a) => a.status === "generating"
@@ -681,6 +803,20 @@ export function ChatStreamView({
     !["job.completed", "job.failed", "job.cancelled"].includes(latestJob.type)
       ? latestJob
       : null;
+  const imageJobBusy = Boolean(
+    generatingOnCanvas > 0 ||
+      (activeJob &&
+        (latestJobData?.jobType === "image_generation" ||
+          latestJobData?.jobType === "direct_image_generation" ||
+          /图片生成|Generating image/i.test(latestJobData?.detail?.message ?? "")))
+  );
+
+  useEffect(() => {
+    useCanvasUiStore.getState().setImageJobBusy(imageJobBusy);
+    return () => {
+      useCanvasUiStore.getState().setImageJobBusy(false);
+    };
+  }, [imageJobBusy]);
   // 顶部进度条只服务「可量化的后台任务」（生图 job / 画布 generating）
   // 思考/工具/等待确认等状态只走 header 一行，避免与时间线重复
   const showRunStrip =
@@ -709,7 +845,7 @@ export function ChatStreamView({
               ? latestRunEvent?.type === "tool_call"
                 ? "执行工具"
                 : latestRunEvent?.type === "thinking"
-                  ? "思考中"
+                  ? "取消中"
                   : latestLlmEvent?.type === "llm.failed"
                     ? "模型失败"
                     : latestLlmEvent?.type === "llm.started" ||
@@ -717,11 +853,8 @@ export function ChatStreamView({
                       ? "请求模型"
                       : "连接中"
               : status === "error"
-                ? "需要处理"
+                ? "取消中"
                 : "就绪";
-  const modelLabel = getLlmModelLabel(providerConfig);
-  const modelHint = getModelHint(providerConfig);
-  // 流式中也可「发送」= 入队；Stop 单独走 cancel
   const canQueueOrSend =
     !composerDisabled &&
     !isCancelling &&
@@ -746,9 +879,12 @@ export function ChatStreamView({
     });
   }
 
-  async function ingestFiles(fileList: FileList | File[]) {
+  async function ingestFiles(
+    fileList: FileList | File[],
+    source: "clipboard" | "upload" = "clipboard"
+  ) {
     const files = Array.from(fileList);
-    const added = await filesToReferenceAssets(files, composerRefs.length);
+    const added = await filesToReferenceAssets(files, composerRefs.length, source);
     if (added.length === 0) return;
     setComposerRefs((current) =>
       added.reduce(
@@ -756,6 +892,61 @@ export function ChatStreamView({
         current
       )
     );
+  }
+
+  const slashItems = useMemo(() => {
+    const assets = (project.assets ?? [])
+      .filter(isCanvasVisibleAsset)
+      .filter((asset) => Boolean(asset.src));
+    return filterSlashItems(
+      slashQuery?.query ?? "",
+      buildSlashItems({ assets, skills })
+    );
+  }, [project.assets, skills, slashQuery?.query]);
+
+  function syncSlash(text: string, cursor: number) {
+    const next = parseSlashQuery(text, cursor);
+    setSlashQuery(next);
+    if (!next) setSlashIndex(0);
+  }
+
+  function applySlashItem(item: SlashItem) {
+    const el = composerInputRef.current;
+    const cursor = el?.selectionStart ?? input.length;
+    const parsed = slashQuery ?? parseSlashQuery(input, cursor);
+    if (!parsed) return;
+    let nextText = applySlashSelection(input, parsed.start, cursor);
+    if (item.kind === "command" && item.insert) {
+      nextText = `${nextText}${item.insert}`;
+    }
+    if (item.kind === "asset" && item.assetId) {
+      const asset = project.assets?.find((entry) => entry.id === item.assetId);
+      if (asset?.src) {
+        setComposerRefs((current) =>
+          upsertComposerReference(current, referenceFromAsset(asset))
+        );
+      }
+    }
+    if (item.kind === "skill" && item.skillName) {
+      const skill = skills.find((entry) => entry.name === item.skillName);
+      if (skill && skill.name !== project.skillId) {
+        upsertProject({
+          ...project,
+          skillId: skill.name,
+          skillVersion: skill.version,
+          designSystemId: skill.recommendedDesignSystem ?? project.designSystemId,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    }
+    setInput(nextText);
+    setSlashQuery(null);
+    setSlashIndex(0);
+    requestAnimationFrame(() => {
+      el?.focus();
+      const pos = nextText.length;
+      el?.setSelectionRange(pos, pos);
+    });
   }
 
   const suggestionChips =
@@ -807,6 +998,7 @@ export function ChatStreamView({
               <span className="vad-agent-status__label">{activityLabel}</span>
             )}
           </span>
+          <ConnectionStatus status={connectionStatus ?? "idle"} recovered={hasRecoveredWork} />
           <span className="sr-only">{panelTitle}</span>
           {runHistory.length > 0 ? (
             <button
@@ -864,6 +1056,8 @@ export function ChatStreamView({
         </div>
       ) : null}
 
+      {turnSnapshot ? <TurnStatusStrip snapshot={turnSnapshot} /> : null}
+
       {showRunHistory && runHistory.length > 0 ? (
         <RunHistoryPanel
           projectId={project.id}
@@ -909,6 +1103,7 @@ export function ChatStreamView({
               onToolCancel={onToolCancel}
               onRetryUserMessage={onRetryUserMessage}
               onEditUserMessage={onEditUserMessage}
+              onRetryRun={failedRun && onRunPrompt ? () => onRunPrompt(failedRun.phaseRetryInstruction!) : undefined}
               className="flex min-h-0 flex-1 flex-col rounded-none border-0 bg-transparent"
             />
           </div>
@@ -918,9 +1113,10 @@ export function ChatStreamView({
       <div className="vad-agent-composer-wrap shrink-0">
         {queuedCount > 0 ? (
           <div className="vad-agent-queue">
+            <button type="button" onClick={() => setShowQueue((value) => !value)} className="vad-agent-queue__text text-left">队列详情 {showQueue ? "⌃" : "⌄"}</button>
             <p className="vad-agent-queue__text">
               已排队 {queuedCount} 条，当前轮结束后发送
-            </p>
+              </p>
             {onClearQueue ? (
               <button
                 type="button"
@@ -931,6 +1127,7 @@ export function ChatStreamView({
                 清空
               </button>
             ) : null}
+            {showQueue ? <div className="mt-2 w-full space-y-1 border-t border-[var(--border)] pt-2">{(queuedItems ?? []).map((item, index) => <div key={`${index}:${item}`} className="flex items-start gap-2 rounded-md bg-[var(--surface-muted)] px-2 py-1.5"><span className="min-w-0 flex-1 text-[10px] leading-relaxed text-[var(--muted-strong)]">{index + 1}. {item}</span>{onRemoveQueued ? <button type="button" onClick={() => onRemoveQueued(index)} aria-label={`删除排队消息 ${index + 1}`} className="shrink-0 p-0.5 text-[var(--muted)] hover:text-[var(--danger)]"><X className="size-3" /></button> : null}</div>)}</div> : null}
           </div>
         ) : null}
 
@@ -977,6 +1174,18 @@ export function ChatStreamView({
             void ingestFiles(e.dataTransfer.files);
           }}
         >
+          {slashQuery ? (
+            <ComposerSlashMenu
+              items={slashItems}
+              activeIndex={
+                slashItems.length === 0
+                  ? 0
+                  : slashIndex % slashItems.length
+              }
+              onHover={setSlashIndex}
+              onSelect={applySlashItem}
+            />
+          ) : null}
           {contextChips.length > 0 || composerRefs.length > 0 ? (
             <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
               {contextChips.map((chip) => (
@@ -1029,7 +1238,13 @@ export function ChatStreamView({
           <textarea
             ref={composerInputRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              syncSlash(e.target.value, e.target.selectionStart ?? 0);
+            }}
+            onClick={(e) => {
+              syncSlash(input, e.currentTarget.selectionStart ?? 0);
+            }}
             onPaste={(e) => {
               const files = Array.from(e.clipboardData.files ?? []).filter((f) =>
                 f.type.startsWith("image/")
@@ -1039,6 +1254,44 @@ export function ChatStreamView({
               void ingestFiles(files);
             }}
             onKeyDown={(e) => {
+              if (slashQuery) {
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setSlashIndex((index) =>
+                    slashItems.length === 0
+                      ? 0
+                      : (index + 1) % slashItems.length
+                  );
+                  return;
+                }
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setSlashIndex((index) =>
+                    slashItems.length === 0
+                      ? 0
+                      : (index - 1 + slashItems.length) % slashItems.length
+                  );
+                  return;
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setSlashQuery(null);
+                  return;
+                }
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  const item = slashItems[slashIndex];
+                  if (item) {
+                    e.preventDefault();
+                    applySlashItem(item);
+                    return;
+                  }
+                }
+                if (e.key === "Tab" && slashItems[slashIndex]) {
+                  e.preventDefault();
+                  applySlashItem(slashItems[slashIndex]);
+                  return;
+                }
+              }
               if (
                 e.key === "Enter" &&
                 !e.shiftKey &&
@@ -1054,7 +1307,7 @@ export function ChatStreamView({
                 ? "继续输入将排队，Esc 停止…"
                 : selection?.kind === "asset" && !omitSelection
                   ? `针对「${(selection.pageName || "这张图").slice(0, 24)}」继续改…`
-                  : "描述内容，或粘贴 / 拖入参考图…")
+                  : "描述内容，输入 / 选择素材或 Skill…")
             }
             rows={2}
             disabled={composerDisabled || isCancelling || lockComposerForConfirm}
@@ -1062,25 +1315,31 @@ export function ChatStreamView({
           />
 
           <div className="flex items-center justify-between gap-2 px-2.5 pb-2 pt-0.5">
-            <button
-              type="button"
-              onClick={onOpenSettings}
+            <ComposerModelChip
+              config={providerConfig}
               className="vad-agent-model-btn"
-              data-tip={modelHint}
-              data-tip-bottom=""
-            >
-              <Sparkles className="size-3.5 text-[var(--primary)]" />
-              <span className="max-w-[9rem] truncate">{modelLabel}</span>
-              <ChevronDown className="size-3 opacity-45" />
-            </button>
+              onOpenSettings={onOpenSettings ?? (() => {})}
+            />
 
             <div className="flex items-center gap-0.5">
+              <input
+                ref={attachInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                multiple
+                hidden
+                onChange={(event) => {
+                  const files = event.currentTarget.files;
+                  if (files?.length) void ingestFiles(files, "upload");
+                  event.currentTarget.value = "";
+                }}
+              />
               <button
                 type="button"
-                onClick={onOpenImages}
-                data-tip="素材面板"
+                onClick={() => attachInputRef.current?.click()}
+                data-tip="添加图片"
                 data-tip-bottom=""
-                aria-label="打开素材面板"
+                aria-label="添加图片"
                 className="vad-agent-icon-btn"
               >
                 <ImageIcon className="size-3.5" />
@@ -1091,9 +1350,9 @@ export function ChatStreamView({
                     type="button"
                     onClick={submitComposer}
                     disabled={!canQueueOrSend}
-                    data-tip="排队下一条"
+                    data-tip="排队发送"
                     data-tip-bottom=""
-                    aria-label="排队下一条"
+                    aria-label="排队发送"
                     className="vad-agent-icon-btn"
                   >
                     <ArrowUp className="size-3.5" strokeWidth={2.5} />
@@ -1113,6 +1372,8 @@ export function ChatStreamView({
                   type="button"
                   onClick={submitComposer}
                   disabled={!canQueueOrSend}
+                  data-tip="发送"
+                  data-tip-bottom=""
                   aria-label="发送"
                   className={
                     "vad-agent-send" +
@@ -1127,6 +1388,48 @@ export function ChatStreamView({
         </div>
       </div>
     </aside>
+  );
+}
+
+function ConnectionStatus({ status, recovered }: { status: string; recovered: boolean }) {
+  const meta = status === "connecting"
+    ? { label: "连接本地", tone: "text-[var(--muted)]", dot: "bg-[var(--muted)]" }
+    : status === "error"
+      ? { label: "连接异常", tone: "text-[var(--danger)]", dot: "bg-[var(--danger)]" }
+      : recovered
+        ? { label: "已恢复", tone: "text-[var(--success)]", dot: "bg-[var(--success)]" }
+        : { label: "已连接", tone: "text-[var(--success)]", dot: "bg-[var(--success)]" };
+  return <span className={`ml-1 hidden items-center gap-1 text-[9px] ${meta.tone} sm:inline-flex`} title="WebSocket Agent 连接状态"><span className={`size-1.5 rounded-full ${meta.dot}`} />{meta.label}</span>;
+}
+
+function TurnStatusStrip({ snapshot }: { snapshot: TurnSnapshot }) {
+  const activeJobs = snapshot.jobs.filter((job) => job.status === "pending" || job.status === "running");
+  const progress = snapshot.jobs.length
+    ? Math.round(snapshot.jobs.reduce((sum, job) => sum + (job.progress ?? (job.status === "completed" ? 100 : 0)), 0) / snapshot.jobs.length)
+    : 0;
+  const statusLabel: Record<TurnSnapshot["status"], string> = {
+    accepted: "已接受",
+    running: "执行记录",
+    waiting_user: "等待确认",
+    completed: "本轮完成",
+    failed: "需要处理",
+    cancelled: "已取消",
+    interrupted: "已中断",
+  };
+  return (
+    <div className="shrink-0 border-b border-[var(--border)] bg-[var(--surface-muted)]/45 px-3 py-2">
+      <div className="flex items-center justify-between gap-2 text-[10px]">
+        <span className="font-medium text-[var(--foreground)]">{statusLabel[snapshot.status]}</span>
+        <span className="text-[var(--muted)]">{snapshot.phase ?? "—"}</span>
+      </div>
+      <div className="mt-1 flex items-center gap-2 text-[9px] text-[var(--muted)]">
+        <span>{snapshot.counts.completedJobs}/{snapshot.counts.jobs} 后台任务</span>
+        {snapshot.counts.failedJobs > 0 ? <span className="text-[var(--danger)]">{snapshot.counts.failedJobs} 失败</span> : null}
+        {activeJobs.length > 0 ? <span className="text-[var(--primary)]">{progress}%</span> : null}
+        {snapshot.canHandoff ? <span className="ml-auto text-[var(--success)]">可交付</span> : null}
+      </div>
+      {activeJobs.length > 0 ? <div className="mt-1 h-1 overflow-hidden rounded-full bg-[var(--border)]"><div className="h-full rounded-full bg-[var(--primary)] transition-[width]" style={{ width: `${Math.max(2, progress)}%` }} /></div> : null}
+    </div>
   );
 }
 
@@ -1154,6 +1457,7 @@ function RunHistoryPanel({
   const [localCancelledRunIds, setLocalCancelledRunIds] = useState<Set<string>>(
     () => new Set()
   );
+  const [historyFilter, setHistoryFilter] = useState<"all" | "active" | "failed">("all");
   const activeRun = runs.find((run) =>
     ["accepted", "running", "waiting_user", "cancelling"].includes(run.status)
   );
@@ -1239,6 +1543,12 @@ function RunHistoryPanel({
     return { ...run, status: "cancelled" };
   }
 
+  const visibleRuns = runs.filter((run) => {
+    if (historyFilter === "active") return ["accepted", "running", "waiting_user", "cancelling"].includes(run.status);
+    if (historyFilter === "failed") return run.status === "failed" || run.status === "interrupted" || Boolean(run.error);
+    return true;
+  });
+
   return (
     <section className="shrink-0 border-b border-[var(--border)] bg-[var(--surface)]/70 px-3 py-2">
       <button
@@ -1264,8 +1574,12 @@ function RunHistoryPanel({
       </button>
 
       {open ? (
+        <>
+        <div className="mt-1.5 flex gap-1" role="tablist" aria-label="运行记录筛选">
+          {([['all', '全部'], ['active', '进行中'], ['failed', '失败']] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={historyFilter === value} onClick={() => setHistoryFilter(value)} className={`rounded-md px-2 py-1 text-[11px] ${historyFilter === value ? "bg-[var(--primary-soft)] font-semibold text-[var(--primary)]" : "text-[var(--muted)] hover:bg-[var(--surface-muted)]"}`}>{label}</button>)}
+        </div>
         <ol className="mt-1.5 space-y-1">
-          {runs.slice(0, 6).map((sourceRun) => {
+          {visibleRuns.slice(0, 6).map((sourceRun) => {
             const run = displayRun(sourceRun);
             const meta = runStatusMeta(run.status);
             const canCancel = isCancellableRunStatus(sourceRun.status);
@@ -1292,8 +1606,8 @@ function RunHistoryPanel({
                   <span>{meta.label}</span>
                   <span>{formatElapsed(run.durationMs)}</span>
                   <span>LLM {run.events.llmEvents}</span>
-                  <span>Tool {run.events.toolEvents}</span>
-                  <span>Job {Math.max(run.jobCount, run.events.jobEvents)}</span>
+                  <span>工具 {run.events.toolEvents}</span>
+                  <span>任务 {Math.max(run.jobCount, run.events.jobEvents)}</span>
                   {run.events.approvalEvents > 0 ? <span>确认 {run.events.approvalEvents}</span> : null}
                   {run.currentStep ? <span className="truncate">step: {run.currentStep}</span> : null}
                 </div>
@@ -1340,7 +1654,7 @@ function RunHistoryPanel({
                       <button
                         type="button"
                         onClick={() => onRunPrompt(run.retryInstruction!)}
-                        className="rounded-md bg-[var(--primary)] px-2 py-1 text-[9px] font-semibold text-white transition hover:opacity-90"
+                        className="rounded-md bg-[var(--primary)] px-2 py-1 text-[11px] font-semibold text-[var(--vad-accent-fg-on)] transition hover:opacity-90"
                       >
                         重试此 Run
                       </button>
@@ -1386,6 +1700,8 @@ function RunHistoryPanel({
             );
           })}
         </ol>
+        {visibleRuns.length === 0 ? <p className="mt-2 px-1 text-[10px] text-[var(--muted)]">没有符合条件的运行记录</p> : null}
+        </>
       ) : null}
     </section>
   );
@@ -1477,15 +1793,16 @@ function RunDetailBlock({
       ) : (
         <p className="text-[10px] text-[var(--muted)]">
           没有持久化事件。该运行可能发生在事件日志启用之前。
-        </p>
+          </p>
       )}
     </div>
   );
 }
 
-function toolRiskClass(risk: "safe" | "moderate" | "destructive"): string {
+function toolRiskClass(risk: "safe" | "moderate" | "destructive" | "external"): string {
   if (risk === "destructive") return "bg-red-500/10 text-red-600 dark:text-red-300";
   if (risk === "moderate") return "bg-amber-500/10 text-amber-700 dark:text-amber-300";
+  if (risk === "external") return "bg-purple-500/10 text-purple-700 dark:text-purple-300";
   return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
 }
 
@@ -1510,21 +1827,21 @@ function runStatusMeta(status: AgentRunSummary["status"]): {
   }
   if (status === "cancelling") {
     return {
-      label: "取消中",
+      label: "运行中",
       className: "bg-amber-500/10 text-amber-700 dark:text-amber-300",
       icon: <Square className="size-2.5 fill-current text-amber-600" />,
     };
   }
   if (status === "completed") {
     return {
-      label: "已完成",
+      label: "运行中",
       className: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
       icon: <Check className="size-3 text-emerald-600" />,
     };
   }
   if (status === "cancelled") {
     return {
-      label: "已取消",
+      label: "运行中",
       className: "bg-zinc-500/10 text-zinc-700 dark:text-zinc-300",
       icon: <Square className="size-2.5 fill-current text-zinc-500" />,
     };

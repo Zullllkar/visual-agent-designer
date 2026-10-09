@@ -19,6 +19,7 @@ describe("ToolRegistry", () => {
     expect(names).toContain("materialize_mockup");
     expect(names).toContain("answer_question");
     expect(names).toContain("inspect_canvas");
+    expect(names).toContain("upsert_canvas_note");
     expect(names).toContain("manipulate_canvas");
     expect(names).toContain("star_asset");
     expect(names).toContain("batch_delete_assets");

@@ -1,4 +1,5 @@
 "use client";
+import { createShapeId, type RecordProps, type TLBaseShape } from "@/lib/tldraw-compat";
 
 /**
  * 画布血缘连线：父图 → 派生/拆出素材
@@ -12,13 +13,10 @@ import {
   ShapeUtil,
   T,
   Vec,
-  createShapeId,
   useEditor,
   useValue,
   type Editor,
   type Geometry2d,
-  type RecordProps,
-  type TLBaseShape,
 } from "tldraw";
 import { useCanvasChromePalette } from "@/lib/canvas/use-canvas-chrome";
 import { assetLinkDrawStyle } from "@/lib/canvas/asset-link-style";
@@ -42,6 +40,7 @@ export type AssetLinkShape = TLBaseShape<
     h: number;
     fromAssetId: string;
     toAssetId: string;
+    toNoteId: string;
     label: string;
     /** 相对 shape 原点的端点 */
     x1: number;
@@ -94,20 +93,28 @@ export function computeAssetLinkLayout(
   };
 }
 
-export function assetLinkShapeId(fromAssetId: string, toAssetId: string) {
+export function assetLinkShapeId(
+  fromAssetId: string,
+  toAssetId: string,
+  toNoteId?: string
+) {
+  if (toNoteId) return createShapeId(`asset-link:${fromAssetId}:note:${toNoteId}`);
   return createShapeId(`asset-link:${fromAssetId}:${toAssetId}`);
 }
 
 export function makeAssetLinkShape(input: {
   fromAssetId: string;
-  toAssetId: string;
+  toAssetId?: string;
+  toNoteId?: string;
   label: string;
   from: LinkEndpointBox;
   to: LinkEndpointBox;
 }) {
+  const toAssetId = input.toAssetId ?? "";
+  const toNoteId = input.toNoteId ?? "";
   const layout = computeAssetLinkLayout(input.from, input.to);
   return {
-    id: assetLinkShapeId(input.fromAssetId, input.toAssetId),
+    id: assetLinkShapeId(input.fromAssetId, toAssetId, toNoteId || undefined),
     type: "asset-link" as const,
     x: layout.x,
     y: layout.y,
@@ -115,7 +122,8 @@ export function makeAssetLinkShape(input: {
       w: layout.w,
       h: layout.h,
       fromAssetId: input.fromAssetId,
-      toAssetId: input.toAssetId,
+      toAssetId,
+      toNoteId,
       label: input.label,
       x1: layout.x1,
       y1: layout.y1,
@@ -125,35 +133,39 @@ export function makeAssetLinkShape(input: {
   };
 }
 
-function findImageAssetBox(
+function findEndpointBox(
   editor: Editor,
-  assetId: string
+  target: { assetId?: string; noteId?: string }
 ): LinkEndpointBox | null {
   for (const shape of editor.getCurrentPageShapes()) {
-    if ((shape.type as string) !== "image-asset") continue;
-    const props = shape as unknown as {
-      props: { assetId: string; w: number; h: number };
-    };
-    if (props.props.assetId !== assetId) continue;
-    return {
-      x: shape.x,
-      y: shape.y,
-      w: props.props.w,
-      h: props.props.h,
-    };
+    const type = shape.type as string;
+    if (target.noteId && type === "text-note") {
+      const props = shape as unknown as {
+        props: { noteId: string; w: number; h: number };
+      };
+      if (props.props.noteId !== target.noteId) continue;
+      return { x: shape.x, y: shape.y, w: props.props.w, h: props.props.h };
+    }
+    if (target.assetId && type === "image-asset") {
+      const props = shape as unknown as {
+        props: { assetId: string; w: number; h: number };
+      };
+      if (props.props.assetId !== target.assetId) continue;
+      return { x: shape.x, y: shape.y, w: props.props.w, h: props.props.h };
+    }
   }
   return null;
 }
 
-// @ts-expect-error TLShape union does not include custom shapes by design
 export class AssetLinkShapeUtil extends ShapeUtil<AssetLinkShape> {
-  static override type = "asset-link" as const;
+  static type = "asset-link" as any;
 
-  static override props: RecordProps<AssetLinkShape> = {
+  static props: RecordProps<AssetLinkShape> = {
     w: T.number,
     h: T.number,
     fromAssetId: T.string,
     toAssetId: T.string,
+    toNoteId: T.string.optional(),
     label: T.string,
     x1: T.number,
     y1: T.number,
@@ -161,12 +173,13 @@ export class AssetLinkShapeUtil extends ShapeUtil<AssetLinkShape> {
     y2: T.number,
   };
 
-  override getDefaultProps(): AssetLinkShape["props"] {
+  getDefaultProps(): AssetLinkShape["props"] {
     return {
       w: 120,
       h: 40,
       fromAssetId: "",
       toAssetId: "",
+      toNoteId: "",
       label: "",
       x1: 0,
       y1: 20,
@@ -175,7 +188,7 @@ export class AssetLinkShapeUtil extends ShapeUtil<AssetLinkShape> {
     };
   }
 
-  override getGeometry(shape: AssetLinkShape): Geometry2d {
+  getGeometry(shape: AssetLinkShape): Geometry2d {
     const { x1, y1, x2, y2 } = shape.props;
     const { start, cp1, cp2, end } = assetLinkCurvePoints(x1, y1, x2, y2);
     // 曲线几何：点选落在线上，而不是整块包围盒
@@ -187,21 +200,21 @@ export class AssetLinkShapeUtil extends ShapeUtil<AssetLinkShape> {
     });
   }
 
-  override canResize = () => false;
-  override canEditInReadonly = () => false;
-  override hideRotateHandle = () => true;
-  override canBind = () => false;
-  override isAspectRatioLocked = () => false;
-  override canDuplicate = () => false;
+  canResize = () => false;
+  canEditInReadonly = () => false;
+  hideRotateHandle = () => true;
+  canBind = () => false;
+  isAspectRatioLocked = () => false;
+  canDuplicate = () => false;
   /** 连线只高亮路径，不出现整体蓝框 */
-  override hideSelectionBoundsBg = () => true;
-  override hideSelectionBoundsFg = () => true;
+  hideSelectionBoundsBg = () => true;
+  hideSelectionBoundsFg = () => true;
 
-  override component(shape: AssetLinkShape) {
+  component(shape: AssetLinkShape) {
     return <AssetLinkShapeView shape={shape} />;
   }
 
-  override getIndicatorPath(shape: AssetLinkShape): Path2D | undefined {
+  getIndicatorPath(shape: AssetLinkShape): Path2D | undefined {
     if (typeof Path2D === "undefined") return undefined;
     const { x1, y1, x2, y2 } = shape.props;
     const { start, cp1, cp2, end } = assetLinkCurvePoints(x1, y1, x2, y2);
@@ -219,14 +232,16 @@ function AssetLinkShapeView({ shape }: { shape: AssetLinkShape }) {
 
   // 订阅父/子图实时坐标：拖拽时每帧重算，连线跟着走
   const live = useValue(
-    `asset-link-follow:${shape.props.fromAssetId}:${shape.props.toAssetId}`,
+    `asset-link-follow:${shape.props.fromAssetId}:${shape.props.toAssetId}:${shape.props.toNoteId ?? ""}`,
     () => {
-      const from = findImageAssetBox(editor, shape.props.fromAssetId);
-      const to = findImageAssetBox(editor, shape.props.toAssetId);
+      const from = findEndpointBox(editor, { assetId: shape.props.fromAssetId });
+      const to = shape.props.toNoteId
+        ? findEndpointBox(editor, { noteId: shape.props.toNoteId })
+        : findEndpointBox(editor, { assetId: shape.props.toAssetId });
       if (!from || !to) return null;
       return computeAssetLinkLayout(from, to);
     },
-    [editor, shape.props.fromAssetId, shape.props.toAssetId]
+    [editor, shape.props.fromAssetId, shape.props.toAssetId, shape.props.toNoteId]
   );
 
   useLayoutEffect(() => {
@@ -246,7 +261,7 @@ function AssetLinkShapeView({ shape }: { shape: AssetLinkShape }) {
     editor.updateShapes([
       {
         id: shape.id,
-        type: "asset-link",
+        type: "asset-link" as any,
         x: live.x,
         y: live.y,
         props: {
@@ -254,6 +269,7 @@ function AssetLinkShapeView({ shape }: { shape: AssetLinkShape }) {
           h: live.h,
           fromAssetId: shape.props.fromAssetId,
           toAssetId: shape.props.toAssetId,
+          toNoteId: shape.props.toNoteId ?? "",
           label: shape.props.label,
           x1: live.x1,
           y1: live.y1,
@@ -273,7 +289,7 @@ function AssetLinkShapeView({ shape }: { shape: AssetLinkShape }) {
     y2: shape.props.y2,
   };
   const { w, h, x1, y1, x2, y2 } = geom;
-  // 若 shape 原点尚未更新，用位移把线画到正确页坐标
+  // 若 shape 原点尚未更新，先用位移把线画到正确页坐标
   const drawDx = live ? live.x - shape.x : 0;
   const drawDy = live ? live.y - shape.y : 0;
 
@@ -283,6 +299,7 @@ function AssetLinkShapeView({ shape }: { shape: AssetLinkShape }) {
     () => isFamilyHighlighted(editor, [shape.props.fromAssetId, shape.props.toAssetId]),
     [editor, shape.props.fromAssetId, shape.props.toAssetId]
   );
+  const dashed = Boolean(shape.props.toNoteId);
   const style = assetLinkDrawStyle(highlighted);
   const dx = Math.abs(x2 - x1);
   const c1x = x1 + dx * 0.4;
@@ -330,8 +347,9 @@ function AssetLinkShapeView({ shape }: { shape: AssetLinkShape }) {
           stroke={c.flowStroke}
           strokeWidth={style.strokeWidth}
           strokeLinecap="round"
+          strokeDasharray={dashed ? "6 7" : undefined}
           strokeOpacity={style.strokeOpacity}
-          markerEnd={style.showMarker ? `url(#${markerId})` : undefined}
+          markerEnd={!dashed && style.showMarker ? `url(#${markerId})` : undefined}
         />
         {style.showLabel && label ? (
           <g>

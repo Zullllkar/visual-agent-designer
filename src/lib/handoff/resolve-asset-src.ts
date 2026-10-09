@@ -22,7 +22,7 @@ export async function resolveAssetImageDataUrl(
   const apiMatch = src.match(API_ASSET_RE);
   if (apiMatch) {
     const [, pid, subFolder, filename] = apiMatch;
-    const fromDisk = await readProjectImageFile(pid, subFolder, filename);
+    const fromDisk = await readProjectImageFile(pid, subFolder as "assets" | "references", filename);
     if (fromDisk) return fromDisk;
   }
 

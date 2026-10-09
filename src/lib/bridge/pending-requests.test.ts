@@ -81,4 +81,30 @@ describe("bridgeRequests", () => {
   it("rejects waiting on an unknown request", async () => {
     await expect(bridgeRequests.wait("nope", 10)).rejects.toThrow(/Unknown bridge request/);
   });
+
+  it("approves a proposal with appliedSummary and refuses answer", async () => {
+    const request = bridgeRequests.create({
+      kind: "proposal",
+      projectId: "p1",
+      proposal: {
+        assetId: "screen-1",
+        rationale: "CTA overflows at 320px",
+        description: 'Change copy of "cta" to "Start"',
+        change: { kind: "copy", slotId: "cta", copy: "Start" },
+      },
+    });
+    expect(request.id.startsWith("prop_")).toBe(true);
+    expect(bridgeRequests.resolve(request.id, { action: "answer", answer: "ok" })).toBeUndefined();
+    const waiting = bridgeRequests.wait(request.id, 5_000);
+    const updated = bridgeRequests.resolve(request.id, {
+      action: "approve",
+      appliedSummary: 'Copy of "cta" is now "Start" (authoritative).',
+    });
+    expect(updated?.status).toBe("approved");
+    expect(updated?.appliedSummary).toMatch(/Start/);
+    await expect(waiting).resolves.toMatchObject({
+      status: "approved",
+      appliedSummary: 'Copy of "cta" is now "Start" (authoritative).',
+    });
+  });
 });

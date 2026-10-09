@@ -3,12 +3,15 @@
 import {
   ArrowLeft,
   Check,
+  ChevronDown,
   FileJson,
   LayoutGrid,
   Loader2,
   Package,
   PanelLeft,
   RefreshCw,
+  ScrollText,
+  Settings,
   Square,
   X,
 } from "lucide-react";
@@ -20,6 +23,7 @@ import { SkillPicker } from "@/components/skills/skill-picker";
 import { PreferenceControls } from "@/components/theme-toggle";
 import type { ChatMessage, ToolCall } from "@/lib/agents/chat-schema";
 import { buildTargetChangeMessage, DIRECTION_ADJUST_MESSAGE } from "@/lib/agents/discovery-gate";
+import { resolveCitedVisualAsset } from "@/lib/agents/reference-images";
 import { liveViewForConversation } from "@/lib/chat/conversation-live-view";
 import {
   countPendingPreviewTools,
@@ -41,6 +45,8 @@ import {
 } from "@/lib/handoff/pack-kind";
 import { resolveHandoffSelection } from "@/lib/handoff/select-assets";
 import type { HandoffTarget } from "@/lib/handoff/types";
+import { canvasGridClassName, isCanvasGridVisible } from "@/lib/canvas/grid-style";
+import { pendingImageToolApprovalFromEvents, shouldSendImageConfirm } from "@/lib/chat/pending-image-approval";
 import { usePreferences } from "@/lib/preferences";
 import type { ReferenceAsset } from "@/lib/project/assets-schema";
 import { deriveDesignContext } from "@/lib/project/design-context";
@@ -58,7 +64,7 @@ import { loadChatFromVad } from "@/lib/vad/chat-sync";
 import { useVadWatch } from "@/lib/vad/use-vad-watch";
 import { useCanvasBoardStore } from "@/store/canvas-board-store";
 import { useCanvasSelectionStore } from "@/store/canvas-selection-store";
-import { useCanvasUiStore } from "@/store/canvas-ui-store";
+import { useCanvasUiStore, hydrateCanvasGridStyle } from "@/store/canvas-ui-store";
 import {
   makeAssistantTextMessage,
   makeThoughtMessage,
@@ -71,17 +77,26 @@ import { useProjectStore } from "@/store/project-store";
 import { useProviderStore } from "@/store/provider-store";
 import { ArtifactTreePanel } from "./artifact-tree-panel";
 import { BridgeRequestDock } from "./bridge-request-dock";
+import { BuildPanel } from "./build-panel";
 import { CanvasPane } from "./canvas-pane";
 import { ChatStreamView } from "./chat-stream-view";
 import { ImagePane } from "./image-pane";
 import { InspectorProjectSummary } from "./inspector-project-summary";
+import { CritiquePanel } from "@/components/critique-panel";
+import { AssetPlanPanel } from "./asset-plan-panel";
+import { PermissionsPanel } from "./permissions-panel";
+import { ContextSourcesPanel } from "./context-sources-panel";
+import { CostReportPanel } from "./cost-report-panel";
+import { GenerationLedgerPanel } from "./generation-ledger-panel";
+import { ProjectConflictBanner } from "./project-conflict-banner";
 import { PipelineLogSidePanel } from "./pipeline-log-side-panel";
+import "./ide-shell.css";
 
 interface IdeShellProps {
   projectId: string;
 }
 
-type SidePanel = "layers" | "images" | "export" | "files" | "logs" | "tasks";
+type SidePanel = "layers" | "images" | "plan" | "review" | "permissions" | "context" | "cost" | "export" | "files" | "logs" | "tasks" | "build";
 
 const EMPTY_CHAT_MESSAGES: ChatMessage[] = [];
 const AGENT_PANEL_MIN = 280;
@@ -107,6 +122,8 @@ export function IdeShell({ projectId }: IdeShellProps) {
   }, [project?.id]);
   const upsert = useProjectStore((s) => s.upsert);
   const reloadFromDisk = useProjectStore((s) => s.reloadFromDisk);
+  const projectConflict = useProjectStore((s) => s.conflicts[projectId]);
+  const clearProjectConflict = useProjectStore((s) => s.clearConflict);
   const providerConfig = useProviderStore((s) => s.config);
   const messages = useChatStore(
     (s) => s.getActiveConversation(projectId)?.messages ?? EMPTY_CHAT_MESSAGES,
@@ -120,6 +137,7 @@ export function IdeShell({ projectId }: IdeShellProps) {
   const mergeChatFromVad = useChatStore((s) => s.mergeFromVad);
   const pendingQueueRef = useRef<Array<{ text: string; references?: ReferenceAsset[] }>>([]);
   const [queuedCount, setQueuedCount] = useState(0);
+  const [queuedItems, setQueuedItems] = useState<Array<{ text: string; references?: ReferenceAsset[] }>>([]);
   const consumeHomeGenerateJob = useHomeGenerateStore((s) => s.consumeJob);
   const runConversationIdRef = useRef<string | null>(null);
   const [runConversationId, setRunConversationId] = useState<string | null>(null);
@@ -134,12 +152,16 @@ export function IdeShell({ projectId }: IdeShellProps) {
 
   // 画布交付卡按钮 → 打开 Handoff 弹窗
   const handoffRequestToken = useCanvasUiStore((s) => s.handoffRequestToken);
-  const showCanvasGrid = useCanvasUiStore((s) => s.showCanvasGrid);
+  const canvasGridStyle = useCanvasUiStore((s) => s.canvasGridStyle);
+  useEffect(() => {
+    hydrateCanvasGridStyle();
+  }, []);
   useEffect(() => {
     if (handoffRequestToken > 0) setShowHandoff(true);
   }, [handoffRequestToken]);
   const [sidePanel, setSidePanel] = useState<SidePanel>("images");
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [recordsOpen, setRecordsOpen] = useState(false);
   const [agentPanelWidth, setAgentPanelWidth] = useState(() => {
     if (typeof window === "undefined") return 360;
     const raw = window.localStorage.getItem("vad-agent-panel-width");
@@ -316,7 +338,7 @@ export function IdeShell({ projectId }: IdeShellProps) {
     },
   });
 
-  const { status, liveEvents, send, approve, approveTool, cancel, error } = useChatStream({
+  const { status, connectionStatus, liveEvents, send, approve, approveTool, cancel, error } = useChatStream({
     onEvent: (ev) => {
       if (ev.type === "thinking") {
         const t = String((ev.data as { text?: string })?.text ?? "");
@@ -344,7 +366,7 @@ export function IdeShell({ projectId }: IdeShellProps) {
         turnBufRef.current.pendingToolCalls.set(d.id, {
           id: d.id,
           name: d.name,
-          args: d.args,
+          args: d.args ?? {},
         });
       } else if (ev.type === "tool_result") {
         const d = ev.data as {
@@ -477,7 +499,7 @@ export function IdeShell({ projectId }: IdeShellProps) {
     const raw = submittedText ?? input;
     const trimmed = formatChatValue(raw).trim();
     if (!trimmed && !options?.references?.length) return;
-    const text = trimmed || "请参考附图继续";
+    const text = trimmed || "Please continue with the attached references";
 
     // 流式中：排队下一条（Cursor 风），当前轮结束后自动发送
     if (!options?.skipQueue && (status === "streaming" || status === "cancelling")) {
@@ -485,6 +507,7 @@ export function IdeShell({ projectId }: IdeShellProps) {
         text,
         references: options?.references,
       });
+      setQueuedItems([...pendingQueueRef.current]);
       setQueuedCount(pendingQueueRef.current.length);
       if (submittedText == null) setInput("");
       return;
@@ -521,9 +544,15 @@ export function IdeShell({ projectId }: IdeShellProps) {
       streamFinalProject: null,
     };
     setDiffDecisions(new Map());
+    const citedVisual =
+      scopedSelection?.kind === "asset" && scopedSelection.assetId
+        ? resolveCitedVisualAsset(latest, scopedSelection.assetId)
+        : undefined;
     const selectionPrefix = options?.omitSelection
       ? ""
-      : scopedSelection?.kind === "asset" && scopedSelection.assetId
+      : citedVisual
+        ? `【引用素材: ${(citedVisual.prompt || scopedSelection?.pageName || "素材").slice(0, 48)}#${citedVisual.id}】 `
+        : scopedSelection?.kind === "asset" && scopedSelection.assetId
         ? `【引用素材: ${scopedSelection.pageName || "素材"}#${scopedSelection.assetId}】 `
         : scopedSelection?.nodeId
           ? `【引用元素: ${scopedSelection.pageName}#${scopedSelection.pageId}/${scopedSelection.nodeLabel ?? "元素"}#${scopedSelection.nodeId}】 `
@@ -601,6 +630,7 @@ export function IdeShell({ projectId }: IdeShellProps) {
 
   function handleClearQueue() {
     pendingQueueRef.current = [];
+    setQueuedItems([]);
     setQueuedCount(0);
   }
 
@@ -610,6 +640,7 @@ export function IdeShell({ projectId }: IdeShellProps) {
       return;
     }
     const next = pendingQueueRef.current.shift();
+    setQueuedItems([...pendingQueueRef.current]);
     setQueuedCount(pendingQueueRef.current.length);
     if (!next) return;
     void handleSend(next.text, {
@@ -620,7 +651,8 @@ export function IdeShell({ projectId }: IdeShellProps) {
   }, [status]);
 
   async function handleImageConfirm(prompt: string, count: number, prompts?: string[]) {
-    if (status === "streaming" || status === "cancelling") return;
+    const pending = pendingImageToolApprovalFromEvents(liveEvents);
+    if (!shouldSendImageConfirm(status, pending)) return;
     const latest = useProjectStore.getState().projects[projectId] ?? project;
     turnBufRef.current = {
       pendingToolCalls: new Map(),
@@ -640,6 +672,22 @@ export function IdeShell({ projectId }: IdeShellProps) {
     if (!threadId) return;
     runConversationIdRef.current = conv.id;
     setRunConversationId(conv.id);
+    if (pending) {
+      await approveTool({
+        projectId,
+        runId: pending.runId,
+        approvalId: pending.approvalId,
+        providerConfig,
+        toolArgs: {
+          prompt: list[0] ?? prompt,
+          count: list.length > 1 ? list.length : count,
+          prompts: list.length > 0 ? list : undefined,
+          confirmed: true,
+        },
+        threadId,
+      });
+      return;
+    }
     await approve({
       projectId,
       prompt: list[0] ?? prompt,
@@ -697,11 +745,11 @@ export function IdeShell({ projectId }: IdeShellProps) {
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)] font-sans antialiased">
-      <TopBar project={project} />
+      <TopBar project={project} onHandoff={() => setShowHandoff(true)} />
 
       <div
         className={
-          "vad-ide-layout grid min-h-0 flex-1 border-t border-[var(--border)] bg-[var(--background)]" +
+          "vad-ide-layout grid min-h-0 flex-1 bg-[var(--background)]" +
           (inspectorOpen ? " vad-ide-layout--inspector" : "")
         }
         style={
@@ -731,21 +779,52 @@ export function IdeShell({ projectId }: IdeShellProps) {
             onHandoff={() => setShowHandoff(true)}
             onChangeVisualDirection={() => void handleSend(DIRECTION_ADJUST_MESSAGE)}
             onChangeTarget={(label) => void handleSend(buildTargetChangeMessage(label))}
+            onRunPrompt={(prompt) => void handleSend(prompt)}
+            onProjectUpdate={upsert}
           />
         ) : null}
 
         <main className="vad-ide-canvas relative min-w-0 overflow-hidden">
-          {showCanvasGrid ? (
-            <div className="vad-ide-canvas-grid pointer-events-none absolute inset-0" />
+          <ProjectConflictBanner conflict={projectConflict} onReload={() => void reloadFromDisk(projectId).then(() => clearProjectConflict(projectId))} onDismiss={() => clearProjectConflict(projectId)} />
+          {isCanvasGridVisible(canvasGridStyle) ? (
+            <div
+              className={`${canvasGridClassName(canvasGridStyle)} pointer-events-none absolute inset-0`}
+            />
           ) : null}
           <CanvasTopChip
             inspectorOpen={inspectorOpen}
+            recordsOpen={recordsOpen}
             onOpenInspector={() => {
               setSidePanel("images");
               setInspectorOpen(true);
             }}
+            onToggleRecords={() => setRecordsOpen((open) => !open)}
             onResetLayout={() => useCanvasBoardStore.getState().requestResetLayout(project.id)}
           />
+          {recordsOpen ? (
+            <div className="vad-records-layer">
+              <section className="vad-records-panel" role="dialog" aria-label="生成记录">
+                <header className="vad-records-head">
+                  <h2>生成记录</h2>
+                  <button
+                    type="button"
+                    className="vad-agent-icon-btn"
+                    aria-label="关闭生成记录"
+                    onClick={() => setRecordsOpen(false)}
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </header>
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  <GenerationLedgerPanel
+                    projectId={project.id}
+                    assets={project.assets}
+                    references={project.references}
+                  />
+                </div>
+              </section>
+            </div>
+          ) : null}
           <div
             id="vad-canvas-view-slot"
             className="pointer-events-none absolute right-6 top-4 z-10 flex flex-col items-end gap-2"
@@ -786,6 +865,7 @@ export function IdeShell({ projectId }: IdeShellProps) {
             messages={chatViewMessages}
             liveEvents={chatViewLiveEvents}
             status={chatViewStatus}
+            connectionStatus={connectionStatus}
             error={chatViewError}
             runningConversationId={runConversationId}
             input={input}
@@ -819,7 +899,7 @@ export function IdeShell({ projectId }: IdeShellProps) {
                 useChatStore.getState().getActiveConversation(projectId),
                 () => useChatStore.getState().ensureConversation(projectId),
               );
-              approveTool({
+              return approveTool({
                 projectId: project.id,
                 runId,
                 approvalId,
@@ -844,6 +924,12 @@ export function IdeShell({ projectId }: IdeShellProps) {
             }}
             onRunPrompt={(text) => void handleSend(text)}
             queuedCount={queuedCount}
+            queuedItems={queuedItems.map((item) => item.text)}
+            onRemoveQueued={(index) => {
+              pendingQueueRef.current.splice(index, 1);
+              setQueuedItems([...pendingQueueRef.current]);
+              setQueuedCount(pendingQueueRef.current.length);
+            }}
             onClearQueue={handleClearQueue}
             onRetryUserMessage={handleRetryUserMessage}
             onEditUserMessage={handleEditUserMessage}
@@ -866,67 +952,65 @@ export function IdeShell({ projectId }: IdeShellProps) {
   );
 }
 
-function TopBar({ project }: { project: ProjectFile }) {
+function TopBar({ project, onHandoff }: { project: ProjectFile; onHandoff: () => void }) {
+  const targetLabel = getTargetRecipe(resolveTargetId(project)).label;
+  const assetCount = (project.assets ?? []).filter((a) => a.status !== "discarded").length;
   return (
-    <header className="vad-ide-topbar sticky top-0 z-40 flex h-14 shrink-0 items-center justify-between gap-4 border-b border-[var(--border)] bg-[var(--surface)] px-4">
-      <div className="flex min-w-0 flex-1 items-center gap-3">
-        <Link
-          href="/"
-          className="app-logo grid size-7 shrink-0 place-items-center transition-opacity hover:opacity-85"
-          title="返回首页"
-        >
+    <header className="vad-ide-topbar">
+      <div className="vad-ide-topbar-left">
+        <Link href="/" className="vad-ide-topbar-home" title="返回首页">
           <VadMark size={18} />
         </Link>
-        <div className="hidden items-center gap-2 font-mono text-[10px] text-[var(--muted)] sm:flex">
-          <span>项目</span>
-          <span className="text-[var(--border)]">/</span>
-        </div>
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-[13px] font-semibold tracking-[-0.02em] text-[var(--foreground)]">
-            {project.title}
-          </span>
-          <span className="app-badge shrink-0">CANVAS</span>
-        </div>
+        <nav className="vad-ide-crumbs" aria-label="位置">
+          <Link href="/projects">项目</Link>
+          <span aria-hidden>/</span>
+          <strong title={project.title}>{project.title}</strong>
+          <em>{targetLabel}</em>
+        </nav>
       </div>
 
-      <div className="hidden shrink-0 items-center gap-2 text-[10px] text-[var(--muted)] xl:flex">
-        <span className="vad-ide-status-pill">
-          <span className="size-1.5 rounded-full bg-[var(--success)]" aria-hidden />
-          已保存
+      <div className="vad-ide-topbar-right">
+        <span className="vad-ide-topbar-status">
+          <i aria-hidden />
+          已保存 · {assetCount} 素材
         </span>
-        <span className="vad-ide-status-pill font-mono">
-          {(project.assets ?? []).filter((a) => a.status !== "discarded").length} 素材
-        </span>
-      </div>
-
-      <nav className="app-header-actions" aria-label="全局操作">
-        <PreferenceControls />
-        <Link href="/skills" className="app-header-action">
-          <span>Skills</span>
-        </Link>
-        <a
-          href="https://github.com/Zullllkar/vibeboard"
-          target="_blank"
-          rel="noreferrer"
-          className="app-header-action"
+        <span className="vad-ide-topbar-rule" aria-hidden />
+        <PreferenceControls className="vad-ide-topbar-prefs" />
+        <button
+          type="button"
+          className="vad-ide-topbar-icon"
+          aria-label="收起侧栏"
+          onClick={() => openSettings()}
         >
-          <span>GitHub</span>
-        </a>
-        <Link href="/" className="app-header-action app-header-action-primary">
-          <span>Canvas</span>
-        </Link>
-      </nav>
+          <Settings className="size-4" />
+        </button>
+        <button type="button" className="vad-ide-topbar-primary" onClick={onHandoff}>
+          <Package className="size-3.5" />
+          导出 Handoff
+        </button>
+      </div>
     </header>
   );
 }
 
-const PRIMARY_INSPECTOR_TABS: Array<{ id: SidePanel; label: string }> = [
+const CANVAS_INSPECTOR_TABS: Array<{ id: SidePanel; label: string }> = [
   { id: "images", label: "素材" },
-  { id: "layers", label: "项目" },
+  { id: "layers", label: "页面" },
   { id: "export", label: "导出" },
 ];
 
-const MORE_INSPECTOR_TABS: Array<{ id: SidePanel; label: string }> = [
+const PAGE_INSPECTOR_TABS: Array<{ id: SidePanel; label: string }> = [
+  { id: "layers", label: "大纲" },
+  { id: "plan", label: "计划" },
+  { id: "review", label: "评审" },
+];
+
+const PROJECT_INSPECTOR_ITEMS: Array<{ id: SidePanel; label: string }> = [
+  { id: "export", label: "导出" },
+  { id: "permissions", label: "权限" },
+  { id: "context", label: "上下文" },
+  { id: "cost", label: "成本" },
+  { id: "build", label: "实现" },
   { id: "tasks", label: "任务" },
   { id: "files", label: "文件" },
   { id: "logs", label: "日志" },
@@ -946,6 +1030,8 @@ function InspectorColumn({
   onHandoff,
   onChangeVisualDirection,
   onChangeTarget,
+  onRunPrompt,
+  onProjectUpdate,
 }: {
   panel: SidePanel;
   onPanelChange: (next: SidePanel) => void;
@@ -960,33 +1046,82 @@ function InspectorColumn({
   onHandoff: () => void;
   onChangeVisualDirection: () => void;
   onChangeTarget: (label: string) => void;
+  onRunPrompt: (prompt: string) => void;
+  onProjectUpdate: (project: ProjectFile) => void;
 }) {
-  const moreActive = MORE_INSPECTOR_TABS.some((tab) => tab.id === panel);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const pageFamily = panel === "layers" || panel === "plan" || panel === "review";
+  const projectActive = PROJECT_INSPECTOR_ITEMS.some(
+    (item) => item.id === panel && item.id !== "export"
+  );
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onPointer(event: PointerEvent) {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setMenuOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
+
   return (
     <aside className="vad-inspector vad-ide-inspector">
       <div className="vad-inspector-head">
-        <div className="vad-inspector-tabs" role="tablist">
-          {PRIMARY_INSPECTOR_TABS.map((tab) => (
+        <div className="vad-inspector-tabs" role="tablist" aria-label="画布侧栏">
+          {CANVAS_INSPECTOR_TABS.map((tab) => (
             <button
               key={tab.id}
               type="button"
               role="tab"
-              onClick={() => onPanelChange(tab.id)}
-              aria-pressed={panel === tab.id}
+              onClick={() => {
+                if (tab.id === "layers" && pageFamily) return;
+                onPanelChange(tab.id);
+              }}
+              aria-pressed={tab.id === "layers" ? pageFamily : panel === tab.id}
               className="vad-inspector-tab"
             >
               {tab.label}
             </button>
           ))}
+        </div>
+        <div className="vad-inspector-project" ref={menuRef}>
           <button
             type="button"
-            role="tab"
-            onClick={() => onPanelChange(moreActive ? panel : "tasks")}
-            aria-pressed={moreActive}
-            className="vad-inspector-tab"
+            className="vad-inspector-project-btn"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            aria-pressed={projectActive}
+            onClick={() => setMenuOpen((open) => !open)}
           >
-            更多
+            项目
+            <ChevronDown className="size-3" />
           </button>
+          {menuOpen ? (
+            <div className="vad-inspector-menu" role="menu" aria-label="项目">
+              {PROJECT_INSPECTOR_ITEMS.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="menuitem"
+                  aria-current={panel === item.id}
+                  onClick={() => {
+                    onPanelChange(item.id);
+                    setMenuOpen(false);
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
         <button
           type="button"
@@ -997,15 +1132,15 @@ function InspectorColumn({
           <X className="size-3.5" />
         </button>
       </div>
-      {moreActive ? (
-        <div className="vad-inspector-more">
-          {MORE_INSPECTOR_TABS.map((tab) => (
+      {pageFamily ? (
+        <div className="vad-inspector-sub" role="tablist" aria-label="页面内容">
+          {PAGE_INSPECTOR_TABS.map((tab) => (
             <button
               key={tab.id}
               type="button"
-              data-active={panel === tab.id}
+              role="tab"
+              aria-pressed={panel === tab.id}
               onClick={() => onPanelChange(tab.id)}
-              className="vad-inspector-more-btn"
             >
               {tab.label}
             </button>
@@ -1025,6 +1160,8 @@ function InspectorColumn({
           onHandoff={onHandoff}
           onChangeVisualDirection={onChangeVisualDirection}
           onChangeTarget={onChangeTarget}
+          onRunPrompt={onRunPrompt}
+          onProjectUpdate={onProjectUpdate}
         />
       </div>
     </aside>
@@ -1043,6 +1180,8 @@ function SidePanelContent({
   onHandoff,
   onChangeVisualDirection,
   onChangeTarget,
+  onRunPrompt,
+  onProjectUpdate,
 }: {
   panel: SidePanel;
   project: ProjectFile;
@@ -1055,6 +1194,8 @@ function SidePanelContent({
   onHandoff: () => void;
   onChangeVisualDirection: () => void;
   onChangeTarget: (label: string) => void;
+  onRunPrompt: (prompt: string) => void;
+  onProjectUpdate: (project: ProjectFile) => void;
 }) {
   if (panel === "images") {
     return (
@@ -1064,8 +1205,42 @@ function SidePanelContent({
     );
   }
 
+  if (panel === "review") {
+    return (
+      <div className="flex h-full min-w-0 flex-col overflow-auto p-3">
+        <CritiquePanel
+          critique={project.critique}
+          activePageId={activePageId}
+          history={project.critiqueHistory}
+          onRepair={({ pageId, issue }) => onRunPrompt(`请修复页面 ${pageId} 的 ${issue.category} 问题：${issue.message}${issue.affectedNodeIds?.length ? ` 受影响节点：${issue.affectedNodeIds.join(", ")}` : ""}。优先使用 repair_project，修复后重新 Review。`)}
+          onRollback={() => onRunPrompt("请恢复最近一次 repair_project 之前的页面修订，调用 restore_project_revision，并在完成后重新 Review。")}
+        />
+      </div>
+    );
+  }
+
+  if (panel === "plan") {
+    return <AssetPlanPanel project={project} onRunPrompt={onRunPrompt} onProjectUpdate={onProjectUpdate} />;
+  }
+
+  if (panel === "permissions") {
+    return <PermissionsPanel project={project} onProjectUpdate={onProjectUpdate} />;
+  }
+
+  if (panel === "context") {
+    return <ContextSourcesPanel project={project} onProjectUpdate={onProjectUpdate} />;
+  }
+
+  if (panel === "cost") {
+    return <CostReportPanel projectId={project.id} />;
+  }
+
   if (panel === "tasks") {
     return <TaskCenterPanel project={project} />;
+  }
+
+  if (panel === "build") {
+    return <BuildPanel project={project} />;
   }
 
   if (panel === "export") {
@@ -1382,7 +1557,7 @@ function LayersPanel({
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden">
       <div className="vad-inspector-toolbar">
-        <span>项目说明</span>
+        <span>概览</span>
         <span className="vad-ide-status-pill font-mono">{assetCount} 素材</span>
       </div>
       <div className="vad-inspector-scroll">
@@ -1688,34 +1863,55 @@ function ExportPanel({
 
 function CanvasTopChip({
   inspectorOpen,
+  recordsOpen,
   onOpenInspector,
+  onToggleRecords,
   onResetLayout,
 }: {
   inspectorOpen: boolean;
+  recordsOpen: boolean;
   onOpenInspector: () => void;
+  onToggleRecords: () => void;
   onResetLayout: () => void;
 }) {
   return (
-    <div className="pointer-events-auto absolute left-6 top-4 z-10 flex items-center gap-2">
+    <div className="vad-canvas-island pointer-events-auto absolute left-5 top-4 z-10">
       {inspectorOpen ? null : (
-        <button
-          type="button"
-          onClick={onOpenInspector}
-          className="vad-canvas-chip flex h-9 items-center gap-1.5 rounded-xl px-3 text-[12px] font-medium"
-        >
-          <PanelLeft className="size-3.5 text-[var(--primary)]" />
-          素材
-        </button>
+        <>
+          <button
+            type="button"
+            onClick={onOpenInspector}
+            data-tip="打开素材面板"
+            data-tip-bottom=""
+            className="vad-canvas-island-btn"
+          >
+            <PanelLeft className="size-4" />
+            素材
+          </button>
+          <span className="vad-canvas-island-rule" aria-hidden />
+        </>
       )}
       <button
         type="button"
         onClick={onResetLayout}
         data-tip="按父子关系重新排列画布上的图"
         data-tip-bottom=""
-        className="vad-canvas-chip-btn flex h-9 items-center gap-1.5 rounded-xl px-3 text-[12px] font-medium"
+        className="vad-canvas-island-btn"
       >
-        <LayoutGrid className="size-3.5" />
+        <LayoutGrid className="size-4" />
         整理
+      </button>
+      <span className="vad-canvas-island-rule" aria-hidden />
+      <button
+        type="button"
+        onClick={onToggleRecords}
+        aria-pressed={recordsOpen}
+        data-tip="生成记录"
+        data-tip-bottom=""
+        className="vad-canvas-island-btn"
+      >
+        <ScrollText className="size-4" />
+        记录
       </button>
     </div>
   );

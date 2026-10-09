@@ -138,4 +138,22 @@ describe("applyProjectDuplicate", () => {
     expect(next.assets?.[0]?.src).toBe("/api/assets/dup99NEW/assets/a1.png");
     expect(next.id).not.toBe("abc12XYZ");
   });
+
+  it("does not keep the original user folder so two projects cannot share one workspace", () => {
+    const next = applyProjectDuplicate(
+      {
+        id: "abc12XYZ",
+        slug: "demo",
+        title: "演示",
+        rawIdea: "idea",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+        pages: [],
+        workspacePath: "E:/work/cover",
+      },
+      "dup99NEW",
+      "2026-08-19T00:00:00.000Z",
+    );
+    expect(next.workspacePath).toBeUndefined();
+  });
 });

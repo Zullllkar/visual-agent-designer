@@ -318,17 +318,61 @@ export function renderAssetDesignSpecMarkdown(
           `- bbox: x=${pct(r.bbox.x)} y=${pct(r.bbox.y)} w=${pct(r.bbox.w)} h=${pct(r.bbox.h)}`
         );
       }
-      if (r.copy) lines.push(`- copy: ${r.copy}`);
+      if (r.copy) {
+        const source =
+          r.copySource === "vision"
+            ? " _(read from generated image — may contain typos)_"
+            : r.copySource
+              ? ` _(authoritative, from ${r.copySource})_`
+              : "";
+        lines.push(`- copy: ${r.copy}${source}`);
+        if (r.copyObserved) lines.push(`  - observed in image: ${r.copyObserved}`);
+      }
+      if (r.swatch) {
+        lines.push(
+          `- swatch: dominant \`${r.swatch.dominant}\`${r.swatch.accent ? `, accent \`${r.swatch.accent}\`` : ""} (sampled from pixels)`
+        );
+      }
       if (r.notes) lines.push(`- notes: ${r.notes}`);
+      if (r.states?.length) {
+        lines.push("- states (all must be implemented):");
+        for (const s of r.states) {
+          lines.push(
+            `  - **${s.name}** — ${s.notes}${s.copy ? ` Copy: "${s.copy}"` : ""}`
+          );
+        }
+      }
       lines.push("");
     }
+  }
+  if (spec.copyPlan?.length) {
+    lines.push("## Copy plan (authoritative UI text)", "");
+    for (const c of spec.copyPlan) {
+      lines.push(`- **${c.role}** \`${c.id}\`: ${c.text}`);
+    }
+    lines.push("");
+  }
+  if (spec.unplacedCopy?.length) {
+    lines.push(
+      "## Unplaced copy",
+      "",
+      "Planned text the image model did not render. Still required in the implementation:",
+      ""
+    );
+    for (const c of spec.unplacedCopy) {
+      lines.push(`- **${c.role}**: ${c.text}`);
+    }
+    lines.push("");
   }
   lines.push("## Tokens", "");
   if (spec.tokens.colors.length) {
     lines.push("### Colors", "");
     for (const c of spec.tokens.colors) {
+      const share =
+        typeof c.share === "number" ? ` · ${Math.round(c.share * 100)}%` : "";
+      const source = c.source ? ` _(${c.source})_` : "";
       lines.push(
-        `- **${c.name}**: \`${c.value}\`${c.usage ? ` — ${c.usage}` : ""}`
+        `- **${c.name}**: \`${c.value}\`${c.usage ? ` — ${c.usage}` : ""}${share}${source}`
       );
     }
     lines.push("");
@@ -389,17 +433,55 @@ function pct(n: number) {
   return `${Math.round(n * 100)}%`;
 }
 
+export interface HandoffPaletteEntry {
+  name: string;
+  value: string;
+  usage?: string;
+  /** pixels=定稿图采样；vision=LLM 读图；prompt=文字里的 hex；context=项目级 brand kit / 设计上下文 */
+  source: "pixels" | "vision" | "prompt" | "context";
+  assetId?: string;
+  share?: number;
+}
+
 /** 合并项目内所有素材规格的色板等到 tokens.json */
 export function mergeSpecTokensIntoHandoffTokens(
   base: { color: string[]; fontSize: number[]; radius: number[] },
-  specs: AssetDesignSpec[]
+  specs: AssetDesignSpec[],
+  /** 项目级命名色以哪张 mockup 为准；缺省取第一张带像素色板的 */
+  primaryAssetId?: string
 ) {
   const colors = new Set(base.color);
   const fontSizes = new Set(base.fontSize);
   const radii = new Set(base.radius);
+  const palette: HandoffPaletteEntry[] = base.color.map((value, i) => ({
+    name: `context-${i + 1}`,
+    value,
+    source: "context",
+  }));
+  const seenPalette = new Set(base.color.map((v) => v.toUpperCase()));
+
+  // 像素色板优先，且只用「主 mockup」的像素色作为项目级命名色（避免 8 张图各出一套 background）
+  const pixelSpecs = specs.filter((s) =>
+    s.tokens.colors.some((c) => c.source === "pixels")
+  );
+  const primary =
+    pixelSpecs.find((s) => s.assetId === primaryAssetId) ?? pixelSpecs[0];
   for (const spec of specs) {
     for (const c of spec.tokens.colors) {
-      if (c.value) colors.add(c.value);
+      if (!c.value) continue;
+      colors.add(c.value);
+      const key = c.value.toUpperCase();
+      if (seenPalette.has(key)) continue;
+      seenPalette.add(key);
+      const isPrimaryPixel = c.source === "pixels" && spec === primary;
+      palette.push({
+        name: isPrimaryPixel ? c.name : `${c.name}@${spec.assetId}`,
+        value: c.value,
+        usage: c.usage,
+        source: c.source ?? (spec.source === "vision" ? "vision" : "prompt"),
+        assetId: spec.assetId,
+        share: c.share,
+      });
     }
     for (const t of spec.tokens.typography) {
       if (typeof t.sizePx === "number") fontSizes.add(t.sizePx);
@@ -409,6 +491,10 @@ export function mergeSpecTokensIntoHandoffTokens(
   return {
     ...base,
     color: [...colors],
+    palette,
+    paletteSource: primary
+      ? { kind: "pixels" as const, assetId: primary.assetId }
+      : { kind: "none" as const },
     fontSize: [...fontSizes].sort((a, b) => a - b),
     radius: [...radii].sort((a, b) => a - b),
     fromSpecs: specs.map((s) => ({
@@ -416,6 +502,8 @@ export function mergeSpecTokensIntoHandoffTokens(
       screenType: s.screenType,
       source: s.source,
       colorCount: s.tokens.colors.length,
+      pixelColorCount: s.tokens.colors.filter((c) => c.source === "pixels")
+        .length,
     })),
   };
 }

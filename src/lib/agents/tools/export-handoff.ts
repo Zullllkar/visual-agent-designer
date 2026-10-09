@@ -19,8 +19,8 @@ export const exportHandoffTool: AgentTool = {
   name: "export_handoff",
   description:
     "打开交付弹窗，让用户勾选定稿素材后再导出 Handoff 包（勿直接全量打包）",
-  inputPhase: ["REVIEW", "EXPORT"],
-  outputPhase: "EXPORT",
+  inputPhase: ["REVIEW", "HANDOFF"],
+  outputPhase: "HANDOFF",
   riskLevel: "moderate",
   requiresConfirmation: true,
   parameters: {

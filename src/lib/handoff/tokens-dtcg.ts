@@ -4,6 +4,14 @@
 
 export type HandoffTokensLike = {
   color?: string[];
+  /** 有语义名 + 来源的色板；存在时优先于匿名 color[] */
+  palette?: Array<{
+    name: string;
+    value: string;
+    usage?: string;
+    source?: string;
+    share?: number;
+  }>;
   fontSize?: number[];
   radius?: number[];
   moodKeywords?: string[];
@@ -13,12 +21,39 @@ export type HandoffTokensLike = {
 /** DTCG-ish JSON（$value / $type）便于 Token Studio / Style Dictionary 消费 */
 export function toDtcgTokens(tokens: HandoffTokensLike): Record<string, unknown> {
   const color: Record<string, unknown> = {};
-  (tokens.color ?? []).forEach((value, i) => {
-    color[`color-${i + 1}`] = {
-      $type: "color",
-      $value: value,
-    };
-  });
+  if (tokens.palette?.length) {
+    const seen = new Set<string>();
+    for (const entry of tokens.palette) {
+      let key = entry.name.replace(/[^a-zA-Z0-9_-]+/g, "-");
+      let n = 2;
+      while (seen.has(key)) key = `${entry.name}-${n++}`;
+      seen.add(key);
+      color[key] = {
+        $type: "color",
+        $value: entry.value,
+        ...(entry.usage || entry.source
+          ? {
+              $description: [
+                entry.usage,
+                entry.source ? `source: ${entry.source}` : "",
+              ]
+                .filter(Boolean)
+                .join(" · "),
+            }
+          : {}),
+        ...(typeof entry.share === "number"
+          ? { $extensions: { "vibeboard.share": entry.share } }
+          : {}),
+      };
+    }
+  } else {
+    (tokens.color ?? []).forEach((value, i) => {
+      color[`color-${i + 1}`] = {
+        $type: "color",
+        $value: value,
+      };
+    });
+  }
 
   const fontSize: Record<string, unknown> = {};
   (tokens.fontSize ?? []).forEach((value, i) => {

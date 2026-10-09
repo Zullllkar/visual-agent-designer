@@ -19,6 +19,7 @@ import {
   MoreHorizontal,
   Palette,
   Pencil,
+  Plus,
   RefreshCw,
   Sparkles,
   Star,
@@ -35,6 +36,7 @@ import { useProjectStore } from "@/store/project-store";
 import { useProviderStore } from "@/store/provider-store";
 import type { ImageAsset } from "@/lib/project/assets-schema";
 import type { ProjectFile } from "@/lib/project/schema";
+import { toDownloadAssetFilename } from "@/lib/project/asset-title";
 import {
   buildRegionEditPrompt,
   createRegionAnnotatedDataUrl,
@@ -43,6 +45,7 @@ import { buildSingleAssetPrompt } from "@/lib/handoff/kickoff-prompt";
 import type { AssetDesignSpec } from "@/lib/project/design-spec-schema";
 import { renderAssetDesignSpecMarkdown } from "@/lib/design-spec/spec-format";
 import { discardAssetsInProject } from "@/lib/project/discard-assets";
+import { shouldShowSpawnPromptComposer } from "@/lib/canvas/spawn-child-asset";
 import { MaterialsReviewDialog } from "@/components/materials-review-dialog";
 import { buildAdoptAssetStyleMessage } from "@/lib/agents/adopt-asset-style";
 
@@ -106,23 +109,44 @@ export function SelectionFloatingBar({
     reviewTarget ? (s.projects[reviewTarget.projectId] ?? null) : null
   );
 
+  const selectedAsset =
+    selection?.kind === "asset" && selection.assetId && project
+      ? (project.assets?.find((item) => item.id === selection.assetId) ?? null)
+      : null;
+  const agentRunBusy = useCanvasUiStore((s) => s.agentRunBusy);
+  const imageJobBusy = useCanvasUiStore((s) => s.imageJobBusy);
+  const showSpawnPrompt = shouldShowSpawnPromptComposer(
+    selectedAsset,
+    project?.assets,
+    { agentRunBusy, imageJobBusy }
+  );
+  const spawnParent =
+    showSpawnPrompt && selectedAsset?.parentAssetId
+      ? (project?.assets?.find((item) => item.id === selectedAsset.parentAssetId) ??
+        null)
+      : null;
+
   useEffect(() => {
     if (!screenBounds || !viewportBounds || !selection) {
       setPos(null);
       return;
     }
     // tldraw「screen」坐标含视口偏移；转成容器内坐标（与官方 ContextualToolbar 一致）
-    const barW = 328;
-    const barH = 108;
+    const barW = showSpawnPrompt
+      ? Math.min(Math.max(screenBounds.w, 320), 440)
+      : 300;
+    const barH = showSpawnPrompt ? 220 : 96;
     const gap = 10;
     const margin = 12;
     const localX = screenBounds.x - viewportBounds.x;
     const localY = screenBounds.y - viewportBounds.y;
     const midX = localX + screenBounds.w / 2;
     let left = midX;
-    let top = localY - gap;
+    let top = showSpawnPrompt
+      ? localY + screenBounds.h + gap
+      : localY - gap;
     // 上方不够则放到选区下方（top = 元素底边，配合 -translate-y-full）
-    if (top - barH < margin) {
+    if (!showSpawnPrompt && top - barH < margin) {
       top = localY + screenBounds.h + gap + barH;
     }
     left = Math.min(
@@ -130,12 +154,12 @@ export function SelectionFloatingBar({
       Math.max(margin + barW / 2, left)
     );
     top = Math.min(
-      viewportBounds.h - margin,
-      Math.max(margin + barH, top)
+      viewportBounds.h - margin - (showSpawnPrompt ? 24 : 0),
+      Math.max(showSpawnPrompt ? margin : margin + barH, top)
     );
     const { scrollLeft, scrollTop } = editor.getContainer();
     setPos({ left: left + scrollLeft, top: top + scrollTop });
-  }, [screenBounds, viewportBounds, selection, editor]);
+  }, [screenBounds, viewportBounds, selection, editor, showSpawnPrompt]);
 
   useEffect(() => {
     setEditError(null);
@@ -188,10 +212,7 @@ export function SelectionFloatingBar({
     return reviewDialog;
   }
 
-  const asset =
-    selection.kind === "asset" && selection.assetId
-      ? project.assets?.find((a) => a.id === selection.assetId)
-      : null;
+  const asset = selectedAsset;
 
   const isMarkingThis =
     asset &&
@@ -237,7 +258,7 @@ export function SelectionFloatingBar({
     if (!asset?.src) return;
     const a = document.createElement("a");
     a.href = asset.src;
-    a.download = `asset-${asset.id.slice(0, 8)}.png`;
+    a.download = toDownloadAssetFilename(asset);
     a.click();
   }
 
@@ -525,9 +546,13 @@ export function SelectionFloatingBar({
   function submitInline() {
     const text = inlineDraft.trim();
     if (!text || !asset) return;
-    runOrFill(
+    if (showSpawnPrompt) {
+      runOrFill(text);
+    } else {
+      runOrFill(
       `针对选中的这张生图：${text}\n参考原 prompt：${asset.prompt ?? ""}`
-    );
+      );
+    }
     setInlineDraft("");
   }
 
@@ -541,6 +566,7 @@ export function SelectionFloatingBar({
   type BarAction = {
     key: string;
     label: string;
+    tip?: string;
     icon: typeof Star;
     onClick: () => void;
     disabled?: boolean;
@@ -560,6 +586,7 @@ export function SelectionFloatingBar({
       {
         key: "adopt-style",
         label: "用此风格",
+        tip: "用此风格",
         icon: Palette,
         onClick: () => {
           if (!asset) return;
@@ -600,8 +627,9 @@ export function SelectionFloatingBar({
           : project?.materializations?.[asset?.id ?? ""]
             ? "审槽"
             : asset?.approval?.status === "materials_ready"
-              ? "已拆素材"
-              : "拆解方案",
+              ? "已拆"
+              : "拆解",
+        tip: "拆解方案",
         icon: materializeBusy ? Loader2 : Layers,
         onClick: () => {
           setVariantOpen(false);
@@ -699,7 +727,10 @@ export function SelectionFloatingBar({
   return (
     <>
     <div
-      className="pointer-events-auto absolute z-[100] flex -translate-x-1/2 -translate-y-full flex-col items-center"
+      className={
+        "vad-selection-float pointer-events-auto absolute z-20 flex -translate-x-1/2 flex-col items-center" +
+        (showSpawnPrompt ? "" : " -translate-y-full")
+      }
       style={{ left: pos.left, top: pos.top }}
       onPointerDown={(e) => e.stopPropagation()}
     >
@@ -795,7 +826,11 @@ export function SelectionFloatingBar({
         </p>
       ) : null}
 
-      {!isMarkingThis && variantOpen && selection.kind === "asset" && !multiIds ? (
+      {!isMarkingThis &&
+      variantOpen &&
+      !showSpawnPrompt &&
+      selection.kind === "asset" &&
+      !multiIds ? (
         <div className="vad-canvas-dock mb-2 flex w-[min(240px,70vw)] items-center gap-0.5 p-1.5">
           {([1, 2, 4] as const).map((count) => (
             <button
@@ -814,18 +849,65 @@ export function SelectionFloatingBar({
         </div>
       ) : null}
 
-      {!isMarkingThis ? (
-        <div className="vad-canvas-dock relative w-[min(360px,86vw)]">
+      {!isMarkingThis && showSpawnPrompt ? (
+        <div className="vad-canvas-dock vad-spawn-prompt">
+          <div className="vad-spawn-prompt-refs">
+            {spawnParent?.src ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={spawnParent.src}
+                alt=""
+                className="vad-spawn-prompt-thumb"
+              />
+            ) : null}
+            <span className="vad-spawn-prompt-add" aria-hidden>
+              <Plus className="size-4" strokeWidth={1.75} />
+            </span>
+          </div>
+          <textarea
+            autoFocus
+            rows={4}
+            value={inlineDraft}
+            onChange={(e) => setInlineDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                !e.nativeEvent.isComposing
+              ) {
+                e.preventDefault();
+                submitInline();
+              }
+            }}
+            placeholder="描述你想要生成的内容"
+            className="vad-spawn-prompt-textarea"
+          />
+          <div className="vad-spawn-prompt-foot">
+            <button
+              type="button"
+              disabled={!inlineDraft.trim()}
+              aria-label="发送"
+              onClick={submitInline}
+              className="vad-canvas-dock-send"
+            >
+              <ArrowUp className="size-3.5" strokeWidth={2.5} />
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {!isMarkingThis && !showSpawnPrompt ? (
+        <div className="vad-canvas-dock relative w-[min(300px,86vw)]">
           <div className="flex items-center gap-0.5 p-1.5">
             {primaryActions.map(
-              ({ key, label, icon: Icon, onClick, disabled, active, spinning }) => (
+              ({ key, label, tip, icon: Icon, onClick, disabled, active, spinning }) => (
                 <button
                   key={key}
                   type="button"
                   disabled={disabled}
-                  data-tip={label}
+                  data-tip={tip ?? label}
                   data-tip-bottom=""
-                  aria-label={label}
+                  aria-label={tip ?? label}
                   onClick={onClick}
                   className={
                     "vad-canvas-dock-btn" +

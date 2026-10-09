@@ -35,6 +35,7 @@ import { useProjectStore } from "@/store/project-store";
 import { useCanvasSelectionStore } from "@/store/canvas-selection-store";
 import type { ProjectFile } from "@/lib/project/schema";
 import type { ImageAsset, ReferenceAsset } from "@/lib/project/assets-schema";
+import { displayAssetTitle } from "@/lib/project/asset-title";
 import { applyAssetToImageNode } from "@/lib/project/asset-drop";
 import { discardAssetsInProject } from "@/lib/project/discard-assets";
 import { GeneratingArtworkFace } from "@/components/generating-artwork-face";
@@ -588,7 +589,7 @@ function AssetTile({
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={asset.src}
-            alt={asset.prompt}
+            alt={displayAssetTitle(asset)}
             className="size-full object-cover"
             loading="lazy"
             draggable={false}
@@ -601,7 +602,7 @@ function AssetTile({
         {isGenerating && !library && asset.src?.trim() ? (
           <div className="absolute inset-0 grid place-items-center bg-black/20 text-[10px] font-semibold text-white">
             生成中…
-          </div>
+            </div>
         ) : null}
         <div
           className={
@@ -665,8 +666,8 @@ function AssetTile({
       </div>
       {library ? null : (
         <div className="px-1.5 py-1">
-          <p className="line-clamp-1 text-[10px] text-zinc-500" title={asset.prompt}>
-            {asset.prompt}
+          <p className="line-clamp-1 text-[10px] text-zinc-500" title={displayAssetTitle(asset)}>
+            {displayAssetTitle(asset)}
           </p>
           <p className="text-[9px] text-zinc-400" title={asset.model}>
             {asset.model.split("::").pop()}

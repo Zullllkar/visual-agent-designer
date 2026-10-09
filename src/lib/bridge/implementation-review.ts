@@ -16,6 +16,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 
 import { resolveAssetImageDataUrl } from "@/lib/handoff/resolve-asset-src";
+import { pickPrimaryMockup } from "@/lib/handoff/select-assets";
 import { compressImageDataUrlForVision } from "@/lib/handoff/vision-image";
 import type { LayoutIR } from "@/lib/handoff/layout-ir";
 import type { ProjectFile } from "@/lib/project/schema";
@@ -55,7 +56,16 @@ export const ReviewSchema = z.object({
 export type Deviation = z.infer<typeof DeviationSchema>;
 export type Review = z.infer<typeof ReviewSchema>;
 
-export interface ImplementationReport extends Review {
+/**
+ * 没有 vision 能力时的结果：不是「5 分待修」，而是明确的「没比对」。
+ * 否则 coding agent 会围着一个并不存在的问题反复修。
+ */
+export type ReviewVerdict = Review["verdict"] | "unreviewed";
+
+export interface ImplementationReport extends Omit<Review, "score" | "verdict"> {
+  /** unreviewed 时为 null */
+  score: number | null;
+  verdict: ReviewVerdict;
   version: 1;
   id: string;
   projectId: string;
@@ -109,7 +119,7 @@ export async function reviewImplementation(input: {
   const warnings: string[] = [];
   const asset = input.assetId
     ? (project.assets ?? []).find((a) => a.id === input.assetId)
-    : pickDefaultMockup(project);
+    : pickPrimaryMockup(project);
   const layout = asset ? project.materializations?.[asset.id]?.layout : undefined;
 
   const shot = await compressImageDataUrlForVision(screenshotDataUrl, { maxEdge: 1400 });
@@ -157,7 +167,7 @@ export async function reviewImplementation(input: {
     warnings.push("No LLM provider available; open Vibeboard and configure a vision-capable model for full review.");
   }
 
-  const finalReview = review ?? heuristicReview(reportedSummary, layout, warnings);
+  const finalReview = review ?? unreviewedResult(reportedSummary, layout, warnings);
   const report: ImplementationReport = {
     ...finalReview,
     version: 1,
@@ -220,30 +230,24 @@ function buildPrompt(
   return lines.filter(Boolean).join("\n");
 }
 
-function heuristicReview(
+function unreviewedResult(
   reportedSummary: string,
   layout: LayoutIR | undefined,
   warnings: string[]
-): Review {
-  const deviations: Deviation[] = [];
+): Pick<ImplementationReport, "score" | "verdict" | "summary" | "matched" | "deviations"> {
   if (!layout) {
-    deviations.push({
-      slot: "",
-      kind: "other",
-      severity: "low",
-      expected: "A Layout IR for the approved mockup",
-      actual: "No Layout IR exists for this screen",
-      fixHint: 'Run "materialize" in Vibeboard so regions and copy become authoritative, then re-report.',
-    });
+    warnings.push(
+      'No Layout IR for this screen — run "materialize" in Vibeboard so regions and copy become authoritative before the next report.'
+    );
   }
   return {
-    score: 5,
-    verdict: "needs-work",
+    score: null,
+    verdict: "unreviewed",
     summary:
-      `Recorded the implementation report but could not run a visual comparison (${warnings[0] ?? "no vision model"}). ` +
+      `Report recorded, but no visual comparison was run (${warnings[0] ?? "no vision model"}). ` +
       `Reported: ${reportedSummary.slice(0, 160)}`,
     matched: [],
-    deviations,
+    deviations: [],
   };
 }
 
@@ -301,18 +305,6 @@ export async function listImplementationReports(
   return reports
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, limit);
-}
-
-function pickDefaultMockup(project: ProjectFile) {
-  const assets = (project.assets ?? []).filter(
-    (a) => a.src && a.source !== "materialized" && a.status !== "discarded" && a.status !== "failed"
-  );
-  return (
-    assets.find((a) => a.approval?.status === "approved" || a.approval?.status === "materials_ready") ??
-    assets.find((a) => project.materializations?.[a.id]) ??
-    assets.find((a) => a.status === "starred") ??
-    assets[0]
-  );
 }
 
 function round2(n: number): number {

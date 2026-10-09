@@ -58,6 +58,7 @@ function toRunSummary(run: AgentRun, stats?: RunEventStats, project?: ProjectFil
   const retryPrompt = retryPromptForRun(run);
   return {
     runId: run.runId,
+    turnId: run.turnId,
     threadId: run.threadId,
     projectId: run.projectId,
     status: run.status,

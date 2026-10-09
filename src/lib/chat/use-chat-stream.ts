@@ -188,6 +188,7 @@ export function useChatStream(callbacks?: ChatStreamCallbacks) {
 
   return {
     status,
+    connectionStatus: wsClient.status,
     liveEvents,
     finalProject,
     error,

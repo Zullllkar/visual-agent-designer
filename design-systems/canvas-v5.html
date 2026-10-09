@@ -1,0 +1,1211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>画布 v5 · Visual Agent Designer</title>
+  <meta name="description" content="Visual Agent Designer 画布 v5：混排媒体作品板 + 顶栏 Imagine 生成条 + 活动轨，Krea / Midjourney 式生成工作室。" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #ffffff;
+      --stage: #f7f7f6;
+      --surface: #ffffff;
+      --fg: #1a1916;
+      --muted: #6a6660;
+      --faint: #9a958e;
+      --line: rgba(26, 25, 22, 0.08);
+      --line-strong: rgba(26, 25, 22, 0.14);
+      --accent: #d06b5c;
+      --accent-soft: rgba(208, 107, 92, 0.14);
+      --ink: #1a1916;
+      --ink-hover: #2e2c28;
+      --fill: rgba(26, 25, 22, 0.045);
+      --fill-hover: rgba(26, 25, 22, 0.07);
+      --fill-active: rgba(26, 25, 22, 0.11);
+      --ok: #2a7a5c;
+      --danger: #c13515;
+      --danger-soft: rgba(193, 53, 21, 0.1);
+      --glass: rgba(255, 255, 255, 0.92);
+      --shadow-sm: 0 1px 1px rgba(26, 25, 22, 0.04);
+      --shadow: 0 1px 2px rgba(26, 25, 22, 0.05), 0 10px 28px rgba(26, 25, 22, 0.08);
+      --shadow-lg: 0 4px 10px rgba(26, 25, 22, 0.06), 0 22px 48px rgba(26, 25, 22, 0.12);
+      --sans: "Sora", "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
+      --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+      --ease: cubic-bezier(0.22, 1, 0.36, 1);
+      --rail: 56px;
+      --top: 48px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+    body {
+      font: 13px/1.55 var(--sans);
+      color: var(--fg);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input, textarea, select { font: inherit; color: inherit; }
+    button { cursor: pointer; border: 0; background: none; }
+    button:disabled { cursor: not-allowed; opacity: .42; }
+    a { color: inherit; text-decoration: none; }
+    img { display: block; max-width: 100%; }
+    :focus { outline: none; }
+    :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+    .skip {
+      position: absolute; left: 14px; top: -48px; z-index: 90;
+      padding: 8px 12px; border-radius: 8px; background: var(--ink); color: #fff; font-weight: 600;
+    }
+    .skip:focus { top: 12px; }
+    .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+
+    .icon {
+      width: 36px; height: 36px; border-radius: 8px; color: var(--muted);
+      display: grid; place-items: center;
+      transition: background .15s var(--ease), color .15s var(--ease);
+    }
+    .icon:hover { background: var(--fill-hover); color: var(--fg); }
+    .icon:active { background: var(--fill-active); color: var(--fg); }
+    .icon svg, .rail-btn svg, .act svg, .send svg, .cmd-row svg, .lib-row svg {
+      width: 16px; height: 16px; stroke: currentColor; fill: none;
+      stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+    }
+    .ghost {
+      height: 32px; padding: 0 12px; border-radius: 8px;
+      color: var(--muted); font-weight: 600; font-size: 12.5px;
+    }
+    .ghost:hover { background: var(--fill-hover); color: var(--fg); }
+    .ghost:active { background: var(--fill-active); color: var(--fg); }
+    .primary {
+      height: 32px; padding: 0 14px; border-radius: 8px;
+      background: var(--ink); color: #fff; font-weight: 600;
+    }
+    .primary:hover { background: var(--ink-hover); color: #fff; }
+    .primary:active { background: #000; color: #fff; }
+
+    .shell {
+      height: 100%;
+      display: grid;
+      grid-template-rows: var(--top) 1fr;
+      grid-template-columns: var(--rail) 1fr;
+    }
+    .topbar {
+      grid-column: 1 / -1;
+      display: flex; align-items: center; gap: 8px;
+      padding: 0 10px 0 8px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+      z-index: 30;
+    }
+    .brand {
+      display: flex; align-items: center; gap: 8px;
+      height: 32px; padding: 0 8px 0 4px; border-radius: 8px; min-width: 0;
+    }
+    .brand:hover { background: var(--fill-hover); }
+    .mark {
+      width: 22px; height: 22px; flex-shrink: 0;
+      color: var(--fg);
+      display: grid; place-items: center;
+    }
+    .mark svg { width: 22px; height: 22px; display: block; }
+    .brand strong {
+      font-size: 13px; font-weight: 600; max-width: 180px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .caret { color: var(--faint); font-size: 9px; }
+    .crumb {
+      display: flex; align-items: center; gap: 8px;
+      color: var(--faint); font-size: 12px; font-weight: 500;
+      padding-left: 4px; border-left: 1px solid var(--line); margin-left: 4px;
+    }
+    .crumb b { color: var(--fg); font-weight: 600; }
+    .top-spacer { flex: 1; }
+    .chip {
+      height: 24px; padding: 0 9px; border-radius: 999px;
+      background: var(--fill); color: var(--muted);
+      font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;
+    }
+    .chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+    .chip .dot.busy { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    .kbd {
+      height: 24px; padding: 0 8px; border-radius: 6px;
+      border: 1px solid var(--line); color: var(--faint);
+      font-size: 11px; font-weight: 600; font-family: var(--mono);
+    }
+    .kbd:hover { background: var(--fill-hover); color: var(--fg); }
+
+    .rail {
+      border-right: 1px solid var(--line);
+      background: #fff;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 10px 0 12px; gap: 4px; z-index: 24;
+    }
+    .rail-btn {
+      width: 40px; height: 40px; border-radius: 10px; color: var(--muted);
+      display: grid; place-items: center; position: relative;
+    }
+    .rail-btn:hover { background: var(--fill-hover); color: var(--fg); }
+    .rail-btn:active { background: var(--fill-active); color: var(--fg); }
+    .rail-btn.active { background: var(--ink); color: #fff; }
+    .rail-btn.active:hover { background: var(--ink-hover); color: #fff; }
+    .rail-btn[aria-pressed="true"]:not(.active) {
+      background: var(--fill-active); color: var(--fg);
+    }
+    .rail-gap { flex: 1; }
+    .rail-sep { width: 18px; height: 1px; background: var(--line); margin: 6px 0; }
+
+    .workspace { position: relative; min-width: 0; min-height: 0; background: var(--stage); }
+
+    .stage { position: absolute; inset: 0; overflow: hidden; }
+    .stage-dots {
+      position: absolute; inset: 0; pointer-events: none;
+      background-image: radial-gradient(rgba(26,25,22,.045) 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+    .world { position: absolute; inset: 0; transform-origin: 0 0; }
+    .world.grab { cursor: grab; }
+    .world.grabbing { cursor: grabbing; }
+
+    .item {
+      position: absolute; user-select: none;
+      border-radius: 12px;
+      border: 1px solid rgba(26,25,22,.06);
+      box-shadow: var(--shadow);
+      background: #fff;
+      cursor: grab;
+      transition: box-shadow .18s var(--ease), border-color .18s var(--ease);
+    }
+    .item:hover { box-shadow: var(--shadow-lg); }
+    .item:active { cursor: grabbing; }
+    .item.selected, .item.selected:hover {
+      border-color: transparent;
+      box-shadow: 0 0 0 1.5px var(--ink), var(--shadow-lg);
+    }
+    .item.flash { animation: flash .9s var(--ease); }
+    @keyframes flash {
+      0%, 100% { box-shadow: var(--shadow); }
+      40% { box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-lg); }
+    }
+    .item-label {
+      position: absolute; left: 0; top: -24px;
+      height: 20px; padding: 0 8px;
+      font-size: 11px; font-weight: 600; color: var(--muted);
+      white-space: nowrap; pointer-events: none; opacity: 0; line-height: 20px;
+      background: var(--glass); border: 1px solid var(--line); border-radius: 6px;
+    }
+    .item.selected .item-label, .item:hover .item-label { opacity: 1; }
+    .item-image, .item-video { background: #111; }
+    .item-image img, .item-video img {
+      width: 100%; height: 100%; object-fit: cover; border-radius: 11px;
+    }
+    .play {
+      position: absolute; inset: 0;
+      display: grid; place-items: center;
+      background: linear-gradient(180deg, transparent 42%, rgba(0,0,0,.36));
+      border-radius: 11px;
+    }
+    .play-btn {
+      width: 48px; height: 48px; border-radius: 50%;
+      background: rgba(255,255,255,.96); color: var(--ink);
+      display: grid; place-items: center; box-shadow: var(--shadow);
+    }
+    .play-btn:hover { transform: scale(1.04); }
+    .play-btn:active { transform: scale(0.98); }
+    .play-btn svg { width: 16px; height: 16px; fill: currentColor; stroke: none; margin-left: 2px; }
+    .item-video.playing .play-btn { display: none; }
+    .vid-bar {
+      position: absolute; left: 12px; right: 12px; bottom: 12px;
+      display: none; align-items: center; gap: 8px; color: #fff;
+      font-size: 11px; font-weight: 600;
+    }
+    .item-video.playing .vid-bar { display: flex; }
+    .vid-track { flex: 1; height: 3px; border-radius: 99px; background: rgba(255,255,255,.28); overflow: hidden; }
+    .vid-track i { display: block; height: 100%; width: 0; background: #fff; animation: playbar 18s linear forwards; }
+    @keyframes playbar { to { width: 100%; } }
+    .vid-meta {
+      position: absolute; left: 10px; bottom: 10px;
+      height: 22px; padding: 0 8px; border-radius: 6px;
+      background: rgba(26,25,22,.72); color: #fff;
+      font-size: 11px; font-weight: 600;
+    }
+    .item-video.playing .vid-meta { display: none; }
+    .item-doc, .item-spec, .item-note, .item-page { padding: 16px; overflow: hidden; }
+    .item-note { background: #faf9f7; }
+    .item-note p { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+    .item-doc p:not(.mono) { display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+    .kicker {
+      font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--faint); margin-bottom: 8px;
+    }
+    .item h3 { font-size: 15px; font-weight: 650; line-height: 1.4; }
+    .item-doc p, .item-note p { margin-top: 8px; font-size: 12.5px; color: var(--muted); line-height: 1.75; }
+    .item-doc .rule { margin: 12px 0; height: 1px; background: var(--line); }
+    .mono { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+    .swatch-row { display: flex; gap: 8px; margin-top: 14px; }
+    .swatch { flex: 1; min-width: 0; }
+    .swatch i { display: block; height: 40px; border-radius: 8px; border: 1px solid var(--line); }
+    .swatch span {
+      display: block; margin-top: 6px; font-size: 10px; font-weight: 600; color: var(--muted);
+      font-family: var(--mono);
+    }
+    .page-mini {
+      margin-top: 10px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fafafa;
+    }
+    .page-mini header {
+      height: 18px; padding: 0 8px; display: flex; align-items: center; gap: 4px;
+      border-bottom: 1px solid var(--line); background: #fff;
+    }
+    .page-mini header i { width: 5px; height: 5px; border-radius: 50%; background: #ddd; }
+    .page-mini .hero { padding: 14px 12px 16px; }
+    .page-mini .hero b { display: block; font-size: 11px; font-weight: 700; line-height: 1.35; }
+    .page-mini .hero em {
+      display: block; margin-top: 4px; height: 4px; width: 72%; background: #eceae6; border-radius: 2px; font-style: normal;
+    }
+    .page-mini .cta { margin-top: 10px; width: 42px; height: 10px; border-radius: 99px; background: var(--ink); }
+
+    .actions {
+      position: absolute; display: none; z-index: 8;
+      align-items: center; gap: 2px; padding: 4px;
+      background: var(--glass); border: 1px solid var(--line); border-radius: 10px;
+      box-shadow: var(--shadow-lg); backdrop-filter: blur(14px);
+    }
+    .actions.show { display: flex; }
+    .act {
+      height: 30px; min-width: 30px; padding: 0 9px; border-radius: 7px;
+      color: var(--muted); font-size: 12px; font-weight: 600;
+      display: inline-flex; align-items: center;
+    }
+    .act:hover { background: var(--fill-hover); color: var(--fg); }
+    .act:active { background: var(--fill-active); color: var(--fg); }
+    .act.danger:hover { background: var(--danger-soft); color: var(--danger); }
+
+    .imagine {
+      position: absolute; left: 50%; top: 16px; z-index: 18;
+      transform: translateX(-50%);
+      width: min(640px, calc(100% - 48px));
+      background: var(--glass);
+      backdrop-filter: blur(22px) saturate(1.3);
+      -webkit-backdrop-filter: blur(22px) saturate(1.3);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: var(--shadow-lg);
+      padding: 8px;
+    }
+    .imagine-top {
+      display: flex; align-items: center; gap: 8px; padding: 0 4px 6px;
+    }
+    .mode {
+      display: inline-flex; padding: 3px; border-radius: 8px; background: var(--fill); gap: 2px;
+    }
+    .mode button {
+      height: 24px; padding: 0 9px; border-radius: 6px;
+      font-size: 12px; font-weight: 600; color: var(--muted);
+    }
+    .mode button[aria-pressed="true"] { background: #fff; color: var(--fg); box-shadow: var(--shadow-sm); }
+    .mode button:hover { color: var(--fg); }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
+    .ctx {
+      display: inline-flex; align-items: center; gap: 4px;
+      height: 22px; padding: 0 8px; border-radius: 6px;
+      background: var(--fill); color: var(--fg);
+      font-size: 11px; font-weight: 600;
+    }
+    .ctx.ref { background: var(--accent-soft); }
+    .ctx button { width: 16px; height: 16px; border-radius: 4px; color: var(--muted); }
+    .ctx button:hover { background: rgba(26,25,22,.08); color: var(--fg); }
+    .composer textarea {
+      width: 100%; min-height: 44px; max-height: 120px; resize: none;
+      padding: 8px 10px 4px; border: 0; background: transparent;
+      font-size: 14px; line-height: 1.7;
+    }
+    .composer textarea::placeholder { color: var(--faint); }
+    .imagine-row {
+      display: flex; align-items: center; gap: 6px; padding: 0 4px 2px;
+    }
+    .model {
+      height: 28px; padding: 0 8px; border-radius: 7px;
+      color: var(--muted); font-size: 11.5px; font-weight: 600;
+    }
+    .model:hover { background: var(--fill-hover); color: var(--fg); }
+    .imagine-row .spacer { flex: 1; }
+    .send {
+      width: 32px; height: 32px; border-radius: 8px;
+      background: var(--fill); color: var(--faint); display: grid; place-items: center;
+    }
+    .send.ready { background: var(--ink); color: #fff; }
+    .send.ready:hover { background: var(--ink-hover); color: #fff; }
+    .send.stop { background: var(--accent); color: #fff; }
+    .send svg { width: 15px; height: 15px; }
+    .run-line { display: none; height: 2px; margin: 6px 4px 2px; border-radius: 99px; background: var(--line); overflow: hidden; }
+    .run-line.show { display: block; }
+    .run-line i {
+      display: block; height: 100%; width: 34%; border-radius: 99px; background: var(--accent);
+      animation: indet 1.15s ease-in-out infinite;
+    }
+    @keyframes indet { 0% { transform: translateX(-90%); } 100% { transform: translateX(280%); } }
+
+    .drawer {
+      position: absolute; top: 0; bottom: 0; z-index: 22;
+      width: 340px; max-width: calc(100% - 8px);
+      background: var(--glass);
+      backdrop-filter: blur(22px) saturate(1.25);
+      -webkit-backdrop-filter: blur(22px) saturate(1.25);
+      border-left: 1px solid var(--line);
+      box-shadow: var(--shadow-lg);
+      display: none; flex-direction: column;
+    }
+    .drawer.open { display: flex; }
+    .drawer-agent { right: 0; }
+    .drawer-lib {
+      left: 0; width: 280px; border-left: 0; border-right: 1px solid var(--line);
+    }
+    .drawer-head {
+      display: flex; align-items: center; gap: 8px;
+      height: 48px; padding: 0 10px 0 14px;
+      border-bottom: 1px solid var(--line); flex-shrink: 0;
+    }
+    .drawer-head h2 { font-size: 13px; font-weight: 650; line-height: 1.35; flex: 1; }
+    .timeline { flex: 1; min-height: 0; overflow: auto; padding: 14px 16px 18px; }
+    .msg { margin-bottom: 14px; }
+    .msg.user { display: flex; justify-content: flex-end; }
+    .bubble { max-width: 92%; padding: 9px 12px; border-radius: 14px; font-size: 13px; line-height: 1.7; }
+    .msg.user .bubble { background: var(--ink); color: #fff; border-radius: 14px 14px 4px 14px; }
+    .msg.agent .bubble { background: transparent; padding: 0; max-width: 100%; }
+    .thought {
+      font-size: 12px; color: var(--faint); margin-bottom: 8px; line-height: 1.55;
+    }
+    .tool-row {
+      display: flex; align-items: center; gap: 8px;
+      margin: 6px 0; padding: 8px 10px;
+      border: 1px solid var(--line); border-radius: 10px; background: #fff;
+      font-size: 12px; color: var(--muted);
+    }
+    .tool-row strong { color: var(--fg); font-weight: 650; font-family: var(--mono); font-size: 11px; }
+    .ok { color: var(--ok); font-weight: 650; margin-left: auto; font-size: 11px; }
+    .thumbs { display: flex; gap: 8px; margin: 8px 0 4px; }
+    .thumbs button {
+      width: 76px; height: 54px; border-radius: 8px; overflow: hidden;
+      border: 1px solid var(--line); padding: 0;
+    }
+    .thumbs img { width: 100%; height: 100%; object-fit: cover; }
+    .empty-agent { padding: 12px 4px; }
+    .empty-agent h2 { font-size: 16px; font-weight: 650; line-height: 1.4; }
+    .empty-agent p { margin-top: 6px; color: var(--muted); font-size: 13px; line-height: 1.7; }
+    .prompts { margin-top: 14px; display: grid; gap: 6px; }
+    .prompts button {
+      width: 100%; text-align: left; padding: 10px 12px;
+      border: 1px solid var(--line); border-radius: 10px; background: #fff;
+      font-weight: 600; font-size: 12.5px;
+    }
+    .prompts button:hover { background: var(--fill-hover); color: var(--fg); }
+    .suggest { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px 14px; }
+    .suggest button {
+      height: 26px; padding: 0 9px; border-radius: 999px;
+      border: 1px solid var(--line); background: #fff; color: var(--muted); font-size: 11.5px; font-weight: 600;
+    }
+    .suggest button:hover { background: var(--fill-hover); color: var(--fg); }
+
+    .lib-list { flex: 1; overflow: auto; padding: 8px; }
+    .lib-row {
+      display: flex; align-items: center; gap: 10px; width: 100%;
+      padding: 8px; border-radius: 10px; text-align: left;
+    }
+    .lib-row:hover { background: var(--fill-hover); }
+    .lib-row.active { background: var(--fill); }
+    .lib-thumb {
+      width: 44px; height: 32px; border-radius: 6px; overflow: hidden; flex-shrink: 0;
+      background: var(--fill); border: 1px solid var(--line);
+    }
+    .lib-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .lib-thumb.kind {
+      display: grid; place-items: center; color: var(--faint); font-size: 9px; font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    .lib-row strong { display: block; font-size: 12.5px; font-weight: 600; }
+    .lib-row span { display: block; font-size: 11px; color: var(--faint); margin-top: 2px; }
+
+    .toast {
+      position: absolute; left: 50%; bottom: 24px; z-index: 26;
+      transform: translateX(-50%) translateY(12px);
+      padding: 10px 14px; border-radius: 10px;
+      background: var(--ink); color: #fff; font-size: 12.5px; font-weight: 600;
+      opacity: 0; pointer-events: none; transition: .2s var(--ease);
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.error { background: var(--danger); }
+
+    .overlay {
+      position: fixed; inset: 0; z-index: 40; display: none;
+      align-items: center; justify-content: center;
+      background: rgba(26,25,22,.28);
+    }
+    .overlay.show { display: flex; }
+    .modal, .cmd {
+      width: min(420px, calc(100vw - 32px));
+      background: #fff; border-radius: 16px; box-shadow: var(--shadow-lg); padding: 22px;
+    }
+    .modal h2 { font-size: 18px; font-weight: 650; line-height: 1.35; }
+    .modal p { margin-top: 8px; color: var(--muted); font-size: 13.5px; line-height: 1.7; }
+    .checks { margin: 16px 0; display: grid; gap: 8px; }
+    .checks label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+    .modal-row { display: flex; justify-content: flex-end; gap: 8px; }
+    .cmd { padding: 10px; }
+    .cmd input {
+      width: 100%; height: 40px; padding: 0 12px; border: 0;
+      font-size: 14px; background: var(--fill); border-radius: 10px;
+    }
+    .cmd-list { margin-top: 8px; max-height: 280px; overflow: auto; }
+    .cmd-row {
+      display: flex; align-items: center; justify-content: space-between;
+      width: 100%; padding: 9px 10px; border-radius: 8px; text-align: left;
+    }
+    .cmd-row:hover, .cmd-row.active { background: var(--fill-hover); }
+    .cmd-row em { font-style: normal; color: var(--faint); font-size: 11px; font-family: var(--mono); }
+
+    .menu {
+      display: none; position: absolute; top: calc(100% + 6px); left: 8px; z-index: 40;
+      min-width: 200px; background: #fff; border: 1px solid var(--line);
+      border-radius: 12px; box-shadow: var(--shadow-lg); padding: 6px;
+    }
+    .menu.open { display: block; }
+    .menu button {
+      display: block; width: 100%; text-align: left; padding: 8px 10px; border-radius: 8px; font-weight: 600;
+    }
+    .menu button:hover { background: var(--fill-hover); }
+    .menu button.active { background: var(--fill); }
+    .topbar { position: relative; }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+      .run-line i, .vid-track i { animation: none; width: 55%; }
+    }
+    @media (max-width: 860px) {
+      .crumb, .kbd, .topbar .ghost { display: none; }
+      .brand strong { max-width: 88px; }
+      .imagine { width: calc(100% - 20px); }
+      .drawer-agent, .drawer-lib { width: min(100%, 320px); }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#composer">跳到生成指令</a>
+  <div class="shell" data-od-id="canvas-v5">
+    <header class="topbar" data-od-id="topbar">
+      <a class="icon" href="./landing.html" aria-label="返回创作首页" data-od-id="btn-back">
+        <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>
+      </a>
+      <button class="brand" type="button" id="project-btn" aria-haspopup="listbox" aria-expanded="false" data-od-id="project-switcher">
+        <span class="mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><rect x="7" y="7" width="18" height="18" rx="2.2" stroke="currentColor" stroke-width="1.6"/><rect x="5.15" y="5.15" width="3.7" height="3.7" rx="0.35" fill="currentColor"/><rect x="23.15" y="5.15" width="3.7" height="3.7" rx="0.35" fill="currentColor"/><rect x="5.15" y="23.15" width="3.7" height="3.7" rx="0.35" fill="currentColor"/><rect x="23.15" y="23.15" width="3.7" height="3.7" rx="0.35" fill="currentColor"/><rect x="13.6" y="14.6" width="8.4" height="7" rx="1.1" fill="currentColor"/></svg></span>
+        <strong id="project-name">开源工作台物料</strong>
+        <span class="caret">▾</span>
+      </button>
+      <div class="menu" id="project-menu" role="listbox">
+        <button type="button" class="active" data-project="开源工作台物料">开源工作台物料</button>
+        <button type="button" data-project="品牌系统探索">品牌系统探索</button>
+        <button type="button" data-project="官网改版">官网改版</button>
+      </div>
+      <div class="crumb" aria-hidden="true">画布 <b>· 7 件素材</b></div>
+      <div class="top-spacer"></div>
+      <span class="chip" id="run-chip" data-od-id="run-chip"><i class="dot" id="run-dot"></i><span id="run-label">就绪</span></span>
+      <button class="kbd" type="button" id="cmd-open" data-od-id="cmd-open">⌘K</button>
+      <a class="ghost" href="./marketing-v10.html" data-od-id="link-site">官网</a>
+      <button class="primary" type="button" id="btn-handoff" data-od-id="btn-handoff">Handoff</button>
+    </header>
+
+    <nav class="rail" aria-label="工作台" data-od-id="rail">
+      <button class="rail-btn active" type="button" data-tool="select" aria-pressed="true" title="选择 V" data-od-id="tool-select">
+        <svg viewBox="0 0 24 24"><path d="M5 4l6 16 2-7 7-2z"/></svg>
+      </button>
+      <button class="rail-btn" type="button" data-tool="pan" aria-pressed="false" title="平移 H" data-od-id="tool-pan">
+        <svg viewBox="0 0 24 24"><path d="M8 11V7a2 2 0 114 0v4M12 11V6a2 2 0 114 0v5M16 12v-2a2 2 0 114 0v6a6 6 0 01-6 6H11a5 5 0 01-5-5v-5a2 2 0 114 0v2"/></svg>
+      </button>
+      <span class="rail-sep"></span>
+      <button class="rail-btn" type="button" id="toggle-lib" aria-pressed="false" title="素材库" data-od-id="btn-library">
+        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="7" rx="1"/><rect x="14" y="4" width="7" height="7" rx="1"/><rect x="3" y="15" width="7" height="7" rx="1"/><rect x="14" y="15" width="7" height="7" rx="1"/></svg>
+      </button>
+      <button class="rail-btn" type="button" id="toggle-agent" aria-pressed="false" title="对话" data-od-id="btn-toggle-agent">
+        <svg viewBox="0 0 24 24"><path d="M4 6h16v10H8l-4 4z"/></svg>
+      </button>
+      <span class="rail-sep"></span>
+      <button class="rail-btn" type="button" data-add="image" title="添加图片" data-od-id="add-image">
+        <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.4"/><path d="M4 16l5-5 4 4 3-3 4 4"/></svg>
+      </button>
+      <button class="rail-btn" type="button" data-add="video" title="添加视频" data-od-id="add-video">
+        <svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M10 10l5 2-5 2z"/></svg>
+      </button>
+      <button class="rail-btn" type="button" data-add="doc" title="添加文档" data-od-id="add-doc">
+        <svg viewBox="0 0 24 24"><path d="M7 4h7l5 5v11a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z"/><path d="M14 4v5h5M8 13h8M8 17h6"/></svg>
+      </button>
+      <div class="rail-gap"></div>
+      <button class="rail-btn" type="button" id="zoom-out" aria-label="缩小" title="缩小">
+        <svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg>
+      </button>
+      <button class="rail-btn" type="button" id="zoom-fit" aria-label="适应画布" title="适应">
+        <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+      </button>
+      <button class="rail-btn" type="button" id="zoom-in" aria-label="放大" title="放大">
+        <svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg>
+      </button>
+    </nav>
+
+    <div class="workspace">
+      <main class="stage" id="stage" data-od-id="board">
+        <div class="stage-dots" aria-hidden="true"></div>
+        <div class="world" id="world"></div>
+        <div class="actions" id="actions" role="toolbar" aria-label="素材操作">
+          <button class="act" type="button" id="act-agent" data-od-id="act-agent">在 Agent 中改</button>
+          <button class="act" type="button" id="act-dup">复制</button>
+          <button class="act danger" type="button" id="act-del">删除</button>
+        </div>
+        <div class="toast" id="toast" role="status" aria-live="polite"></div>
+      </main>
+
+      <form class="imagine" id="composer-form" data-od-id="imagine-bar">
+        <div class="imagine-top">
+          <div class="mode" role="tablist" aria-label="Agent 模式">
+            <button type="button" id="mode-agent" aria-pressed="true">Agent</button>
+            <button type="button" id="mode-ask" aria-pressed="false">Ask</button>
+          </div>
+          <div class="chips" id="chips"></div>
+        </div>
+        <div class="composer">
+          <label class="sr" for="composer">生成指令</label>
+          <textarea id="composer" rows="2" placeholder="描述画面、视频或文档，结果会落到作品板…"></textarea>
+        </div>
+        <div class="imagine-row">
+          <button class="model" type="button" id="model-btn">Composer · 本地</button>
+          <span id="zoom-label" class="mono" style="color:var(--faint);font-size:11px">100%</span>
+          <div class="spacer"></div>
+          <button class="icon" type="button" id="attach" aria-label="附加参考图" title="附加参考">
+            <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.4"/><path d="M4 16l5-5 4 4 3-3 4 4"/></svg>
+          </button>
+          <button class="send" type="submit" id="send" disabled aria-label="发送">
+            <svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+          </button>
+        </div>
+        <div class="run-line" id="run-line"><i></i></div>
+      </form>
+
+      <aside class="drawer drawer-lib" id="library" data-od-id="library" aria-label="素材库">
+        <div class="drawer-head">
+          <h2>素材</h2>
+          <button class="icon" type="button" id="close-lib" aria-label="关闭素材库">
+            <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+        <div class="lib-list" id="lib-list"></div>
+      </aside>
+
+      <aside class="drawer drawer-agent" id="agent" data-od-id="agent-drawer" aria-label="Agent 对话">
+        <div class="drawer-head">
+          <h2 id="conv-title">封面与预告</h2>
+          <button class="icon" type="button" id="new-chat" aria-label="新对话" title="新对话">
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+          <button class="icon" type="button" id="collapse-agent" aria-label="关闭对话">
+            <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+        <div class="timeline" id="timeline"></div>
+        <div class="suggest" id="suggest"></div>
+      </aside>
+    </div>
+  </div>
+
+  <div class="overlay" id="handoff" role="dialog" aria-modal="true" aria-labelledby="handoff-title">
+    <div class="modal">
+      <h2 id="handoff-title">导出 Handoff</h2>
+      <p>把当前作品板上的图、视频、文档与 token 打成包，交给 Cursor / Claude Code。</p>
+      <div class="checks">
+        <label><input type="checkbox" checked /> 图片与视频海报</label>
+        <label><input type="checkbox" checked /> Brief.md</label>
+        <label><input type="checkbox" checked /> Tokens</label>
+        <label><input type="checkbox" checked /> 画布 JSON</label>
+      </div>
+      <div class="modal-row">
+        <button class="ghost" type="button" id="handoff-cancel">取消</button>
+        <button class="primary" type="button" id="handoff-go">导出 ZIP</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="cmdk" role="dialog" aria-modal="true" aria-labelledby="cmd-title">
+    <div class="cmd">
+      <label class="sr" id="cmd-title" for="cmd-input">命令面板</label>
+      <input id="cmd-input" type="search" placeholder="搜索素材、指令或操作…" autocomplete="off" />
+      <div class="cmd-list" id="cmd-list"></div>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    var GAP = 20;
+    var COL = { a: 420, b: 280, c: 240 };
+    var X = { a: 0, b: COL.a + GAP, c: COL.a + GAP + COL.b + GAP };
+    var BOARD_W = X.c + COL.c;
+    var ROW1 = 158;
+    var ROW1B = 137;
+    var COVER_H = ROW1 + GAP + ROW1B;
+    var ROW2_Y = COVER_H + GAP;
+    var ROW2_H = 220;
+    var BOARD_H = ROW2_Y + ROW2_H;
+    var ITEMS = [
+      { id: "cover", type: "image", x: X.a, y: 0, w: COL.a, h: COVER_H, src: "assets/canvas-cover.jpg", title: "封面 · 晨间桌面", meta: "图片 · 4:3" },
+      { id: "reel", type: "video", x: X.b, y: 0, w: COL.b, h: ROW1, src: "assets/canvas-video-poster.jpg", title: "产品预告", duration: "0:18", meta: "视频 · 0:18" },
+      { id: "note", type: "note", x: X.c, y: 0, w: COL.c, h: COVER_H, title: "导演备注", body: "封面要亮、干净。预告不要出现 Logo。文档保持 Markdown。", meta: "备注" },
+      { id: "material", type: "image", x: X.b, y: ROW1 + GAP, w: COL.b, h: ROW1B, src: "assets/canvas-material.jpg", title: "材质研究", meta: "图片 · 1:1" },
+      { id: "brief", type: "doc", x: X.a, y: ROW2_Y, w: COL.a, h: ROW2_H, title: "Brief.md", body: "开源工作台的交付物料。封面走静物，不出现界面。预告 18 秒，暗调产品镜头，无旁白。Handoff 需带 token 与画布 JSON。", meta: "文档" },
+      { id: "tokens", type: "spec", x: X.b, y: ROW2_Y, w: COL.b, h: ROW2_H, title: "Tokens", meta: "设计系统" },
+      { id: "page", type: "page", x: X.c, y: ROW2_Y, w: COL.c, h: ROW2_H, title: "官网 · Hero", meta: "页面" }
+    ];
+    var BOARD_MSGS = [
+      { role: "user", text: "为「开源工作台」准备交付物料：静物封面、18 秒预告、Brief 和 token。" },
+      { role: "thought", text: "拆成静物摄影、暗调产品镜头、文档与色板，直接落到作品板。" },
+      { role: "tool", name: "generate_images", status: "2/2 完成" },
+      { role: "thumbs", ids: ["cover", "reel"] },
+      { role: "tool", name: "write_document", status: "Brief.md" },
+      { role: "agent", text: "已经落到画布。封面是晨间桌面，预告用湿石上的产品镜头。点选任意素材，可以在顶栏继续改。" }
+    ];
+    var COMMANDS = [
+      { id: "cover", label: "跳转到封面", hint: "素材", kind: "jump" },
+      { id: "reel", label: "跳转到产品预告", hint: "素材", kind: "jump" },
+      { id: "brief", label: "跳转到 Brief.md", hint: "素材", kind: "jump" },
+      { id: "image", label: "添加图片", hint: "N", kind: "add" },
+      { id: "video", label: "添加视频", hint: "N", kind: "add" },
+      { id: "doc", label: "添加文档", hint: "N", kind: "add" },
+      { id: "fresh", label: "新对话", hint: "Agent", kind: "chat" },
+      { id: "handoff", label: "导出 Handoff", hint: "⌘E", kind: "act" },
+      { id: "agent", label: "打开 / 关闭对话", hint: "⌘\\", kind: "act" }
+    ];
+    var state = {
+      items: ITEMS.map(function (i) { return Object.assign({}, i); }),
+      selected: null,
+      tool: "select",
+      scale: 1,
+      panX: 72,
+      panY: 80,
+      conv: "board",
+      mode: "agent",
+      streaming: false,
+      omitSel: false,
+      cmdIndex: 0,
+      agentOpen: false,
+      libOpen: false
+    };
+
+    var world = document.getElementById("world");
+    var stage = document.getElementById("stage");
+    var timeline = document.getElementById("timeline");
+    var composer = document.getElementById("composer");
+    var sendBtn = document.getElementById("send");
+    var chips = document.getElementById("chips");
+    var suggest = document.getElementById("suggest");
+    var actions = document.getElementById("actions");
+    var toastEl = document.getElementById("toast");
+    var toastTimer;
+    var cmdk = document.getElementById("cmdk");
+    var cmdInput = document.getElementById("cmd-input");
+    var agent = document.getElementById("agent");
+    var library = document.getElementById("library");
+
+    function toast(msg, err) {
+      toastEl.textContent = msg;
+      toastEl.className = "toast show" + (err ? " error" : "");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { toastEl.className = "toast"; }, 2200);
+    }
+    function itemById(id) {
+      for (var i = 0; i < state.items.length; i++) if (state.items[i].id === id) return state.items[i];
+      return null;
+    }
+    function setAgent(open) {
+      state.agentOpen = open;
+      agent.classList.toggle("open", open);
+      document.getElementById("toggle-agent").setAttribute("aria-pressed", open ? "true" : "false");
+      if (open) { state.libOpen = false; library.classList.remove("open"); document.getElementById("toggle-lib").setAttribute("aria-pressed", "false"); }
+    }
+    function setLib(open) {
+      state.libOpen = open;
+      library.classList.toggle("open", open);
+      document.getElementById("toggle-lib").setAttribute("aria-pressed", open ? "true" : "false");
+      if (open) { state.agentOpen = false; agent.classList.remove("open"); document.getElementById("toggle-agent").setAttribute("aria-pressed", "false"); }
+      renderLib();
+    }
+    function fitBoard() {
+      var padL = 28;
+      var padR = state.agentOpen ? 360 : 28;
+      var padT = 118;
+      var padB = 28;
+      var aw = Math.max(240, stage.clientWidth - padL - padR);
+      var ah = Math.max(180, stage.clientHeight - padT - padB);
+      var s = Math.min(1, aw / BOARD_W, ah / BOARD_H);
+      if (!isFinite(s) || s <= 0) s = 1;
+      state.scale = s;
+      state.panX = padL + Math.max(0, (aw - BOARD_W * s) / 2);
+      state.panY = padT + Math.max(0, (ah - BOARD_H * s) / 2);
+      applyWorld();
+      placeActions();
+    }
+    function applyWorld() {
+      world.style.transform = "translate(" + state.panX + "px," + state.panY + "px) scale(" + state.scale + ")";
+      document.getElementById("zoom-label").textContent = Math.round(state.scale * 100) + "%";
+    }
+
+    function renderItems() {
+      world.innerHTML = "";
+      state.items.forEach(function (it) {
+        var el = document.createElement("article");
+        el.className = "item item-" + (it.type === "image" ? "image" : it.type === "video" ? "video" : it.type);
+        el.dataset.id = it.id;
+        el.setAttribute("data-od-id", "item-" + it.id);
+        if (state.selected === it.id) el.classList.add("selected");
+        el.style.cssText = "left:" + it.x + "px;top:" + it.y + "px;width:" + it.w + "px;height:" + it.h + "px";
+        var cap = '<div class="item-label">' + it.title + "</div>";
+        if (it.type === "image") {
+          el.innerHTML = cap + '<img src="' + it.src + '" alt="' + it.title + '" draggable="false" />';
+        } else if (it.type === "video") {
+          el.innerHTML = cap + '<img src="' + it.src + '" alt="' + it.title + '" draggable="false" />' +
+            '<div class="play"><button class="play-btn" type="button" aria-label="播放 ' + it.title + '"><svg viewBox="0 0 24 24"><path d="M8 6l12 6-12 6z"/></svg></button></div>' +
+            '<span class="vid-meta">' + it.duration + '</span>' +
+            '<div class="vid-bar"><span>00:04</span><div class="vid-track"><i></i></div><span>' + it.duration + '</span></div>';
+        } else if (it.type === "doc") {
+          el.innerHTML = cap + '<div class="kicker">文档</div><h3>' + it.title + '</h3><div class="rule"></div><p>' + it.body + '</p><p class="mono">UTF-8 · Markdown</p>';
+        } else if (it.type === "spec") {
+          el.innerHTML = cap + '<div class="kicker">设计系统</div><h3>' + it.title + '</h3>' +
+            '<div class="swatch-row"><div class="swatch"><i style="background:#ffffff"></i><span>#FFF</span></div>' +
+            '<div class="swatch"><i style="background:#1a1916"></i><span>Ink</span></div>' +
+            '<div class="swatch"><i style="background:#d06b5c"></i><span>Coral</span></div></div>';
+        } else if (it.type === "note") {
+          el.innerHTML = cap + '<div class="kicker">备注</div><h3>' + it.title + '</h3><p>' + it.body + '</p>';
+        } else if (it.type === "page") {
+          el.innerHTML = cap + '<div class="kicker">页面</div><h3>' + it.title + '</h3><div class="page-mini"><header><i></i><i></i><i></i></header><div class="hero"><b>画布上编排 Agent</b><em></em><em style="width:48%"></em><div class="cta"></div></div></div>';
+        }
+        world.appendChild(el);
+      });
+      placeActions();
+      renderLib();
+      var crumb = document.querySelector(".crumb b");
+      if (crumb) crumb.textContent = "· " + state.items.length + " 件素材";
+    }
+
+    function renderLib() {
+      var html = "";
+      state.items.forEach(function (it) {
+        var thumb = it.src
+          ? '<div class="lib-thumb"><img src="' + it.src + '" alt=""></div>'
+          : '<div class="lib-thumb kind">' + (it.meta || it.type).slice(0, 2) + "</div>";
+        html += '<button class="lib-row' + (state.selected === it.id ? " active" : "") + '" type="button" data-jump="' + it.id + '">' +
+          thumb + "<div><strong>" + it.title + "</strong><span>" + (it.meta || it.type) + "</span></div></button>";
+      });
+      document.getElementById("lib-list").innerHTML = html || '<p style="padding:16px;color:var(--faint)">作品板是空的</p>';
+      document.querySelectorAll("#lib-list [data-jump]").forEach(function (b) {
+        b.onclick = function () { select(b.getAttribute("data-jump")); flash(b.getAttribute("data-jump")); };
+      });
+    }
+
+    function placeActions() {
+      var it = itemById(state.selected);
+      if (!it) { actions.classList.remove("show"); return; }
+      var r = world.getBoundingClientRect();
+      var sx = it.x * state.scale + state.panX + r.left;
+      var sy = it.y * state.scale + state.panY + r.top;
+      var sr = stage.getBoundingClientRect();
+      actions.classList.add("show");
+      var left = sx - sr.left + it.w * state.scale / 2 - actions.offsetWidth / 2;
+      var top = sy - sr.top - 42;
+      if (top < 108) top = sy - sr.top + it.h * state.scale + 8;
+      actions.style.left = left + "px";
+      actions.style.top = top + "px";
+    }
+
+    function select(id) {
+      state.selected = id;
+      state.omitSel = false;
+      renderItems();
+      renderChips();
+    }
+
+    function renderChips() {
+      var it = state.omitSel ? null : itemById(state.selected);
+      chips.innerHTML = "";
+      if (it) {
+        chips.innerHTML = '<span class="ctx ref">针对 · ' + it.title + ' <button type="button" aria-label="移除选中" id="chip-x">×</button></span>';
+        var x = document.getElementById("chip-x");
+        if (x) x.onclick = function () { state.omitSel = true; renderChips(); };
+      }
+    }
+
+    function renderTimeline() {
+      if (state.conv === "fresh" && !state.streaming) {
+        timeline.innerHTML =
+          '<div class="empty-agent" data-od-id="agent-empty">' +
+          "<h2>有什么想生成的</h2>" +
+          "<p>在上方 Imagine 条描述画面、视频或文档，结果会落到作品板。</p>" +
+          '<div class="prompts">' +
+          '<button type="button" data-fill="生成一张更亮的封面静物">生成一张更亮的封面静物</button>' +
+          '<button type="button" data-fill="补一段 18 秒产品预告">补一段 18 秒产品预告</button>' +
+          '<button type="button" data-fill="把 Brief 改成给工程师看的版本">把 Brief 改成给工程师看的版本</button>' +
+          "</div></div>";
+        suggest.innerHTML = "";
+        timeline.querySelectorAll("[data-fill]").forEach(function (b) {
+          b.onclick = function () { composer.value = b.getAttribute("data-fill"); syncSend(); composer.focus(); };
+        });
+        return;
+      }
+      var html = "";
+      BOARD_MSGS.forEach(function (m) {
+        if (m.role === "user") html += '<div class="msg user"><div class="bubble">' + m.text + "</div></div>";
+        else if (m.role === "thought") html += '<div class="msg agent"><div class="thought">思考 · ' + m.text + "</div></div>";
+        else if (m.role === "tool") html += '<div class="tool-row"><span>工具</span><strong>' + m.name + "</strong><span class='ok'>" + m.status + "</span></div>";
+        else if (m.role === "thumbs") {
+          html += '<div class="thumbs">';
+          m.ids.forEach(function (id) {
+            var it = itemById(id);
+            if (it) html += '<button type="button" data-jump="' + id + '"><img src="' + it.src + '" alt="' + it.title + '"></button>';
+          });
+          html += "</div>";
+        } else html += '<div class="msg agent"><div class="bubble">' + m.text + "</div></div>";
+      });
+      if (state.streaming) {
+        html += '<div class="msg agent"><div class="thought">正在处理…</div></div>';
+      }
+      timeline.innerHTML = html;
+      timeline.querySelectorAll("[data-jump]").forEach(function (b) {
+        b.onclick = function () { select(b.getAttribute("data-jump")); flash(b.getAttribute("data-jump")); };
+      });
+      timeline.scrollTop = timeline.scrollHeight;
+      suggest.innerHTML = state.streaming ? "" :
+        '<button type="button" data-fill="封面再亮一点，去掉阴影">封面再亮一点</button>' +
+        '<button type="button" data-fill="预告加一句字幕：本地优先">预告加字幕</button>' +
+        '<button type="button" data-fill="导出 Handoff">导出 Handoff</button>';
+      suggest.querySelectorAll("button").forEach(function (b) {
+        b.onclick = function () {
+          var t = b.getAttribute("data-fill");
+          if (t === "导出 Handoff") { openHandoff(); return; }
+          composer.value = t; syncSend(); composer.focus();
+        };
+      });
+    }
+
+    function flash(id) {
+      var el = world.querySelector('[data-id="' + id + '"]');
+      if (!el) return;
+      el.classList.add("flash");
+      setTimeout(function () { el.classList.remove("flash"); }, 900);
+    }
+    function setBusy(on, label) {
+      state.streaming = on;
+      document.getElementById("run-line").classList.toggle("show", on);
+      document.getElementById("run-label").textContent = on ? (label || "生成中") : "就绪";
+      document.getElementById("run-dot").classList.toggle("busy", on);
+      renderTimeline();
+      syncSend();
+    }
+    function syncSend() {
+      var on = composer.value.trim().length > 0 && !state.streaming;
+      sendBtn.disabled = !on && !state.streaming;
+      sendBtn.classList.toggle("ready", on);
+      sendBtn.classList.toggle("stop", state.streaming);
+    }
+    function addItem(type) {
+      var id = type + "-" + Date.now();
+      var extras = state.items.length - ITEMS.length;
+      if (extras < 0) extras = 0;
+      var base = { id: id, type: type, x: BOARD_W + GAP, y: extras * (180 + GAP), w: 240, h: 180, title: "未命名", meta: "生成" };
+      if (type === "image") Object.assign(base, { w: 280, h: 188, src: "assets/canvas-cover.jpg", title: "新图片", meta: "图片 · 生成" });
+      if (type === "video") Object.assign(base, { w: 280, h: 158, src: "assets/canvas-video-poster.jpg", title: "新视频", duration: "0:08", meta: "视频 · 0:08" });
+      if (type === "doc") Object.assign(base, { w: 240, h: 200, title: "Note.md", body: "在 Agent 里描述后，文档会更新。", meta: "文档" });
+      if (type === "note") Object.assign(base, { w: 240, h: 158, title: "备注", body: "双击画布也可添加。", meta: "备注" });
+      state.items.push(base);
+      select(id);
+      toast("已添加到作品板");
+    }
+
+    var drag = null;
+    stage.addEventListener("pointerdown", function (e) {
+      if (e.target.closest(".imagine, .drawer, .actions, .toast, .topbar, .rail")) return;
+      var itemEl = e.target.closest(".item");
+      var play = e.target.closest(".play-btn");
+      if (play && itemEl) {
+        e.stopPropagation();
+        itemEl.classList.toggle("playing");
+        return;
+      }
+      if (state.tool === "pan" || e.button === 1 || e.shiftKey) {
+        drag = { kind: "pan", x: e.clientX, y: e.clientY, px: state.panX, py: state.panY };
+        world.classList.add("grabbing");
+        stage.setPointerCapture(e.pointerId);
+        return;
+      }
+      if (itemEl) {
+        var id = itemEl.dataset.id;
+        select(id);
+        var it = itemById(id);
+        drag = { kind: "item", id: id, x: e.clientX, y: e.clientY, ix: it.x, iy: it.y };
+        stage.setPointerCapture(e.pointerId);
+      } else {
+        state.selected = null;
+        renderItems();
+        renderChips();
+        drag = { kind: "pan", x: e.clientX, y: e.clientY, px: state.panX, py: state.panY };
+        world.classList.add("grabbing");
+        stage.setPointerCapture(e.pointerId);
+      }
+    });
+    stage.addEventListener("pointermove", function (e) {
+      if (!drag) return;
+      var dx = (e.clientX - drag.x) / (drag.kind === "item" ? state.scale : 1);
+      var dy = (e.clientY - drag.y) / (drag.kind === "item" ? state.scale : 1);
+      if (drag.kind === "pan") {
+        state.panX = drag.px + (e.clientX - drag.x);
+        state.panY = drag.py + (e.clientY - drag.y);
+        applyWorld();
+        placeActions();
+      } else {
+        var it = itemById(drag.id);
+        it.x = drag.ix + dx;
+        it.y = drag.iy + dy;
+        var el = world.querySelector('[data-id="' + drag.id + '"]');
+        if (el) {
+          el.style.left = it.x + "px";
+          el.style.top = it.y + "px";
+        }
+        placeActions();
+      }
+    });
+    stage.addEventListener("pointerup", function () { drag = null; world.classList.remove("grabbing"); });
+    stage.addEventListener("dblclick", function (e) {
+      if (e.target.closest(".item, .imagine, .drawer, .actions")) return;
+      addItem("note");
+    });
+    stage.addEventListener("wheel", function (e) {
+      e.preventDefault();
+      var next = Math.min(1.8, Math.max(0.4, state.scale + (e.deltaY > 0 ? -0.08 : 0.08)));
+      var r = stage.getBoundingClientRect();
+      var cx = e.clientX - r.left;
+      var cy = e.clientY - r.top;
+      var k = next / state.scale;
+      state.panX = cx - (cx - state.panX) * k;
+      state.panY = cy - (cy - state.panY) * k;
+      state.scale = next;
+      applyWorld();
+      placeActions();
+    }, { passive: false });
+
+    document.querySelectorAll(".rail-btn[data-tool]").forEach(function (b) {
+      b.onclick = function () {
+        state.tool = b.getAttribute("data-tool");
+        document.querySelectorAll(".rail-btn[data-tool]").forEach(function (x) {
+          x.classList.toggle("active", x === b);
+          x.setAttribute("aria-pressed", x === b ? "true" : "false");
+        });
+        world.classList.toggle("grab", state.tool === "pan");
+      };
+    });
+    document.querySelectorAll(".rail-btn[data-add]").forEach(function (b) {
+      b.onclick = function () { addItem(b.getAttribute("data-add")); };
+    });
+    document.getElementById("zoom-in").onclick = function () { state.scale = Math.min(1.8, state.scale + 0.1); applyWorld(); placeActions(); };
+    document.getElementById("zoom-out").onclick = function () { state.scale = Math.max(0.4, state.scale - 0.1); applyWorld(); placeActions(); };
+    document.getElementById("zoom-fit").onclick = function () { fitBoard(); };
+    document.getElementById("act-del").onclick = function () {
+      if (!state.selected) return;
+      state.items = state.items.filter(function (i) { return i.id !== state.selected; });
+      state.selected = null;
+      renderItems(); renderChips();
+    };
+    document.getElementById("act-dup").onclick = function () {
+      var it = itemById(state.selected);
+      if (!it) return;
+      var copy = Object.assign({}, it, { id: it.id + "-copy", x: it.x + 24, y: it.y + 24, title: it.title + " 副本" });
+      state.items.push(copy); select(copy.id);
+    };
+    document.getElementById("act-agent").onclick = function () {
+      setAgent(true);
+      composer.focus();
+    };
+    document.getElementById("toggle-agent").onclick = function () { setAgent(!state.agentOpen); };
+    document.getElementById("collapse-agent").onclick = function () { setAgent(false); };
+    document.getElementById("toggle-lib").onclick = function () { setLib(!state.libOpen); };
+    document.getElementById("close-lib").onclick = function () { setLib(false); };
+
+    document.getElementById("mode-agent").onclick = function () {
+      state.mode = "agent";
+      this.setAttribute("aria-pressed", "true");
+      document.getElementById("mode-ask").setAttribute("aria-pressed", "false");
+      composer.placeholder = "描述画面、视频或文档，结果会落到作品板…";
+    };
+    document.getElementById("mode-ask").onclick = function () {
+      state.mode = "ask";
+      this.setAttribute("aria-pressed", "true");
+      document.getElementById("mode-agent").setAttribute("aria-pressed", "false");
+      composer.placeholder = "提问，不改动画布…";
+    };
+
+    document.getElementById("new-chat").onclick = function () {
+      state.conv = "fresh";
+      document.getElementById("conv-title").textContent = "新对话";
+      setAgent(true);
+      renderTimeline();
+    };
+
+    var projectBtn = document.getElementById("project-btn");
+    var projectMenu = document.getElementById("project-menu");
+    projectBtn.onclick = function (e) {
+      e.stopPropagation();
+      var open = projectMenu.classList.toggle("open");
+      projectBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    };
+    projectMenu.querySelectorAll("button").forEach(function (b) {
+      b.onclick = function () {
+        document.getElementById("project-name").textContent = b.getAttribute("data-project");
+        projectMenu.querySelectorAll("button").forEach(function (x) { x.classList.toggle("active", x === b); });
+        projectMenu.classList.remove("open");
+        toast("已切换项目");
+      };
+    });
+
+    composer.addEventListener("input", syncSend);
+    composer.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); document.getElementById("composer-form").requestSubmit(); }
+    });
+    document.getElementById("composer-form").onsubmit = function (e) {
+      e.preventDefault();
+      if (state.streaming) { setBusy(false); return; }
+      var text = composer.value.trim();
+      if (!text) return;
+      setAgent(true);
+      if (state.conv === "fresh") {
+        state.conv = "board";
+        document.getElementById("conv-title").textContent = "封面与预告";
+      }
+      BOARD_MSGS.push({ role: "user", text: text });
+      composer.value = "";
+      syncSend();
+      if (state.mode === "ask") {
+        setBusy(true, "正在回答");
+        setTimeout(function () {
+          BOARD_MSGS.push({ role: "agent", text: "Ask 模式只回答，不改画布。封面当前是 4:3 静物，预告 18 秒。切回 Agent 才能落到作品板。" });
+          setBusy(false);
+        }, 800);
+        return;
+      }
+      setBusy(true, "生成中");
+      setTimeout(function () {
+        BOARD_MSGS.push({ role: "thought", text: "按选中素材局部调整，不重做整板。" });
+        BOARD_MSGS.push({ role: "tool", name: "generate_images", status: "完成" });
+        BOARD_MSGS.push({ role: "agent", text: "已更新到画布。如果还要改构图或时长，直接点那张图再说一句。" });
+        setBusy(false);
+        if (state.selected) flash(state.selected);
+        toast("画布已更新");
+      }, 1100);
+    };
+    document.getElementById("attach").onclick = function () { toast("原型：拖入或粘贴图片到输入框"); };
+    document.getElementById("model-btn").onclick = function () {
+      this.textContent = this.textContent.indexOf("Fast") >= 0 ? "Composer · 本地" : "Fast · 本地";
+    };
+
+    function openHandoff() {
+      if (!state.items.length) { toast("作品板是空的，先生成素材再导出", true); return; }
+      document.getElementById("handoff").classList.add("show");
+    }
+    document.getElementById("btn-handoff").onclick = openHandoff;
+    document.getElementById("handoff-cancel").onclick = function () { document.getElementById("handoff").classList.remove("show"); };
+    document.getElementById("handoff").addEventListener("click", function (e) {
+      if (e.target === this) this.classList.remove("show");
+    });
+    document.getElementById("handoff-go").onclick = function () {
+      document.getElementById("handoff").classList.remove("show");
+      toast("已打包 " + state.items.length + " 件素材");
+    };
+
+    function filteredCmds() {
+      var q = (cmdInput.value || "").trim().toLowerCase();
+      return COMMANDS.filter(function (c) { return !q || c.label.toLowerCase().indexOf(q) >= 0; });
+    }
+    function renderCmd() {
+      var list = filteredCmds();
+      if (state.cmdIndex >= list.length) state.cmdIndex = 0;
+      var html = "";
+      list.forEach(function (c, i) {
+        html += '<button class="cmd-row' + (i === state.cmdIndex ? " active" : "") + '" type="button" data-cmd="' + c.id + '" data-kind="' + c.kind + '">' +
+          "<span>" + c.label + "</span><em>" + c.hint + "</em></button>";
+      });
+      document.getElementById("cmd-list").innerHTML = html || '<p style="padding:12px;color:var(--faint)">没有匹配项</p>';
+      document.querySelectorAll(".cmd-row").forEach(function (b) {
+        b.onclick = function () { runCmd(b.getAttribute("data-kind"), b.getAttribute("data-cmd")); };
+      });
+    }
+    function runCmd(kind, id) {
+      closeCmd();
+      if (kind === "jump") { select(id); flash(id); }
+      else if (kind === "add") addItem(id);
+      else if (kind === "chat") document.getElementById("new-chat").click();
+      else if (id === "handoff") openHandoff();
+      else if (id === "agent") setAgent(!state.agentOpen);
+    }
+    function openCmd() {
+      cmdk.classList.add("show");
+      cmdInput.value = "";
+      state.cmdIndex = 0;
+      renderCmd();
+      setTimeout(function () { cmdInput.focus(); }, 20);
+    }
+    function closeCmd() { cmdk.classList.remove("show"); }
+    document.getElementById("cmd-open").onclick = openCmd;
+    cmdk.addEventListener("click", function (e) { if (e.target === this) closeCmd(); });
+    cmdInput.addEventListener("input", function () { state.cmdIndex = 0; renderCmd(); });
+    cmdInput.addEventListener("keydown", function (e) {
+      var list = filteredCmds();
+      if (e.key === "ArrowDown") { e.preventDefault(); state.cmdIndex = Math.min(list.length - 1, state.cmdIndex + 1); renderCmd(); }
+      if (e.key === "ArrowUp") { e.preventDefault(); state.cmdIndex = Math.max(0, state.cmdIndex - 1); renderCmd(); }
+      if (e.key === "Enter" && list[state.cmdIndex]) {
+        e.preventDefault();
+        runCmd(list[state.cmdIndex].kind, list[state.cmdIndex].id);
+      }
+    });
+
+    document.addEventListener("keydown", function (e) {
+      var meta = e.metaKey || e.ctrlKey;
+      if (meta && (e.key === "k" || e.key === "K")) { e.preventDefault(); if (cmdk.classList.contains("show")) closeCmd(); else openCmd(); return; }
+      if (meta && (e.key === "e" || e.key === "E")) { e.preventDefault(); openHandoff(); return; }
+      if (meta && e.key === "\\") { e.preventDefault(); setAgent(!state.agentOpen); return; }
+      var tag = (e.target.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea") {
+        if (e.key === "Escape") {
+          e.target.blur();
+          document.getElementById("handoff").classList.remove("show");
+          closeCmd();
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        document.getElementById("handoff").classList.remove("show");
+        closeCmd();
+        projectMenu.classList.remove("open");
+        setAgent(false); setLib(false);
+        state.selected = null; renderItems(); renderChips();
+      }
+      if (e.key === "v" || e.key === "V") document.querySelector('[data-tool="select"]').click();
+      if (e.key === "h" || e.key === "H" || e.key === " ") {
+        if (e.key === " ") e.preventDefault();
+        document.querySelector('[data-tool="pan"]').click();
+      }
+      if ((e.key === "Delete" || e.key === "Backspace") && state.selected) document.getElementById("act-del").click();
+    });
+    document.addEventListener("click", function (e) {
+      if (!e.target.closest(".brand, .menu")) projectMenu.classList.remove("open");
+    });
+
+    window.addEventListener("resize", function () { placeActions(); });
+
+    renderItems();
+    renderTimeline();
+    renderChips();
+    syncSend();
+    requestAnimationFrame(fitBoard);
+  })();
+  </script>
+</body>
+</html>

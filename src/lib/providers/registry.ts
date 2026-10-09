@@ -12,6 +12,7 @@ import { createGeminiImageProvider, type GeminiAspectRatio } from "./image/gemin
 import { createReplicateImageProvider } from "./image/replicate";
 import { createAnthropicProvider } from "./llm/anthropic";
 import { createGeminiProvider } from "./llm/gemini";
+import { currentGenerationProjectId } from "@/lib/generation/ledger-context";
 /**
  * Provider 注册表
  * --------------------------------------------------------------
@@ -106,12 +107,60 @@ export interface ResolvedProviders {
 
 export function resolveProviders(cfg?: ProviderConfig): ResolvedProviders {
   return {
-    llm: resolveLlm(cfg?.llm),
+    llm: observeLlm(resolveLlm(cfg?.llm), cfg?.llm),
     image: resolveImage(cfg?.image),
     // 仅在 LLM 是真实 provider 时才允许 vision；mock LLM 即使开了也无意义
     visionCritic:
       cfg?.visionCritic === true && cfg?.llm?.kind !== "mock" && cfg?.llm?.kind !== undefined,
   };
+}
+
+function observeLlm(llm: LlmProvider, cfg?: ProviderConfig["llm"]): LlmProvider {
+  if (!cfg || cfg.kind === "mock" || llm.name === "mock-llm") return llm;
+  const model = "model" in cfg ? cfg.model : llm.name;
+  const provider = cfg.kind;
+  const note = (inputTokens: number, outputTokens: number, status: "succeeded" | "failed", error?: string) => {
+    const projectId = currentGenerationProjectId();
+    if (!projectId) return;
+    void import("@/lib/generation/ledger-store").then(({ noteLlmGeneration }) =>
+      noteLlmGeneration(projectId, {
+        model,
+        provider,
+        purpose: "模型调用",
+        inputTokens,
+        outputTokens,
+        status,
+        error,
+      })
+    );
+  };
+  const observed: LlmProvider = {
+    ...llm,
+    async generateText(input) {
+      try {
+        const output = await llm.generateText(input);
+        note(output.usage?.inputTokens ?? 0, output.usage?.outputTokens ?? 0, "succeeded");
+        return output;
+      } catch (error) {
+        note(0, 0, "failed", error instanceof Error ? error.message : String(error));
+        throw error;
+      }
+    },
+  };
+  if (llm.generateWithTools) {
+    const generateWithTools = llm.generateWithTools.bind(llm);
+    observed.generateWithTools = async (input) => {
+      try {
+        const output = await generateWithTools(input);
+        note(output.usage?.inputTokens ?? 0, output.usage?.outputTokens ?? 0, "succeeded");
+        return output;
+      } catch (error) {
+        note(0, 0, "failed", error instanceof Error ? error.message : String(error));
+        throw error;
+      }
+    };
+  }
+  return observed;
 }
 
 function resolveLlm(cfg?: ProviderConfig["llm"]): LlmProvider {

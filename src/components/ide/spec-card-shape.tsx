@@ -1,4 +1,5 @@
 "use client";
+import { createShapeId, type RecordProps, type TLBaseShape } from "@/lib/tldraw-compat";
 
 /**
  * SpecCard Shape — 设计规范画布卡片（Lovart 式色彩/字体规范）
@@ -14,13 +15,11 @@ import {
   Rectangle2d,
   ShapeUtil,
   T,
-  createShapeId,
-  type RecordProps,
-  type TLBaseShape,
 } from "tldraw";
 import { useProjectStore } from "@/store/project-store";
 import { CARD_PAD, CARD_RADIUS } from "@/lib/canvas/canvas-chrome";
 import { useCanvasChromePalette } from "@/lib/canvas/use-canvas-chrome";
+import { deriveDesignContext } from "@/lib/project/design-context";
 import type { ProjectFile } from "@/lib/project/schema";
 
 export type SpecCardShape = TLBaseShape<
@@ -32,21 +31,20 @@ export type SpecCardShape = TLBaseShape<
   }
 >;
 
-// @ts-expect-error TLShape union does not include custom shapes by design
 export class SpecCardShapeUtil extends ShapeUtil<SpecCardShape> {
-  static override type = "spec-card" as const;
+  static type = "spec-card" as any;
 
-  static override props: RecordProps<SpecCardShape> = {
+  static props: RecordProps<SpecCardShape> = {
     w: T.number,
     h: T.number,
     projectId: T.string,
   };
 
-  override getDefaultProps(): SpecCardShape["props"] {
+  getDefaultProps(): SpecCardShape["props"] {
     return { w: SPEC_CARD_W, h: 320, projectId: "" };
   }
 
-  override getGeometry(shape: SpecCardShape): Rectangle2d {
+  getGeometry(shape: SpecCardShape): Rectangle2d {
     return new Rectangle2d({
       width: shape.props.w,
       height: shape.props.h,
@@ -54,16 +52,16 @@ export class SpecCardShapeUtil extends ShapeUtil<SpecCardShape> {
     });
   }
 
-  override canResize = () => false;
-  override canEditInReadonly = () => false;
-  override hideRotateHandle = () => true;
-  override canBind = () => false;
+  canResize = () => false;
+  canEditInReadonly = () => false;
+  hideRotateHandle = () => true;
+  canBind = () => false;
 
-  override component(shape: SpecCardShape) {
+  component(shape: SpecCardShape) {
     return <SpecCardShapeView shape={shape} />;
   }
 
-  override getIndicatorPath(shape: SpecCardShape): Path2D | undefined {
+  getIndicatorPath(shape: SpecCardShape): Path2D | undefined {
     return roundedRectPath(shape.props.w, shape.props.h);
   }
 }
@@ -90,7 +88,7 @@ function SpecCardShapeView({ shape }: { shape: SpecCardShape }) {
   const project = useProjectStore(
     (s) => s.projects[shape.props.projectId] ?? null
   );
-  const ctx = project?.designContext;
+  const ctx = project ? deriveDesignContext(project) : null;
   const direction = project?.designDirection;
 
   const colors = ctx?.colorTokens?.slice(0, 6) ?? [];
@@ -200,7 +198,7 @@ function SpecCardShapeView({ shape }: { shape: SpecCardShape }) {
 
       {heading || body ? (
         <div>
-          <p style={sectionTitle}>字体</p>
+          <p style={sectionTitle}>色彩</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
             {heading ? (
               <p

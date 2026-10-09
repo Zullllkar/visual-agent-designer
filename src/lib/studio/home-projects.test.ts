@@ -22,15 +22,16 @@ function project(id: string, updatedAt: string): ProjectFile {
 }
 
 describe("latestStudioProjects", () => {
-  it("keeps at most three newest projects", () => {
+  it("keeps at most four newest projects", () => {
     const shown = latestStudioProjects([
       project("a", "2026-08-01T00:00:00.000Z"),
       project("b", "2026-08-20T00:00:00.000Z"),
       project("c", "2026-08-10T00:00:00.000Z"),
       project("d", "2026-08-18T00:00:00.000Z"),
+      project("e", "2026-08-15T00:00:00.000Z"),
     ]);
 
-    expect(shown.map((item) => item.id)).toEqual(["b", "d", "c"]);
+    expect(shown.map((item) => item.id)).toEqual(["b", "d", "e", "c"]);
   });
 });
 

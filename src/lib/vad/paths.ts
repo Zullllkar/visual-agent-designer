@@ -8,6 +8,8 @@
  */
 
 import { join } from "node:path";
+import { peekProjectWorkspace } from "./workspace-bindings";
+import { WORKSPACE_SIDECAR } from "@/lib/studio/workspace-name";
 
 export function resolveVadRoot(
   env: NodeJS.ProcessEnv = process.env,
@@ -34,7 +36,13 @@ export const VAD_ROOT = resolveVadRoot();
 export const VAD_PROJECTS_DIR = join(VAD_ROOT, "projects");
 export const VAD_CHECKPOINTS_DIR = resolveCheckpointsDir();
 
+export function workspacesIndexPath(root: string = VAD_ROOT): string {
+  return join(root, "workspaces.json");
+}
+
 export function projectDir(projectId: string): string {
+  const workspace = peekProjectWorkspace(projectId);
+  if (workspace) return join(workspace, WORKSPACE_SIDECAR);
   return join(VAD_PROJECTS_DIR, projectId);
 }
 
@@ -57,6 +65,11 @@ export function conversationsJsonPath(projectId: string): string {
 /** 流水线执行日志（JSONL，每行一条） */
 export function pipelineLogPath(projectId: string): string {
   return join(projectDir(projectId), "pipeline-log.jsonl");
+}
+
+/** 图片生成与 LLM 调用记录（JSONL，每行一条） */
+export function generationLedgerPath(projectId: string): string {
+  return join(projectDir(projectId), "generation-ledger.jsonl");
 }
 
 /** 允许在线编辑的相对路径前缀 */
@@ -109,4 +122,9 @@ export function implementationDir(projectId: string): string {
 
 export function implementationReportPath(projectId: string, reportId: string): string {
   return join(implementationDir(projectId), `${reportId}.json`);
+}
+
+/** 设计快照目录：coding agent 每次拉取 / 回报时记一份，供 get_design_changes 做 diff */
+export function designSnapshotsDir(projectId: string): string {
+  return join(projectDir(projectId), "snapshots");
 }

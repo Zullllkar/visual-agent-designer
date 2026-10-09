@@ -32,8 +32,9 @@ export const jobStatusTool: AgentTool = {
     const action = args.action as string;
 
     if (action === "list") {
-      const schedulerJobs = jobScheduler.listJobs({ projectId: ctx.agentCtx.projectId });
-      const legacyJobs = jobManager.listJobs(ctx.agentCtx.projectId);
+      const projectId = ctx.project?.id ?? ctx.agentCtx.projectId;
+      const schedulerJobs = jobScheduler.listJobs({ projectId });
+      const legacyJobs = jobManager.listJobs(projectId);
       const jobs = [...schedulerJobs, ...legacyJobs];
       return {
         summary: `当前项目 ${jobs.length} 个 Job`,

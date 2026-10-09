@@ -64,6 +64,7 @@ function mockProject(): ProjectFile {
     id: "p1",
     slug: "demo",
     title: "Demo",
+    rawIdea: "Demo visual project",
     createdAt: "2026-07-22T00:00:00.000Z",
     updatedAt: "2026-07-22T00:00:00.000Z",
     pages: [],
@@ -103,7 +104,7 @@ describe("generateMaterialsForLayout forceRegen", () => {
       generateImage: vi.fn(async () => ({
         imageUrl: MOCK_IMG_NEW,
         model: "mock-img",
-        seed: 1,
+        seed: "1",
         durationMs: 1,
         cost: 0,
       })),
